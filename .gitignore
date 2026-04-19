@@ -1,0 +1,6 @@
+cronfoundry-runner
+cronfoundry-runner.exe
+*.test
+coverage.out
+.env
+.env.local
