@@ -9,3 +9,4 @@ coverage.out
 
 # Claude Code local state
 .claude/
+.worktrees/
