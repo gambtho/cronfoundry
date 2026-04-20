@@ -113,6 +113,22 @@ func (w *Writer) Push(repoRoot, remoteName, username, token string) error {
 	return nil
 }
 
+// PushToURL pushes the current HEAD to the given authenticated remote URL.
+// Used by the /internal/writeback-push endpoint so the server can push
+// using a short-lived install token without exposing it to the runner.
+func (w *Writer) PushToURL(repoRoot, remoteURL string) error {
+	repo, err := git.PlainOpen(repoRoot)
+	if err != nil {
+		return fmt.Errorf("writeback: open repo: %w", err)
+	}
+	if err := repo.Push(&git.PushOptions{
+		RemoteURL: remoteURL,
+	}); err != nil && err != git.NoErrAlreadyUpToDate {
+		return fmt.Errorf("writeback: push: %w", err)
+	}
+	return nil
+}
+
 func ensureTrailingNewline(s string) string {
 	if !strings.HasSuffix(s, "\n") {
 		return s + "\n"

@@ -164,6 +164,17 @@ WHERE r.org_id = $1
 ORDER BY r.created_at DESC
 LIMIT $3;
 
+-- name: GetRunWritebackConfig :one
+SELECT s.writeback_json,
+       rc.github_app_install_id,
+       rc.owner,
+       rc.name AS repo_name
+FROM run r
+JOIN schedule s ON s.id = r.schedule_id
+JOIN skill sk ON sk.id = s.skill_id
+JOIN repo_connection rc ON rc.id = sk.repo_id
+WHERE r.id = $1;
+
 -- name: GetRunForAdmin :one
 -- Used by `cronfoundry admin show-run`.
 SELECT r.id,
