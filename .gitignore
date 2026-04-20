@@ -1,5 +1,7 @@
-cronfoundry-runner
-cronfoundry-runner.exe
+/cronfoundry-runner
+/cronfoundry-runner.exe
+/cronfoundry
+/cronfoundry.exe
 *.test
 coverage.out
 .env
