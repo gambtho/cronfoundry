@@ -51,3 +51,11 @@ func TestSession_TamperedPayload(t *testing.T) {
 	_, err = webapi.VerifySession(string(b), testKey())
 	require.Error(t, err)
 }
+
+func TestSession_WrongKey(t *testing.T) {
+	cookie, err := webapi.SignSession(webapi.SessionClaims{Login: "alice", Role: "admin"}, testKey(), 24*time.Hour)
+	require.NoError(t, err)
+	_, err = webapi.VerifySession(cookie, []byte("different-key-here-xxxxxxxxxxxxxxx"))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid signature")
+}

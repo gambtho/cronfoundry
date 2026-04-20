@@ -23,6 +23,9 @@ type SessionClaims struct {
 //
 //	base64url(JSON) + "." + base64url(HMAC-SHA256(payload, key))
 func SignSession(claims SessionClaims, key []byte, ttl time.Duration) (string, error) {
+	if len(key) == 0 {
+		return "", errors.New("session: signing key must not be empty")
+	}
 	claims.Exp = time.Now().Add(ttl).Unix()
 	payload, err := json.Marshal(claims)
 	if err != nil {
@@ -35,6 +38,9 @@ func SignSession(claims SessionClaims, key []byte, ttl time.Duration) (string, e
 
 // VerifySession parses and validates a signed cookie value produced by SignSession.
 func VerifySession(cookie string, key []byte) (SessionClaims, error) {
+	if len(key) == 0 {
+		return SessionClaims{}, errors.New("session: signing key must not be empty")
+	}
 	dot := lastDot(cookie)
 	if dot < 0 {
 		return SessionClaims{}, errors.New("invalid signature: malformed cookie")
