@@ -58,7 +58,3 @@ type cloneURLHandler struct{ deps Deps }
 type eventsHandler struct{ deps Deps }
 type finalizeHandler struct{ deps Deps }
 type runNowHandler struct{ deps Deps }
-
-func (h runNowHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "not implemented", http.StatusNotImplemented)
-}
