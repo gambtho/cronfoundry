@@ -48,6 +48,7 @@ func TestOpenAI_Chat_StreamsAndReportsUsage(t *testing.T) {
 	assert.Equal(t, "Bearer sk-test", gotAuth)
 	assert.Contains(t, gotBody, `"model":"gpt-5.1"`)
 	assert.Contains(t, gotBody, `"stream":true`)
+	assert.Contains(t, gotBody, `"include_usage":true`)
 	assert.Equal(t, []string{"Hello", " world"}, chunks)
 	assert.Equal(t, 5, usage.InputTokens)
 	assert.Equal(t, 2, usage.OutputTokens)
