@@ -1,0 +1,11 @@
+# For `make e2e`: boots just Postgres so the test binary can exec
+# cronfoundry serve itself under test control.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: cronfoundry
+      POSTGRES_PASSWORD: cronfoundry
+      POSTGRES_DB: cronfoundry
+    ports: ["5433:5432"]
+    tmpfs: ["/var/lib/postgresql/data"]
