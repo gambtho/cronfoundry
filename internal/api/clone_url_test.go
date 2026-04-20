@@ -16,6 +16,7 @@ import (
 
 	"github.com/gambtho/cronfoundry/internal/github"
 	"github.com/gambtho/cronfoundry/internal/githubtest"
+	"github.com/gambtho/cronfoundry/internal/testdb"
 	"github.com/gambtho/cronfoundry/internal/token"
 )
 
@@ -57,7 +58,7 @@ func TestCloneURL_MintsURL(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
 	}
-	pool, cleanup := bootPG(t)
+	pool, cleanup := testdb.BootPG(t)
 	defer cleanup()
 
 	runID, orgID, repoID := seedRunWithRepo(t, pool)
@@ -114,7 +115,7 @@ func TestCloneURL_MissingRepo(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
 	}
-	pool, cleanup := bootPG(t)
+	pool, cleanup := testdb.BootPG(t)
 	defer cleanup()
 
 	// Seed a run + its repo so the bearer passes middleware; request a
@@ -150,7 +151,7 @@ func TestCloneURL_BadRepoID(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
 	}
-	pool, cleanup := bootPG(t)
+	pool, cleanup := testdb.BootPG(t)
 	defer cleanup()
 
 	runID, orgID, _ := seedRunWithRepo(t, pool)
@@ -182,7 +183,7 @@ func TestCloneURL_RejectsCrossRunRepoAccess(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
 	}
-	pool, cleanup := bootPG(t)
+	pool, cleanup := testdb.BootPG(t)
 	defer cleanup()
 
 	// runA + its repoA.

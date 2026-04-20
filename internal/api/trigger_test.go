@@ -12,6 +12,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/gambtho/cronfoundry/internal/testdb"
 )
 
 // seedSchedule creates an org -> repo -> skill -> schedule chain (no run).
@@ -40,7 +42,7 @@ func TestRunNow_CreatesPendingRun(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
 	}
-	pool, cleanup := bootPG(t)
+	pool, cleanup := testdb.BootPG(t)
 	defer cleanup()
 
 	schedID, _ := seedSchedule(t, pool)
@@ -84,7 +86,7 @@ func TestRunNow_MissingSchedule(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
 	}
-	pool, cleanup := bootPG(t)
+	pool, cleanup := testdb.BootPG(t)
 	defer cleanup()
 
 	srv := NewServer("127.0.0.1:0", Deps{Pool: pool})
@@ -104,7 +106,7 @@ func TestRunNow_BadScheduleID(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
 	}
-	pool, cleanup := bootPG(t)
+	pool, cleanup := testdb.BootPG(t)
 	defer cleanup()
 
 	srv := NewServer("127.0.0.1:0", Deps{Pool: pool})
@@ -123,7 +125,7 @@ func TestRunNow_NoActor(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
 	}
-	pool, cleanup := bootPG(t)
+	pool, cleanup := testdb.BootPG(t)
 	defer cleanup()
 
 	schedID, _ := seedSchedule(t, pool)
@@ -153,7 +155,7 @@ func TestRunNow_RejectsNonLoopback(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
 	}
-	pool, cleanup := bootPG(t)
+	pool, cleanup := testdb.BootPG(t)
 	defer cleanup()
 
 	schedID, _ := seedSchedule(t, pool)

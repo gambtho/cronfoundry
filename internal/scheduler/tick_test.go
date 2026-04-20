@@ -11,38 +11,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
 
 	"github.com/gambtho/cronfoundry/internal/cloud"
-	"github.com/gambtho/cronfoundry/internal/db"
 	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
+	"github.com/gambtho/cronfoundry/internal/testdb"
 	"github.com/gambtho/cronfoundry/internal/token"
 )
-
-// bootPG is a local Postgres-container helper (independent of api's bootPG).
-func bootPG(t *testing.T) (*pgxpool.Pool, func()) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	c, err := postgres.Run(ctx,
-		"postgres:16-alpine",
-		postgres.WithDatabase("cf"),
-		postgres.WithUsername("cf"),
-		postgres.WithPassword("cf"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).WithStartupTimeout(60*time.Second)),
-	)
-	require.NoError(t, err)
-	dsn, err := c.ConnectionString(ctx, "sslmode=disable")
-	require.NoError(t, err)
-	require.NoError(t, db.Migrate(ctx, dsn))
-	pool, err := pgxpool.New(ctx, dsn)
-	require.NoError(t, err)
-	return pool, func() { pool.Close(); _ = c.Terminate(context.Background()) }
-}
 
 // mockDispatcher records Dispatch calls; Wait and Kill are no-ops.
 type mockDispatcher struct {
@@ -104,7 +78,7 @@ func TestTick_DispatchesDue(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
 	}
-	pool, cleanup := bootPG(t)
+	pool, cleanup := testdb.BootPG(t)
 	defer cleanup()
 
 	schedID := seedDueSchedule(t, pool, "skip")
@@ -158,7 +132,7 @@ func TestTick_SkipsWhenActiveExists(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
 	}
-	pool, cleanup := bootPG(t)
+	pool, cleanup := testdb.BootPG(t)
 	defer cleanup()
 
 	schedID := seedDueSchedule(t, pool, "skip")
@@ -210,7 +184,7 @@ func TestTick_OrphanSweepRuns(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
 	}
-	pool, cleanup := bootPG(t)
+	pool, cleanup := testdb.BootPG(t)
 	defer cleanup()
 
 	// Seed a schedule + an ancient pending run (exceeded timeout+grace).
@@ -260,7 +234,7 @@ func TestTick_DispatchesPendingManualRun(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
 	}
-	pool, cleanup := bootPG(t)
+	pool, cleanup := testdb.BootPG(t)
 	defer cleanup()
 
 	// Seed a schedule whose next_fire_at is in the FUTURE so processOne
@@ -326,7 +300,7 @@ func TestInsertRun_ConflictReturnsExistingRow(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
 	}
-	pool, cleanup := bootPG(t)
+	pool, cleanup := testdb.BootPG(t)
 	defer cleanup()
 
 	schedID := seedDueSchedule(t, pool, "skip")
@@ -369,7 +343,7 @@ func TestTick_NoDueSchedules(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
 	}
-	pool, cleanup := bootPG(t)
+	pool, cleanup := testdb.BootPG(t)
 	defer cleanup()
 
 	mock := &mockDispatcher{}

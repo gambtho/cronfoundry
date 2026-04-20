@@ -8,13 +8,15 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/gambtho/cronfoundry/internal/testdb"
 )
 
 func TestSweepOrphans_ReclaimsStalledRun(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
 	}
-	pool, cleanup := bootPG(t)
+	pool, cleanup := testdb.BootPG(t)
 	defer cleanup()
 
 	ctx := context.Background()
@@ -54,7 +56,7 @@ func TestSweepOrphans_NoOpOnFreshRun(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
 	}
-	pool, cleanup := bootPG(t)
+	pool, cleanup := testdb.BootPG(t)
 	defer cleanup()
 
 	n, err := SweepOrphans(context.Background(), Deps{Pool: pool})

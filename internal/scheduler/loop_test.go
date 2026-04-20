@@ -8,13 +8,15 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/gambtho/cronfoundry/internal/testdb"
 )
 
 func TestLoop_InvokesTickOnCadence_ThenExitsOnCtxCancel(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
 	}
-	pool, cleanup := bootPG(t)
+	pool, cleanup := testdb.BootPG(t)
 	defer cleanup()
 
 	schedID := seedDueSchedule(t, pool, "skip")
@@ -55,7 +57,7 @@ func TestLoop_InitialTickRunsImmediately(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
 	}
-	pool, cleanup := bootPG(t)
+	pool, cleanup := testdb.BootPG(t)
 	defer cleanup()
 
 	_ = seedDueSchedule(t, pool, "skip")
