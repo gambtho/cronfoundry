@@ -11,6 +11,8 @@ import (
 	"unicode/utf8"
 )
 
+// Context carries the values exposed to destination templates. Fields map
+// directly to the `{{ ... }}` directives understood by Render.
 type Context struct {
 	Output    string
 	RunID     string
@@ -20,6 +22,9 @@ type Context struct {
 	Skill     Meta
 }
 
+// Meta is the minimal identity (a name) of a schedule or skill surfaced to
+// templates. Kept as a named type so templates can reach both `schedule.name`
+// and `skill.name` via the same shape.
 type Meta struct {
 	Name string
 }
