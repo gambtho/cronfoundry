@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"strings"
@@ -17,6 +18,11 @@ import (
 	"github.com/gambtho/cronfoundry/internal/runner"
 	"github.com/gambtho/cronfoundry/internal/secrets"
 )
+
+// stderr is the process-wide stderr sink. It starts as os.Stderr and is
+// swapped for a redactingWriter once the redactor is built inside RunE,
+// so that any later prints (including root.Execute's error tail) are scrubbed.
+var stderr io.Writer = os.Stderr
 
 func main() {
 	var (
@@ -57,7 +63,13 @@ func main() {
 			}
 			redactor := redact.New(redactValues)
 
-			logger := slog.New(redactingHandler{inner: slog.NewTextHandler(os.Stderr, nil), r: redactor})
+			// Swap the package-level stderr for a redacting writer so that
+			// every downstream write (slog handler output, direct
+			// fmt.Fprintln, panics that route through our printer, etc.) is
+			// scrubbed of known secrets before it lands on the real stderr.
+			stderr = &redactingWriter{inner: os.Stderr, r: redactor}
+
+			logger := slog.New(redactingHandler{inner: slog.NewTextHandler(stderr, nil), r: redactor})
 			slog.SetDefault(logger)
 
 			r := runner.New(runner.Deps{
@@ -130,14 +142,40 @@ func main() {
 	root.AddCommand(runCmd)
 
 	if err := root.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
+		fmt.Fprintln(stderr, "error:", err)
 		os.Exit(1)
 	}
 }
 
+// redactingWriter wraps an io.Writer and scrubs known secret values from every
+// byte slice written through it. It is used to wrap os.Stderr so that all
+// stderr output (slog handler output, direct fmt.Fprintln calls, stack
+// traces routed through it, etc.) is redacted before it hits the real fd.
+//
+// Each Write redacts the slice as a single chunk. This is best-effort: if a
+// secret is split across two Write calls the seam will not match. In practice
+// slog and fmt print a whole record in one Write, so this is fine for the
+// CLI's stderr path.
+type redactingWriter struct {
+	inner io.Writer
+	r     *redact.Redactor
+}
+
+func (w *redactingWriter) Write(p []byte) (int, error) {
+	redacted := w.r.Redact(string(p))
+	if _, err := w.inner.Write([]byte(redacted)); err != nil {
+		return 0, err
+	}
+	// Report the original length so callers don't interpret the size
+	// difference after redaction as a short write and retry.
+	return len(p), nil
+}
+
 // redactingHandler wraps a slog.Handler and scrubs known secret values from
-// message text and string-valued attributes before delegating to the inner
-// handler.
+// message text and all attribute values before delegating to the inner
+// handler. Non-string values (errors, ints, structs, ...) are stringified via
+// fmt.Sprint so that secrets embedded in e.g. an error's Error() text are
+// caught too.
 type redactingHandler struct {
 	inner slog.Handler
 	r     *redact.Redactor
@@ -148,13 +186,20 @@ func (h redactingHandler) Enabled(ctx context.Context, lvl slog.Level) bool {
 }
 func (h redactingHandler) Handle(ctx context.Context, rec slog.Record) error {
 	rec.Message = h.r.Redact(rec.Message)
+	newAttrs := make([]slog.Attr, 0, rec.NumAttrs())
 	rec.Attrs(func(a slog.Attr) bool {
+		var s string
 		if a.Value.Kind() == slog.KindString {
-			a.Value = slog.StringValue(h.r.Redact(a.Value.String()))
+			s = a.Value.String()
+		} else {
+			s = fmt.Sprint(a.Value.Any())
 		}
+		newAttrs = append(newAttrs, slog.String(a.Key, h.r.Redact(s)))
 		return true
 	})
-	return h.inner.Handle(ctx, rec)
+	clone := slog.NewRecord(rec.Time, rec.Level, rec.Message, rec.PC)
+	clone.AddAttrs(newAttrs...)
+	return h.inner.Handle(ctx, clone)
 }
 func (h redactingHandler) WithAttrs(as []slog.Attr) slog.Handler {
 	return redactingHandler{inner: h.inner.WithAttrs(as), r: h.r}
