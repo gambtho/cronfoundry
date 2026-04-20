@@ -93,10 +93,14 @@ func runAdminTriggerSync(ctx context.Context, repo string, out io.Writer) error 
 		return fmt.Errorf("no connection for %s/%s; run `cronfoundry admin connect-repo` first", owner, name)
 	}
 
-	cache := github.NewInstallationCache(github.InstallationCacheConfig{
+	cacheCfg := github.InstallationCacheConfig{
 		AppID:      appID,
 		PrivateKey: pemBytes,
-	})
+	}
+	if ghBaseURL := os.Getenv(envGitHubBaseURL); ghBaseURL != "" {
+		cacheCfg.BaseURL = ghBaseURL
+	}
+	cache := github.NewInstallationCache(cacheCfg)
 	poller := sync.NewPoller(sync.PollerConfig{
 		Pool:          pool,
 		OrgID:         org.ID,

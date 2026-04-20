@@ -54,6 +54,7 @@ func BootPGWithDSN(t *testing.T) (string, func()) {
 	// Register cleanup before any further calls that could t.FailNow, to
 	// prevent leaking the container if ConnectionString or Migrate fails.
 	teardown := func() { _ = container.Terminate(context.Background()) }
+	t.Cleanup(teardown)
 
 	dsn, err := container.ConnectionString(ctx, "sslmode=disable")
 	require.NoError(t, err)

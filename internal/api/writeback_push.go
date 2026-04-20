@@ -54,15 +54,15 @@ func (h writebackPushHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	// Restrict RepoRoot to the OS temp directory to prevent path traversal
-	// from a compromised runner subprocess.
-	tmpDir := os.TempDir()
-	absRoot, err := filepath.Abs(body.RepoRoot)
-	if err != nil || !strings.HasPrefix(absRoot+string(filepath.Separator), tmpDir+string(filepath.Separator)) {
-		http.Error(w, "repo_root outside allowed prefix", http.StatusBadRequest)
+	// (including symlink escape) from a compromised runner subprocess.
+	canonicalTmp, err := filepath.EvalSymlinks(os.TempDir())
+	if err != nil {
+		http.Error(w, "internal error resolving temp dir", http.StatusInternalServerError)
 		return
 	}
-	if _, err := os.Stat(absRoot); err != nil {
-		http.Error(w, "repo_root not readable: "+err.Error(), http.StatusBadRequest)
+	absRoot, err := filepath.EvalSymlinks(body.RepoRoot)
+	if err != nil || !strings.HasPrefix(absRoot+string(filepath.Separator), canonicalTmp+string(filepath.Separator)) {
+		http.Error(w, "repo_root outside allowed prefix", http.StatusBadRequest)
 		return
 	}
 
@@ -80,7 +80,10 @@ func (h writebackPushHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	// Reject if writeback is not enabled for this schedule.
 	var wbCfg config.WritebackConfig
 	if len(cfg.WritebackJson) > 0 {
-		_ = json.Unmarshal(cfg.WritebackJson, &wbCfg)
+		if err := json.Unmarshal(cfg.WritebackJson, &wbCfg); err != nil {
+			slog.Error("writeback_push: decode writeback_json failed",
+				"run_id", urlRunID, "err", err)
+		}
 	}
 	if !wbCfg.Enabled {
 		http.Error(w, "writeback not enabled for this run", http.StatusBadRequest)
@@ -99,7 +102,8 @@ func (h writebackPushHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	writer := writeback.New()
 	if err := writer.PushToURL(absRoot, pushURL); err != nil {
 		slog.Error("writeback_push: push failed",
-			"run_id", urlRunID, "owner", cfg.Owner, "repo", cfg.RepoName, "err", err)
+			"run_id", urlRunID, "owner", cfg.Owner, "repo", cfg.RepoName,
+			"commit_sha", body.CommitSHA, "err", err)
 		http.Error(w, "push failed", http.StatusBadGateway)
 		return
 	}
