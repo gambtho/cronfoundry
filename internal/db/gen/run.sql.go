@@ -126,6 +126,96 @@ func (q *Queries) GetRun(ctx context.Context, id pgtype.UUID) (Run, error) {
 	return i, err
 }
 
+const getRunForAdmin = `-- name: GetRunForAdmin :one
+SELECT r.id,
+       r.org_id,
+       r.schedule_id,
+       r.skill_sha,
+       r.fire_time,
+       r.status,
+       r.fire_reason,
+       r.actor,
+       r.started_at,
+       r.finished_at,
+       r.duration_ms,
+       r.tokens_in,
+       r.tokens_out,
+       r.cost_cents,
+       r.error_kind,
+       r.error_msg,
+       r.writeback_commit_sha,
+       r.created_at,
+       s.name  AS schedule_name,
+       s.cron,
+       sk.path AS skill_path,
+       rc.owner,
+       rc.name AS repo_name
+FROM run r
+JOIN schedule s         ON s.id = r.schedule_id
+JOIN skill sk           ON sk.id = s.skill_id
+JOIN repo_connection rc ON rc.id = sk.repo_id
+WHERE r.id = $1
+`
+
+type GetRunForAdminRow struct {
+	ID                 pgtype.UUID
+	OrgID              pgtype.UUID
+	ScheduleID         pgtype.UUID
+	SkillSha           string
+	FireTime           pgtype.Timestamptz
+	Status             string
+	FireReason         string
+	Actor              *string
+	StartedAt          pgtype.Timestamptz
+	FinishedAt         pgtype.Timestamptz
+	DurationMs         *int32
+	TokensIn           *int32
+	TokensOut          *int32
+	CostCents          *int32
+	ErrorKind          *string
+	ErrorMsg           *string
+	WritebackCommitSha *string
+	CreatedAt          pgtype.Timestamptz
+	ScheduleName       string
+	Cron               string
+	SkillPath          string
+	Owner              string
+	RepoName           string
+}
+
+// Used by `cronfoundry admin show-run`. Same join shape as GetRunForContext
+// but without the bearer-token-hash exposure.
+func (q *Queries) GetRunForAdmin(ctx context.Context, id pgtype.UUID) (GetRunForAdminRow, error) {
+	row := q.db.QueryRow(ctx, getRunForAdmin, id)
+	var i GetRunForAdminRow
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.ScheduleID,
+		&i.SkillSha,
+		&i.FireTime,
+		&i.Status,
+		&i.FireReason,
+		&i.Actor,
+		&i.StartedAt,
+		&i.FinishedAt,
+		&i.DurationMs,
+		&i.TokensIn,
+		&i.TokensOut,
+		&i.CostCents,
+		&i.ErrorKind,
+		&i.ErrorMsg,
+		&i.WritebackCommitSha,
+		&i.CreatedAt,
+		&i.ScheduleName,
+		&i.Cron,
+		&i.SkillPath,
+		&i.Owner,
+		&i.RepoName,
+	)
+	return i, err
+}
+
 const getRunForContext = `-- name: GetRunForContext :one
 SELECT r.id, r.org_id, r.schedule_id, r.skill_sha, r.fire_time, r.status, r.fire_reason, r.actor, r.started_at, r.finished_at, r.duration_ms, r.tokens_in, r.tokens_out, r.cost_cents, r.error_kind, r.error_msg, r.writeback_commit_sha, r.runner_pid, r.runner_token_hash, r.created_at,
        s.name  AS schedule_name,
@@ -384,6 +474,173 @@ func (q *Queries) ListActiveRunsForSchedule(ctx context.Context, scheduleID pgty
 			&i.RunnerPid,
 			&i.RunnerTokenHash,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRunsForOrg = `-- name: ListRunsForOrg :many
+SELECT r.id,
+       r.status,
+       r.fire_reason,
+       r.actor,
+       r.started_at,
+       r.finished_at,
+       r.duration_ms,
+       r.error_kind,
+       r.error_msg,
+       r.created_at,
+       s.name       AS schedule_name,
+       sk.path      AS skill_path,
+       rc.owner,
+       rc.name      AS repo_name
+FROM run r
+JOIN schedule s         ON s.id = r.schedule_id
+JOIN skill sk           ON sk.id = s.skill_id
+JOIN repo_connection rc ON rc.id = sk.repo_id
+WHERE r.org_id = $1
+ORDER BY r.created_at DESC
+LIMIT $2
+`
+
+type ListRunsForOrgParams struct {
+	OrgID pgtype.UUID
+	Limit int32
+}
+
+type ListRunsForOrgRow struct {
+	ID           pgtype.UUID
+	Status       string
+	FireReason   string
+	Actor        *string
+	StartedAt    pgtype.Timestamptz
+	FinishedAt   pgtype.Timestamptz
+	DurationMs   *int32
+	ErrorKind    *string
+	ErrorMsg     *string
+	CreatedAt    pgtype.Timestamptz
+	ScheduleName string
+	SkillPath    string
+	Owner        string
+	RepoName     string
+}
+
+// Used by `cronfoundry admin list-runs`. Returns the most recent N runs,
+// joined to schedule + skill names for display.
+func (q *Queries) ListRunsForOrg(ctx context.Context, arg ListRunsForOrgParams) ([]ListRunsForOrgRow, error) {
+	rows, err := q.db.Query(ctx, listRunsForOrg, arg.OrgID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRunsForOrgRow
+	for rows.Next() {
+		var i ListRunsForOrgRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Status,
+			&i.FireReason,
+			&i.Actor,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.DurationMs,
+			&i.ErrorKind,
+			&i.ErrorMsg,
+			&i.CreatedAt,
+			&i.ScheduleName,
+			&i.SkillPath,
+			&i.Owner,
+			&i.RepoName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listRunsForSchedule = `-- name: ListRunsForSchedule :many
+SELECT r.id,
+       r.status,
+       r.fire_reason,
+       r.actor,
+       r.started_at,
+       r.finished_at,
+       r.duration_ms,
+       r.error_kind,
+       r.error_msg,
+       r.created_at,
+       s.name       AS schedule_name,
+       sk.path      AS skill_path,
+       rc.owner,
+       rc.name      AS repo_name
+FROM run r
+JOIN schedule s         ON s.id = r.schedule_id
+JOIN skill sk           ON sk.id = s.skill_id
+JOIN repo_connection rc ON rc.id = sk.repo_id
+WHERE r.org_id = $1
+  AND s.name = $2
+ORDER BY r.created_at DESC
+LIMIT $3
+`
+
+type ListRunsForScheduleParams struct {
+	OrgID pgtype.UUID
+	Name  string
+	Limit int32
+}
+
+type ListRunsForScheduleRow struct {
+	ID           pgtype.UUID
+	Status       string
+	FireReason   string
+	Actor        *string
+	StartedAt    pgtype.Timestamptz
+	FinishedAt   pgtype.Timestamptz
+	DurationMs   *int32
+	ErrorKind    *string
+	ErrorMsg     *string
+	CreatedAt    pgtype.Timestamptz
+	ScheduleName string
+	SkillPath    string
+	Owner        string
+	RepoName     string
+}
+
+// Same shape as ListRunsForOrg but filtered to a single schedule by name.
+func (q *Queries) ListRunsForSchedule(ctx context.Context, arg ListRunsForScheduleParams) ([]ListRunsForScheduleRow, error) {
+	rows, err := q.db.Query(ctx, listRunsForSchedule, arg.OrgID, arg.Name, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRunsForScheduleRow
+	for rows.Next() {
+		var i ListRunsForScheduleRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Status,
+			&i.FireReason,
+			&i.Actor,
+			&i.StartedAt,
+			&i.FinishedAt,
+			&i.DurationMs,
+			&i.ErrorKind,
+			&i.ErrorMsg,
+			&i.CreatedAt,
+			&i.ScheduleName,
+			&i.SkillPath,
+			&i.Owner,
+			&i.RepoName,
 		); err != nil {
 			return nil, err
 		}

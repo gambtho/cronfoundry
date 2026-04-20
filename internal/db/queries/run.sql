@@ -113,3 +113,85 @@ FROM schedule s
 WHERE run.schedule_id = s.id
   AND run.status IN ('pending', 'running')
   AND now() - COALESCE(run.started_at, run.created_at) > (s.timeout_sec + 300) * interval '1 second';
+
+-- name: ListRunsForOrg :many
+-- Used by `cronfoundry admin list-runs`. Returns the most recent N runs,
+-- joined to schedule + skill names for display.
+SELECT r.id,
+       r.status,
+       r.fire_reason,
+       r.actor,
+       r.started_at,
+       r.finished_at,
+       r.duration_ms,
+       r.error_kind,
+       r.error_msg,
+       r.created_at,
+       s.name       AS schedule_name,
+       sk.path      AS skill_path,
+       rc.owner,
+       rc.name      AS repo_name
+FROM run r
+JOIN schedule s         ON s.id = r.schedule_id
+JOIN skill sk           ON sk.id = s.skill_id
+JOIN repo_connection rc ON rc.id = sk.repo_id
+WHERE r.org_id = $1
+ORDER BY r.created_at DESC
+LIMIT $2;
+
+-- name: ListRunsForSchedule :many
+-- Same shape as ListRunsForOrg but filtered to a single schedule by name.
+SELECT r.id,
+       r.status,
+       r.fire_reason,
+       r.actor,
+       r.started_at,
+       r.finished_at,
+       r.duration_ms,
+       r.error_kind,
+       r.error_msg,
+       r.created_at,
+       s.name       AS schedule_name,
+       sk.path      AS skill_path,
+       rc.owner,
+       rc.name      AS repo_name
+FROM run r
+JOIN schedule s         ON s.id = r.schedule_id
+JOIN skill sk           ON sk.id = s.skill_id
+JOIN repo_connection rc ON rc.id = sk.repo_id
+WHERE r.org_id = $1
+  AND s.name = $2
+ORDER BY r.created_at DESC
+LIMIT $3;
+
+-- name: GetRunForAdmin :one
+-- Used by `cronfoundry admin show-run`. Same join shape as GetRunForContext
+-- but without the bearer-token-hash exposure.
+SELECT r.id,
+       r.org_id,
+       r.schedule_id,
+       r.skill_sha,
+       r.fire_time,
+       r.status,
+       r.fire_reason,
+       r.actor,
+       r.started_at,
+       r.finished_at,
+       r.duration_ms,
+       r.tokens_in,
+       r.tokens_out,
+       r.cost_cents,
+       r.error_kind,
+       r.error_msg,
+       r.writeback_commit_sha,
+       r.created_at,
+       s.name  AS schedule_name,
+       s.cron,
+       sk.path AS skill_path,
+       rc.owner,
+       rc.name AS repo_name
+FROM run r
+JOIN schedule s         ON s.id = r.schedule_id
+JOIN skill sk           ON sk.id = s.skill_id
+JOIN repo_connection rc ON rc.id = sk.repo_id
+WHERE r.id = $1;
