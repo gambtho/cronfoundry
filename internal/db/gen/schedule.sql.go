@@ -117,6 +117,85 @@ func (q *Queries) ListDueSchedules(ctx context.Context) ([]Schedule, error) {
 	return items, nil
 }
 
+const listDueSchedulesWithSha = `-- name: ListDueSchedulesWithSha :many
+SELECT s.id, s.org_id, s.skill_id, s.name, s.cron, s.timezone, s.overlap_policy, s.timeout_sec, s.enabled, s.provider, s.model, s.llm_secret_ref, s.llm_endpoint, s.llm_deployment, s.destinations_json, s.writeback_json, s.env_json, s.next_fire_at, s.created_at, s.updated_at,
+       sk.current_sha AS skill_sha
+FROM schedule s
+JOIN skill sk ON sk.id = s.skill_id
+WHERE s.enabled = true
+  AND s.next_fire_at IS NOT NULL
+  AND s.next_fire_at <= now()
+ORDER BY s.next_fire_at ASC
+`
+
+type ListDueSchedulesWithShaRow struct {
+	ID               pgtype.UUID
+	OrgID            pgtype.UUID
+	SkillID          pgtype.UUID
+	Name             string
+	Cron             string
+	Timezone         string
+	OverlapPolicy    string
+	TimeoutSec       int32
+	Enabled          bool
+	Provider         string
+	Model            string
+	LlmSecretRef     *string
+	LlmEndpoint      *string
+	LlmDeployment    *string
+	DestinationsJson []byte
+	WritebackJson    []byte
+	EnvJson          []byte
+	NextFireAt       pgtype.Timestamptz
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+	SkillSha         string
+}
+
+// Like ListDueSchedules but joins the skill to include current_sha so
+// the scheduler can set it on the new run row without a second query.
+func (q *Queries) ListDueSchedulesWithSha(ctx context.Context) ([]ListDueSchedulesWithShaRow, error) {
+	rows, err := q.db.Query(ctx, listDueSchedulesWithSha)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListDueSchedulesWithShaRow
+	for rows.Next() {
+		var i ListDueSchedulesWithShaRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.SkillID,
+			&i.Name,
+			&i.Cron,
+			&i.Timezone,
+			&i.OverlapPolicy,
+			&i.TimeoutSec,
+			&i.Enabled,
+			&i.Provider,
+			&i.Model,
+			&i.LlmSecretRef,
+			&i.LlmEndpoint,
+			&i.LlmDeployment,
+			&i.DestinationsJson,
+			&i.WritebackJson,
+			&i.EnvJson,
+			&i.NextFireAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.SkillSha,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSchedulesByOrg = `-- name: ListSchedulesByOrg :many
 SELECT s.id, s.org_id, s.skill_id, s.name, s.cron, s.timezone, s.overlap_policy, s.timeout_sec, s.enabled, s.provider, s.model, s.llm_secret_ref, s.llm_endpoint, s.llm_deployment, s.destinations_json, s.writeback_json, s.env_json, s.next_fire_at, s.created_at, s.updated_at, sk.path AS skill_path, sk.name AS skill_name, rc.owner, rc.name AS repo_name
 FROM schedule s
