@@ -142,3 +142,10 @@ func GenerateMasterKey() (string, error) {
 	}
 	return encodeMasterKey(key), nil
 }
+
+// ParseMasterKey decodes the base64 form used in CRONFOUNDRY_MASTER_KEY.
+// Intended for CLI entry points; callers inside this package use the
+// unexported parseMasterKey directly.
+func ParseMasterKey(encoded string) ([]byte, error) {
+	return parseMasterKey(encoded)
+}
