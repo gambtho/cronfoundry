@@ -1,13 +1,15 @@
 -- name: InsertRun :one
 -- Idempotent for scheduled fires (ON CONFLICT on the partial unique index
 -- run_schedule_firetime_unique). Manual runs always have fire_time=NULL and
--- pass through without collision.
+-- pass through without collision — the index predicate (WHERE fire_time IS
+-- NOT NULL) must be repeated on ON CONFLICT so Postgres matches the partial
+-- index rather than requiring a full unique constraint.
 INSERT INTO run (
     org_id, schedule_id, skill_sha, fire_time, status, fire_reason, actor,
     runner_token_hash
 )
 VALUES ($1, $2, $3, $4, 'pending', $5, $6, $7)
-ON CONFLICT (schedule_id, fire_time) DO NOTHING
+ON CONFLICT (schedule_id, fire_time) WHERE fire_time IS NOT NULL DO NOTHING
 RETURNING *;
 
 -- name: GetRun :one

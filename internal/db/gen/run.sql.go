@@ -242,7 +242,7 @@ INSERT INTO run (
     runner_token_hash
 )
 VALUES ($1, $2, $3, $4, 'pending', $5, $6, $7)
-ON CONFLICT (schedule_id, fire_time) DO NOTHING
+ON CONFLICT (schedule_id, fire_time) WHERE fire_time IS NOT NULL DO NOTHING
 RETURNING id, org_id, schedule_id, skill_sha, fire_time, status, fire_reason, actor, started_at, finished_at, duration_ms, tokens_in, tokens_out, cost_cents, error_kind, error_msg, writeback_commit_sha, runner_pid, runner_token_hash, created_at
 `
 
@@ -258,7 +258,9 @@ type InsertRunParams struct {
 
 // Idempotent for scheduled fires (ON CONFLICT on the partial unique index
 // run_schedule_firetime_unique). Manual runs always have fire_time=NULL and
-// pass through without collision.
+// pass through without collision — the index predicate (WHERE fire_time IS
+// NOT NULL) must be repeated on ON CONFLICT so Postgres matches the partial
+// index rather than requiring a full unique constraint.
 func (q *Queries) InsertRun(ctx context.Context, arg InsertRunParams) (Run, error) {
 	row := q.db.QueryRow(ctx, insertRun,
 		arg.OrgID,
