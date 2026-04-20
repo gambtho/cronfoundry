@@ -262,7 +262,7 @@ func buildBinary(t *testing.T) string {
 	t.Helper()
 	binPath := filepath.Join(t.TempDir(), "cronfoundry")
 	cmd := exec.Command("go", "build", "-o", binPath, ".")
-	cmd.Dir = "/home/tng/workspace/cronfoundry/cmd/cronfoundry"
+	cmd.Dir = "."
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "build failed: %s", out)
 	return binPath
