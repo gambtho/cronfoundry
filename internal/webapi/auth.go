@@ -20,7 +20,7 @@ func RequireSession(masterKey []byte, next http.Handler) http.Handler {
 		}
 		claims, err := VerifySession(c.Value, masterKey)
 		if err != nil {
-			http.Error(w, "invalid session: "+err.Error(), http.StatusUnauthorized)
+			http.Error(w, "invalid session", http.StatusUnauthorized)
 			return
 		}
 		ctx := context.WithValue(r.Context(), sessionKey, claims)

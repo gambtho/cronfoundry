@@ -1,6 +1,7 @@
 package webapi_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -73,4 +74,9 @@ func TestRequireSession_TamperedCookie(t *testing.T) {
 	webapi.RequireSession(key, http.HandlerFunc(okHandler)).ServeHTTP(rr, req)
 
 	assert.Equal(t, http.StatusUnauthorized, rr.Code)
+}
+
+func TestSessionClaimsFromContext_ZeroValue(t *testing.T) {
+	claims := webapi.SessionClaimsFromContext(context.Background())
+	assert.Equal(t, webapi.SessionClaims{}, claims)
 }
