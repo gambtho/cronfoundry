@@ -5,8 +5,11 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags='-s -w' \
     -o /out/cronfoundry ./cmd/cronfoundry
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags='-s -w' \
+    -o /out/runner ./cmd/runner
 
 FROM gcr.io/distroless/static-debian12:nonroot
 COPY --from=build /out/cronfoundry /cronfoundry
+COPY --from=build /out/runner /runner
 USER nonroot
 ENTRYPOINT ["/cronfoundry"]
