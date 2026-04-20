@@ -34,7 +34,7 @@ func RegisterRoutes(mux *http.ServeMux, deps Deps) {
 		return RequireSession(deps.MasterKey, h)
 	}
 
-	mux.Handle("GET /api/me", session(meHandler{deps.MasterKey}))
+	mux.Handle("GET /api/me", session(meHandler{}))
 
 	// OAuth routes registered by oauthHandlers — implemented in oauth.go (Task 4).
 	oh := oauthHandlers{deps: deps}
