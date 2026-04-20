@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CronFoundry — Scheduled LLM skills for your team</title>
+  <meta name="description" content="Self-hosted, GitOps-native LLM skill scheduler. Runs on cron, publishes to Slack, GitHub, Discord, or Teams." />
+  <meta property="og:title" content="CronFoundry — Scheduled LLM skills for your team" />
+  <meta property="og:description" content="Self-hosted, GitOps-native LLM skill scheduler. Runs on cron, publishes to Slack, GitHub, Discord, or Teams." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://gambtho.github.io/cronfoundry/" />
+  <meta property="og:image" content="https://gambtho.github.io/cronfoundry/assets/og-image.png" />
+  <link rel="canonical" href="https://gambtho.github.io/cronfoundry/" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="CronFoundry — Scheduled LLM skills for your team" />
+  <meta name="twitter:description" content="Self-hosted, GitOps-native LLM skill scheduler. Runs on cron, publishes to Slack, GitHub, Discord, or Teams." />
+  <meta name="twitter:image" content="https://gambtho.github.io/cronfoundry/assets/og-image.png" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: '#4F46E5',
+            accent: '#10B981',
+          },
+          fontFamily: {
+            mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-gray-950 text-gray-100 font-sans antialiased">
+
+  <!-- NAV -->
+  <nav class="sticky top-0 z-50 border-b border-white/10 bg-gray-950/80 backdrop-blur-sm">
+    <div class="mx-auto max-w-6xl px-6 py-4 flex items-center justify-between">
+      <span class="text-lg font-bold tracking-tight text-white">CronFoundry</span>
+      <div class="flex items-center gap-6 text-sm text-gray-400">
+        <a href="https://github.com/gambtho/cronfoundry#configuration-format" class="hover:text-white transition-colors">Docs</a>
+        <a href="https://github.com/gambtho/cronfoundry" class="hover:text-white transition-colors">GitHub</a>
+        <a href="https://github.com/gambtho/cronfoundry" class="inline-flex items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-white hover:bg-white/20 transition-colors">
+          <svg aria-hidden="true" class="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 .587l3.668 7.431 8.2 1.192-5.934 5.782 1.4 8.162L12 18.897l-7.334 3.857 1.4-8.162L.132 9.21l8.2-1.192z"/></svg>
+          Star
+        </a>
+      </div>
+    </div>
+  </nav>
+
+  <main>
+
+    <!-- HERO -->
+    <section class="mx-auto max-w-6xl px-6 pt-24 pb-20 text-center">
+      <div class="inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent/10 px-4 py-1.5 text-xs font-medium text-accent mb-8">
+        P1 complete · P2 in progress
+      </div>
+      <h1 class="text-5xl sm:text-6xl font-bold tracking-tight text-white leading-tight mb-6">
+        Scheduled LLM skills.<br />
+        In git. For your whole team.
+      </h1>
+      <p class="max-w-2xl mx-auto text-xl text-gray-400 mb-10">
+        CronFoundry runs AI skills on a cron, publishes results to Slack, GitHub, Discord, or Teams,
+        and commits learnings back to your repo.
+        <span class="text-gray-300">Self-hosted. GitOps-native. BYOK.</span>
+      </p>
+      <div class="flex flex-wrap items-center justify-center gap-4 mb-16">
+        <a href="#quickstart" class="rounded-lg bg-brand px-6 py-3 text-sm font-semibold text-white hover:bg-indigo-500 transition-colors">
+          Try it in 5 minutes &rarr;
+        </a>
+        <a href="https://github.com/gambtho/cronfoundry" class="rounded-lg border border-white/20 px-6 py-3 text-sm font-semibold text-gray-300 hover:border-white/40 hover:text-white transition-colors">
+          View on GitHub
+        </a>
+      </div>
+
+      <!-- Terminal animation -->
+      <div class="mx-auto max-w-3xl rounded-xl border border-white/10 bg-gray-900 text-left overflow-hidden shadow-2xl">
+        <div class="flex items-center gap-2 px-4 py-3 border-b border-white/10">
+          <span class="w-3 h-3 rounded-full bg-red-500/70"></span>
+          <span class="w-3 h-3 rounded-full bg-yellow-500/70"></span>
+          <span class="w-3 h-3 rounded-full bg-green-500/70"></span>
+          <span class="ml-2 text-xs text-gray-500 font-mono">cronfoundry-runner</span>
+        </div>
+        <div class="p-6 font-mono text-sm min-h-48">
+          <pre id="term-output" class="text-gray-300 whitespace-pre-wrap"></pre>
+          <span id="term-cursor" class="inline-block w-2 h-4 bg-gray-400 animate-pulse align-middle"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- PROBLEM -->
+    <section class="border-t border-white/10 bg-gray-900/50">
+      <div class="mx-auto max-w-6xl px-6 py-20">
+        <p class="text-center text-xs font-semibold uppercase tracking-widest text-gray-500 mb-12">Why existing tools fall short</p>
+        <div class="grid sm:grid-cols-3 gap-8">
+          <div class="rounded-xl border border-white/10 bg-gray-900 p-6">
+            <div class="text-2xl mb-4">&#x1F512;</div>
+            <h3 class="font-semibold text-white mb-2">Locked to one provider</h3>
+            <p class="text-sm text-gray-400">Claude Routines and ChatGPT Tasks don&rsquo;t support GitOps config, multi-destination outputs, or self-hosting. Your prompts and keys live in their cloud.</p>
+          </div>
+          <div class="rounded-xl border border-white/10 bg-gray-900 p-6">
+            <div class="text-2xl mb-4">&#x1F527;</div>
+            <h3 class="font-semibold text-white mb-2">Reinventing the wheel</h3>
+            <p class="text-sm text-gray-400">Generic cron + shell scripts work, but every team rebuilds prompt management, secret handling, output formatting, and observability from scratch.</p>
+          </div>
+          <div class="rounded-xl border border-white/10 bg-gray-900 p-6">
+            <div class="text-2xl mb-4">&#x1F310;</div>
+            <h3 class="font-semibold text-white mb-2">Too general-purpose</h3>
+            <p class="text-sm text-gray-400">n8n, Zapier, and Power Automate treat LLM steps as an afterthought. Config lives inside the tool, not in git. No streaming, no token accounting.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- HOW IT WORKS -->
+    <section class="mx-auto max-w-6xl px-6 py-20">
+      <h2 class="text-center text-3xl font-bold text-white mb-4">How it works</h2>
+      <p class="text-center text-gray-400 mb-16 max-w-xl mx-auto">Three steps from config to team-visible output.</p>
+      <div class="grid sm:grid-cols-3 gap-8">
+        <div class="text-center">
+          <div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-brand text-white font-bold text-lg mb-4">1</div>
+          <h3 class="font-semibold text-white mb-2">Define in YAML</h3>
+          <p class="text-sm text-gray-400 mb-4">Declare your skill path, schedule, provider, and destinations in <code class="text-indigo-400">cronfoundry.yaml</code>. Lives in your repo, reviewed like code.</p>
+          <div class="rounded-lg bg-gray-900 border border-white/10 p-4 text-left text-xs font-mono text-gray-300">
+<pre>skills:
+  - path: skills/digest
+    schedules:
+      - cron: "0 9 * * MON"
+        provider: openai
+        destinations:
+          - slack:
+              secret: slack_url</pre>
+          </div>
+        </div>
+        <div class="text-center">
+          <div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-brand text-white font-bold text-lg mb-4">2</div>
+          <h3 class="font-semibold text-white mb-2">Runs on schedule</h3>
+          <p class="text-sm text-gray-400 mb-4">CronFoundry fires the skill at the configured cron, streams a completion from your LLM provider, and parses any <code class="text-indigo-400">&lt;memory&gt;</code> blocks.</p>
+          <div class="rounded-lg bg-gray-900 border border-white/10 p-4 text-left text-xs font-mono text-gray-300">
+<pre>Streaming: gpt-4o-mini
+tokens: 1,243
+cost:    $0.0009
+status:  succeeded</pre>
+          </div>
+        </div>
+        <div class="text-center">
+          <div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-brand text-white font-bold text-lg mb-4">3</div>
+          <h3 class="font-semibold text-white mb-2">Output lands everywhere</h3>
+          <p class="text-sm text-gray-400 mb-4">Results publish in parallel to GitHub issues, Slack, Discord, or Teams. Learnings commit back as <code class="text-indigo-400">cronfoundry[bot]</code>.</p>
+          <div class="rounded-lg bg-gray-900 border border-white/10 p-4 text-left text-xs font-mono text-gray-300">
+<pre>&#x2713; GitHub issue #142
+&#x2713; #eng-digest (Slack)
+&#x2713; Writeback &#x2192; memory.md
+  (cronfoundry[bot])</pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- USE CASES -->
+    <section class="border-t border-white/10 bg-gray-900/50">
+      <div class="mx-auto max-w-6xl px-6 py-20">
+        <h2 class="text-center text-3xl font-bold text-white mb-4">Use cases</h2>
+        <p class="text-center text-gray-400 mb-16 max-w-xl mx-auto">What teams are already building with CronFoundry.</p>
+        <div class="grid sm:grid-cols-3 gap-6">
+          <div class="rounded-xl border border-white/10 bg-gray-900 p-6">
+            <div class="text-3xl mb-3">&#x1F4CB;</div>
+            <div class="text-xs font-semibold uppercase tracking-widest text-indigo-400 mb-2">Weekly digest</div>
+            <h3 class="font-semibold text-white mb-2">Engineering digest</h3>
+            <p class="text-sm text-gray-400">Summarizes last week&rsquo;s activity and posts to a GitHub issue + Slack. Next week&rsquo;s run has context because learnings commit back to <code class="text-gray-300">memory.md</code>.</p>
+          </div>
+          <div class="rounded-xl border border-white/10 bg-gray-900 p-6">
+            <div class="text-3xl mb-3">&#x1F6A8;</div>
+            <div class="text-xs font-semibold uppercase tracking-widest text-indigo-400 mb-2">Daily brief</div>
+            <h3 class="font-semibold text-white mb-2">On-call handoff</h3>
+            <p class="text-sm text-gray-400">Reads yesterday&rsquo;s alerts, generates a structured handoff, and posts an Adaptive Card to the on-call Teams channel every weekday at 08:30.</p>
+          </div>
+          <div class="rounded-xl border border-white/10 bg-gray-900 p-6">
+            <div class="text-3xl mb-3">&#x1F50D;</div>
+            <div class="text-xs font-semibold uppercase tracking-widest text-indigo-400 mb-2">Weekly triage</div>
+            <h3 class="font-semibold text-white mb-2">Backlog grooming</h3>
+            <p class="text-sm text-gray-400">Reviews the GitHub project board, identifies stale items, and files an issue with suggested actions &mdash; no manual triage required.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- COMPARISON -->
+    <section class="mx-auto max-w-6xl px-6 py-20">
+      <h2 class="text-center text-3xl font-bold text-white mb-4">Find the right tool</h2>
+      <p class="text-center text-gray-400 mb-12 max-w-xl mx-auto">Different tools, different jobs. An honest breakdown.</p>
+      <div class="overflow-x-auto rounded-xl border border-white/10">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-white/10 bg-gray-900">
+              <th class="px-4 py-3 text-left text-gray-400 font-medium"></th>
+              <th class="px-4 py-3 text-left text-white font-semibold">CronFoundry</th>
+              <th class="px-4 py-3 text-left text-gray-400 font-medium">gh&#8209;aw</th>
+              <th class="px-4 py-3 text-left text-gray-400 font-medium">Claude Routines</th>
+              <th class="px-4 py-3 text-left text-gray-400 font-medium">n8n / Zapier</th>
+              <th class="px-4 py-3 text-left text-gray-400 font-medium">cron + scripts</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-white/5 bg-gray-950">
+            <tr>
+              <td class="px-4 py-3 text-gray-400 font-medium">Config lives in</td>
+              <td class="px-4 py-3 text-white">Git (YAML)</td>
+              <td class="px-4 py-3 text-gray-400">Git (Markdown)</td>
+              <td class="px-4 py-3 text-gray-400">Vendor UI</td>
+              <td class="px-4 py-3 text-gray-400">Vendor UI</td>
+              <td class="px-4 py-3 text-gray-400">Shell scripts</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 text-gray-400 font-medium">Runs on</td>
+              <td class="px-4 py-3 text-white">Self-hosted Azure</td>
+              <td class="px-4 py-3 text-gray-400">GitHub Actions</td>
+              <td class="px-4 py-3 text-gray-400">Vendor cloud</td>
+              <td class="px-4 py-3 text-gray-400">Vendor cloud</td>
+              <td class="px-4 py-3 text-gray-400">Your infra</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 text-gray-400 font-medium">Output destinations</td>
+              <td class="px-4 py-3 text-white">Slack, Discord, Teams, GitHub</td>
+              <td class="px-4 py-3 text-gray-400">GitHub only</td>
+              <td class="px-4 py-3 text-gray-400">Email, notifications</td>
+              <td class="px-4 py-3 text-gray-400">Many</td>
+              <td class="px-4 py-3 text-gray-400">Whatever you code</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 text-gray-400 font-medium">LLM providers</td>
+              <td class="px-4 py-3 text-white">OpenAI, Anthropic, Azure AI</td>
+              <td class="px-4 py-3 text-gray-400">Copilot, Claude, Codex</td>
+              <td class="px-4 py-3 text-gray-400">Anthropic only</td>
+              <td class="px-4 py-3 text-gray-400">Via plugins</td>
+              <td class="px-4 py-3 text-gray-400">Whatever you integrate</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 text-gray-400 font-medium">Secrets</td>
+              <td class="px-4 py-3 text-white">Azure Key Vault</td>
+              <td class="px-4 py-3 text-gray-400">GH Actions secrets</td>
+              <td class="px-4 py-3 text-gray-400">Vendor-managed</td>
+              <td class="px-4 py-3 text-gray-400">Vendor-managed</td>
+              <td class="px-4 py-3 text-gray-400">Your choice</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 text-gray-400 font-medium">Self-hostable</td>
+              <td class="px-4 py-3 text-accent font-semibold">&#x2713;</td>
+              <td class="px-4 py-3 text-gray-500">&#x2717;</td>
+              <td class="px-4 py-3 text-gray-500">&#x2717;</td>
+              <td class="px-4 py-3 text-gray-400">&#x2713; (complex)</td>
+              <td class="px-4 py-3 text-accent font-semibold">&#x2713;</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 text-gray-400 font-medium">Open source</td>
+              <td class="px-4 py-3 text-accent font-semibold">&#x2713;</td>
+              <td class="px-4 py-3 text-accent font-semibold">&#x2713;</td>
+              <td class="px-4 py-3 text-gray-500">&#x2717;</td>
+              <td class="px-4 py-3 text-gray-400">&#x2713; (community ed.)</td>
+              <td class="px-4 py-3 text-gray-400">N/A</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 text-gray-400 font-medium">Best for</td>
+              <td class="px-4 py-3 text-white">Team-visible scheduled outputs</td>
+              <td class="px-4 py-3 text-gray-400">Repo automation</td>
+              <td class="px-4 py-3 text-gray-400">Personal schedules</td>
+              <td class="px-4 py-3 text-gray-400">General automation</td>
+              <td class="px-4 py-3 text-gray-400">Full DIY control</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="text-center text-xs text-gray-500 mt-4">gh-aw and CronFoundry are complementary &mdash; gh-aw improves your repo automatically; CronFoundry runs skills and tells your team.</p>
+    </section>
+
+    <!-- QUICK START -->
+    <section id="quickstart" class="border-t border-white/10 bg-gray-900/50">
+      <div class="mx-auto max-w-6xl px-6 py-20">
+        <h2 class="text-center text-3xl font-bold text-white mb-4">Up and running in one afternoon</h2>
+        <p class="text-center text-gray-400 mb-16 max-w-xl mx-auto">No cluster upkeep. No certificate rotation. One binary, one command.</p>
+        <div class="grid sm:grid-cols-2 gap-12 items-center">
+          <div>
+            <ol class="space-y-6">
+              <li class="flex gap-4">
+                <span class="flex-shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-full bg-brand text-white text-xs font-bold">1</span>
+                <div>
+                  <p class="text-white font-medium">Build the runner binary</p>
+                  <p class="text-sm text-gray-400 mt-1">A single ~25 MB static binary. No runtime dependencies.</p>
+                </div>
+              </li>
+              <li class="flex gap-4">
+                <span class="flex-shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-full bg-brand text-white text-xs font-bold">2</span>
+                <div>
+                  <p class="text-white font-medium">Set your API key</p>
+                  <p class="text-sm text-gray-400 mt-1">Works with OpenAI, Anthropic, or Azure AI Foundry.</p>
+                </div>
+              </li>
+              <li class="flex gap-4">
+                <span class="flex-shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-full bg-brand text-white text-xs font-bold">3</span>
+                <div>
+                  <p class="text-white font-medium">Run against the bundled fixture</p>
+                  <p class="text-sm text-gray-400 mt-1">Streams a real completion. Publishes to your Slack. Commits learnings.</p>
+                </div>
+              </li>
+            </ol>
+            <div class="mt-8">
+              <a href="https://github.com/gambtho/cronfoundry#quick-start" class="text-sm font-semibold text-indigo-400 hover:text-indigo-300 transition-colors">Read the full quick-start guide &rarr;</a>
+            </div>
+          </div>
+          <div class="rounded-xl bg-gray-900 border border-white/10 p-6 font-mono text-sm text-gray-300">
+            <p class="text-gray-500 mb-1"># 1. Build</p>
+            <p class="mb-4">go build -o cronfoundry-runner ./cmd/runner</p>
+            <p class="text-gray-500 mb-1"># 2. Set key</p>
+            <p class="mb-4">export OPENAI_API_KEY='sk-...'</p>
+            <p class="text-gray-500 mb-1"># 3. Run smoke fixture</p>
+            <p>./cronfoundry-runner run \</p>
+            <p class="pl-4">--repo ./testdata \</p>
+            <p class="pl-4">--skill-path skills/weekly-digest \</p>
+            <p class="pl-4">--schedule-name monday-morning \</p>
+            <p class="pl-4">--dry-run</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ROADMAP -->
+    <section class="mx-auto max-w-6xl px-6 py-20">
+      <h2 class="text-center text-3xl font-bold text-white mb-4">Roadmap</h2>
+      <p class="text-center text-gray-400 mb-16 max-w-xl mx-auto">Building in the open, phase by phase.</p>
+      <div class="grid sm:grid-cols-4 gap-4 mb-12">
+        <div class="rounded-xl border border-accent/40 bg-accent/5 p-5">
+          <div class="text-xs font-semibold uppercase tracking-widest text-accent mb-2">P1 &middot; Done &#x2713;</div>
+          <h3 class="font-semibold text-white mb-2">Core runner</h3>
+          <p class="text-xs text-gray-400">Single binary, all LLM providers, all destinations, writeback, full test suite.</p>
+        </div>
+        <div class="rounded-xl border border-brand/40 bg-brand/5 p-5">
+          <div class="text-xs font-semibold uppercase tracking-widest text-indigo-400 mb-2">P2 &middot; In progress &#x1F528;</div>
+          <h3 class="font-semibold text-white mb-2">Scheduler + API</h3>
+          <p class="text-xs text-gray-400">Postgres, cron scheduler, REST API, Azure Key Vault integration.</p>
+        </div>
+        <div class="rounded-xl border border-white/10 bg-gray-900 p-5">
+          <div class="text-xs font-semibold uppercase tracking-widest text-gray-500 mb-2">P3 &middot; Planned &#x1F4CB;</div>
+          <h3 class="font-semibold text-white mb-2">Web UI</h3>
+          <p class="text-xs text-gray-400">React dashboard, GitHub OAuth, secret CRUD, run history, live log tail.</p>
+        </div>
+        <div class="rounded-xl border border-white/10 bg-gray-900 p-5">
+          <div class="text-xs font-semibold uppercase tracking-widest text-gray-500 mb-2">P4 &middot; Planned &#x1F4CB;</div>
+          <h3 class="font-semibold text-white mb-2">Azure deploy</h3>
+          <p class="text-xs text-gray-400">Bicep template, GHCR images, one-command deploy from empty subscription.</p>
+        </div>
+      </div>
+      <div class="text-center">
+        <p class="text-sm text-gray-500 mb-3">Fast-follow after P4:</p>
+        <div class="flex flex-wrap justify-center gap-2">
+          <span class="rounded-full border border-white/10 bg-gray-900 px-3 py-1 text-xs text-gray-400">MCP tool support</span>
+          <span class="rounded-full border border-white/10 bg-gray-900 px-3 py-1 text-xs text-gray-400">GitHub Copilot Enterprise</span>
+          <span class="rounded-full border border-white/10 bg-gray-900 px-3 py-1 text-xs text-gray-400">Auto-pause on failure</span>
+          <span class="rounded-full border border-white/10 bg-gray-900 px-3 py-1 text-xs text-gray-400">Helm / AKS</span>
+          <span class="rounded-full border border-white/10 bg-gray-900 px-3 py-1 text-xs text-gray-400">Multi-cloud</span>
+          <span class="rounded-full border border-white/10 bg-gray-900 px-3 py-1 text-xs text-gray-400">Hosted SaaS</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- COMMUNITY CTA -->
+    <section class="border-t border-white/10 bg-gray-900">
+      <div class="mx-auto max-w-6xl px-6 py-20">
+        <h2 class="text-center text-3xl font-bold text-white mb-4">Join the community</h2>
+        <p class="text-center text-gray-400 mb-16 max-w-xl mx-auto">CronFoundry is free, open-source, and actively built in the open.</p>
+        <div class="grid sm:grid-cols-3 gap-8 mb-16">
+          <div class="text-center">
+            <div class="text-4xl mb-4">&#x2B50;</div>
+            <h3 class="font-semibold text-white mb-2">Star the repo</h3>
+            <p class="text-sm text-gray-400 mb-4">If CronFoundry solves a problem you have, a star helps others find it.</p>
+            <a href="https://github.com/gambtho/cronfoundry" class="inline-flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white hover:bg-white/20 transition-colors">
+              <svg aria-hidden="true" class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 .587l3.668 7.431 8.2 1.192-5.934 5.782 1.4 8.162L12 18.897l-7.334 3.857 1.4-8.162L.132 9.21l8.2-1.192z"/></svg>
+              Star on GitHub
+            </a>
+          </div>
+          <div class="text-center">
+            <div class="text-4xl mb-4">&#x1F6E0;</div>
+            <h3 class="font-semibold text-white mb-2">Contribute</h3>
+            <p class="text-sm text-gray-400 mb-4">P2 and P3 are actively being built. Good first issues are labeled and ready.</p>
+            <a href="https://github.com/gambtho/cronfoundry/issues?q=label%3A%22good+first+issue%22" class="inline-flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white hover:bg-white/20 transition-colors">
+              Browse issues &rarr;
+            </a>
+          </div>
+          <div class="text-center">
+            <div class="text-4xl mb-4">&#x1F4AC;</div>
+            <h3 class="font-semibold text-white mb-2">Discuss</h3>
+            <p class="text-sm text-gray-400 mb-4">Ideas, use cases, integration questions &mdash; all welcome in GitHub Discussions.</p>
+            <a href="https://github.com/gambtho/cronfoundry/discussions" class="inline-flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white hover:bg-white/20 transition-colors">
+              Open a discussion &rarr;
+            </a>
+          </div>
+        </div>
+        <div class="flex flex-wrap justify-center gap-3">
+          <img src="https://img.shields.io/github/stars/gambtho/cronfoundry?style=flat-square&labelColor=1f2937&color=4F46E5" alt="GitHub Stars" width="100" height="20" />
+          <img src="https://img.shields.io/github/forks/gambtho/cronfoundry?style=flat-square&labelColor=1f2937&color=4F46E5" alt="GitHub Forks" width="86" height="20" />
+          <img src="https://img.shields.io/github/license/gambtho/cronfoundry?style=flat-square&labelColor=1f2937&color=10B981" alt="License" width="86" height="20" />
+          <img src="https://img.shields.io/github/last-commit/gambtho/cronfoundry?style=flat-square&labelColor=1f2937&color=6b7280" alt="Last Commit" width="120" height="20" />
+        </div>
+      </div>
+    </section>
+
+    <!-- FOOTER -->
+    <footer class="border-t border-white/10 bg-gray-950">
+      <div class="mx-auto max-w-6xl px-6 py-8 flex flex-wrap items-center justify-between gap-4 text-sm text-gray-500">
+        <span>CronFoundry &middot; MIT License</span>
+        <div class="flex items-center gap-4">
+          <span>Built with Go</span>
+          <a href="https://github.com/gambtho/cronfoundry" class="hover:text-white transition-colors">GitHub</a>
+        </div>
+      </div>
+    </footer>
+
+  </main>
+
+<script>
+  const TERM_LINES = [
+    { text: '$ cronfoundry-runner run \\', delay: 40 },
+    { text: '    --repo ./my-skills \\', delay: 30 },
+    { text: '    --skill-path skills/weekly-digest \\', delay: 30 },
+    { text: '    --schedule-name monday-morning', delay: 30 },
+    { text: '', delay: 0 },
+    { text: 'Loading skill: skills/weekly-digest/SKILL.md', delay: 20, cls: 'text-gray-500' },
+    { text: 'Provider: openai  Model: gpt-4o-mini', delay: 20, cls: 'text-gray-500' },
+    { text: 'Streaming completion...', delay: 20, cls: 'text-gray-500' },
+    { text: '', delay: 0 },
+    { text: '## Weekly Digest \u2014 2026-04-21', delay: 15, cls: 'text-white' },
+    { text: 'This week the team shipped the scheduler (P2a),', delay: 15, cls: 'text-white' },
+    { text: 'merged 7 PRs, and closed 3 issues...', delay: 15, cls: 'text-white' },
+    { text: '', delay: 0 },
+    { text: '\u2713 Published \u2192 GitHub issue #142', delay: 20, cls: 'text-green-400' },
+    { text: '\u2713 Published \u2192 #eng-digest (Slack)', delay: 20, cls: 'text-green-400' },
+    { text: '\u2713 Writeback committed as cronfoundry[bot]', delay: 20, cls: 'text-green-400' },
+    { text: '', delay: 0 },
+    { text: '{"status":"succeeded","tokens":1243,"cost_usd":0.0009}', delay: 10, cls: 'text-gray-500' },
+  ];
+
+  let termGeneration = 0;
+
+  function runTerminal() {
+    const out = document.getElementById('term-output');
+    if (!out) return;
+    const myGen = ++termGeneration;
+    out.textContent = '';
+    let lineIdx = 0, charIdx = 0, currentSpan = null;
+
+    function tick() {
+      if (myGen !== termGeneration) return;
+      if (lineIdx >= TERM_LINES.length) {
+        setTimeout(runTerminal, 3000);
+        return;
+      }
+      const line = TERM_LINES[lineIdx];
+      if (line.text === '') {
+        out.appendChild(document.createTextNode('\n'));
+        lineIdx++; charIdx = 0; currentSpan = null;
+        setTimeout(tick, 150);
+        return;
+      }
+      if (charIdx === 0) {
+        currentSpan = document.createElement('span');
+        currentSpan.className = line.cls || 'text-gray-300';
+        out.appendChild(currentSpan);
+      }
+      if (charIdx < line.text.length) {
+        if (!currentSpan) return;
+        currentSpan.textContent += line.text[charIdx];
+        charIdx++;
+        setTimeout(tick, line.delay);
+      } else {
+        out.appendChild(document.createTextNode('\n'));
+        lineIdx++; charIdx = 0; currentSpan = null;
+        setTimeout(tick, line.delay === 0 ? 0 : 80);
+      }
+    }
+    tick();
+  }
+
+  document.addEventListener('DOMContentLoaded', runTerminal);
+</script>
+</body>
+</html>
