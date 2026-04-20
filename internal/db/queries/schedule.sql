@@ -68,3 +68,15 @@ SELECT s.id       AS schedule_id,
 FROM schedule s
 JOIN skill sk ON sk.id = s.skill_id
 WHERE s.id = $1;
+
+-- name: ListDueSchedulesWithSha :many
+-- Like ListDueSchedules but joins the skill to include current_sha so
+-- the scheduler can set it on the new run row without a second query.
+SELECT s.*,
+       sk.current_sha AS skill_sha
+FROM schedule s
+JOIN skill sk ON sk.id = s.skill_id
+WHERE s.enabled = true
+  AND s.next_fire_at IS NOT NULL
+  AND s.next_fire_at <= now()
+ORDER BY s.next_fire_at ASC;
