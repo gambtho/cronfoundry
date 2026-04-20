@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"os"
@@ -13,6 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gambtho/cronfoundry/internal/githubtest"
+	"github.com/gambtho/cronfoundry/internal/secretstore"
+	"github.com/gambtho/cronfoundry/internal/webapi"
 )
 
 // TestServe_BootsAndHealthz verifies the full serve boot flow:
@@ -38,6 +41,10 @@ func TestServe_BootsAndHealthz(t *testing.T) {
 	pemPath := filepath.Join(t.TempDir(), "app.pem")
 	require.NoError(t, os.WriteFile(pemPath, priv, 0o600))
 	t.Setenv(envGitHubAppPEM, pemPath)
+
+	t.Setenv(envOAuthClientID, "cid")
+	t.Setenv(envOAuthClientSecret, "csec")
+	t.Setenv(envAdminLogins, "alice")
 
 	// Run admin init first so organization exists.
 	require.NoError(t, runAdminInit(context.Background(), "test-org"))
@@ -105,4 +112,103 @@ func TestServe_MissingGitHubAppID(t *testing.T) {
 	err := runServe(context.Background(), "127.0.0.1:0", 30*time.Second)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), envGitHubAppID)
+}
+
+func TestServe_APIMe_WithSession(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	dsn, teardown := bootPostgres(t)
+	defer teardown()
+
+	masterKey := mustMasterKey(t)
+	t.Setenv(envMasterKey, masterKey)
+	t.Setenv(envDatabaseURL, dsn)
+	t.Setenv(envGitHubAppID, "42")
+
+	priv, _ := githubtest.MustPrivateKey(t)
+	pemPath := filepath.Join(t.TempDir(), "app.pem")
+	require.NoError(t, os.WriteFile(pemPath, priv, 0o600))
+	t.Setenv(envGitHubAppPEM, pemPath)
+
+	t.Setenv(envOAuthClientID, "cid")
+	t.Setenv(envOAuthClientSecret, "csec")
+	t.Setenv(envAdminLogins, "alice")
+
+	require.NoError(t, runAdminInit(context.Background(), "test-org"))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	addr := "127.0.0.1:18090"
+	errCh := make(chan error, 1)
+	go func() { errCh <- runServe(ctx, addr, 30*time.Second) }()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		resp, err := http.Get("http://" + addr + "/healthz")
+		if err == nil && resp.StatusCode == 200 {
+			resp.Body.Close()
+			break
+		}
+		if resp != nil {
+			resp.Body.Close()
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	masterBytes, err := secretstore.ParseMasterKey(masterKey)
+	require.NoError(t, err)
+	cookie, err := webapi.SignSession(
+		webapi.SessionClaims{Login: "alice", Role: "admin"},
+		masterBytes,
+		time.Hour,
+	)
+	require.NoError(t, err)
+
+	req, _ := http.NewRequest("GET", "http://"+addr+"/api/me", nil)
+	req.AddCookie(&http.Cookie{Name: "cf_session", Value: cookie})
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, 200, resp.StatusCode)
+
+	var got map[string]string
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&got))
+	assert.Equal(t, "alice", got["login"])
+	assert.Equal(t, "admin", got["role"])
+
+	cancel()
+	select {
+	case err := <-errCh:
+		assert.True(t, err == nil || err == context.Canceled)
+	case <-time.After(15 * time.Second):
+		t.Fatal("serve did not shut down")
+	}
+}
+
+func TestServe_MissingOAuthClientID(t *testing.T) {
+	t.Setenv(envMasterKey, mustMasterKey(t))
+	t.Setenv(envDatabaseURL, "postgres://example")
+	t.Setenv(envGitHubAppID, "42")
+	t.Setenv(envGitHubAppPEM, "/tmp/nonexistent.pem")
+	t.Setenv(envOAuthClientID, "")
+	t.Setenv(envOAuthClientSecret, "csec")
+	t.Setenv(envAdminLogins, "alice")
+	err := runServe(context.Background(), "127.0.0.1:0", 30*time.Second)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), envOAuthClientID)
+}
+
+func TestServe_MissingAdminLogins(t *testing.T) {
+	t.Setenv(envMasterKey, mustMasterKey(t))
+	t.Setenv(envDatabaseURL, "postgres://example")
+	t.Setenv(envGitHubAppID, "42")
+	t.Setenv(envGitHubAppPEM, "/tmp/nonexistent.pem")
+	t.Setenv(envOAuthClientID, "cid")
+	t.Setenv(envOAuthClientSecret, "csec")
+	t.Setenv(envAdminLogins, "")
+	err := runServe(context.Background(), "127.0.0.1:0", 30*time.Second)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), envAdminLogins)
 }

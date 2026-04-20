@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -20,6 +21,14 @@ import (
 	"github.com/gambtho/cronfoundry/internal/scheduler"
 	"github.com/gambtho/cronfoundry/internal/secretstore"
 	"github.com/gambtho/cronfoundry/internal/token"
+	"github.com/gambtho/cronfoundry/internal/webapi"
+)
+
+const (
+	envOAuthClientID     = "CRONFOUNDRY_GITHUB_OAUTH_CLIENT_ID"
+	envOAuthClientSecret = "CRONFOUNDRY_GITHUB_OAUTH_CLIENT_SECRET"
+	envAdminLogins       = "CRONFOUNDRY_ADMIN_LOGINS"
+	envViewerLogins      = "CRONFOUNDRY_VIEWER_LOGINS"
 )
 
 func newServeCmd() *cobra.Command {
@@ -56,6 +65,22 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 	if appID == "" || pemPath == "" {
 		return fmt.Errorf("%s and %s are required", envGitHubAppID, envGitHubAppPEM)
 	}
+
+	oauthClientID := os.Getenv(envOAuthClientID)
+	oauthClientSecret := os.Getenv(envOAuthClientSecret)
+	adminLoginsRaw := os.Getenv(envAdminLogins)
+	if oauthClientID == "" {
+		return fmt.Errorf("%s is required", envOAuthClientID)
+	}
+	if oauthClientSecret == "" {
+		return fmt.Errorf("%s is required", envOAuthClientSecret)
+	}
+	if adminLoginsRaw == "" {
+		return fmt.Errorf("%s must contain at least one login", envAdminLogins)
+	}
+	adminLogins := splitLogins(adminLoginsRaw)
+	viewerLogins := splitLogins(os.Getenv(envViewerLogins))
+
 	pemBytes, err := os.ReadFile(pemPath)
 	if err != nil {
 		return fmt.Errorf("read PEM: %w", err)
@@ -92,12 +117,24 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 	}
 
 	// --- Build API + scheduler ---
-	srv := api.NewServer(addr, api.Deps{
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("ok"))
+	})
+	api.RegisterRoutes(mux, api.Deps{
 		Pool:          pool,
 		Signer:        signer,
 		Secrets:       store,
 		Installations: installs,
 	})
+	webapi.RegisterRoutes(mux, webapi.Deps{
+		MasterKey:         master,
+		OAuthClientID:     oauthClientID,
+		OAuthClientSecret: oauthClientSecret,
+		AdminLogins:       adminLogins,
+		ViewerLogins:      viewerLogins,
+	})
+	srv := &http.Server{Addr: addr, Handler: mux}
 
 	self, err := os.Executable()
 	if err != nil {
@@ -151,4 +188,18 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 		slog.Warn("serve: api shutdown error", "err", err)
 	}
 	return nil
+}
+
+func splitLogins(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
 }
