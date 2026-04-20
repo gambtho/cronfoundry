@@ -22,21 +22,9 @@ type Deps struct {
 	Installations *github.InstallationCache
 }
 
-// NewServer builds an *http.Server with all handlers registered under
-// /internal/*. Bind the returned server to a localhost address (default
-// in `cronfoundry serve` is 127.0.0.1:8080).
-func NewServer(addr string, deps Deps) *http.Server {
-	mux := http.NewServeMux()
-
-	// Health check is unauthenticated.
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte("ok"))
-	})
-
-	// All /internal/runs/* and /internal/secrets and /internal/repos/*
-	// routes require a valid per-run bearer token. When a pool is present,
-	// the middleware also binds the token to run.runner_token_hash — a
-	// replayed or leaked JWT is rejected once the hash column rotates.
+// RegisterRoutes registers all /internal/* routes on mux.
+// The caller is responsible for the /healthz route and http.Server construction.
+func RegisterRoutes(mux *http.ServeMux, deps Deps) {
 	auth := requireBearer(deps.Signer, deps.Pool)
 
 	mux.Handle("GET /internal/runs/{id}/context", auth(runContextHandler{deps}))
@@ -49,7 +37,17 @@ func NewServer(addr string, deps Deps) *http.Server {
 	// Manual trigger is unauthenticated (CLI-local). P3 will gate behind UI
 	// session auth.
 	mux.Handle("POST /internal/schedules/{id}/run-now", runNowHandler{deps})
+}
 
+// NewServer builds an *http.Server with all handlers registered under
+// /internal/*. Bind the returned server to a localhost address (default
+// in `cronfoundry serve` is 127.0.0.1:8080).
+func NewServer(addr string, deps Deps) *http.Server {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("ok"))
+	})
+	RegisterRoutes(mux, deps)
 	return &http.Server{Addr: addr, Handler: mux}
 }
 
