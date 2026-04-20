@@ -105,16 +105,16 @@ func UpsertSkillsAndSchedules(
 			}
 
 			if _, err := q.UpsertSchedule(ctx, dbgen.UpsertScheduleParams{
-				OrgID:            orgID,
-				SkillID:          skillID,
-				Name:             sch.Name,
-				Cron:             sch.Cron,
-				Timezone:         timezone,
-				OverlapPolicy:    overlap,
-				TimeoutSec:       int32(timeoutSec),
-				Enabled:          true,
-				Provider:         sch.Provider,
-				Model:            sch.Model,
+				OrgID:         orgID,
+				SkillID:       skillID,
+				Name:          sch.Name,
+				Cron:          sch.Cron,
+				Timezone:      timezone,
+				OverlapPolicy: overlap,
+				TimeoutSec:    int32(timeoutSec),
+				Enabled:       true,
+				Provider:      sch.Provider,
+				Model:         sch.Model,
 				// sqlc emits *string for nullable text columns
 				// (emit_pointers_for_null_types: true). nil represents NULL.
 				LlmSecretRef:     nil,
