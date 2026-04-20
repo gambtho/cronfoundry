@@ -16,14 +16,14 @@ import (
 
 // ServeHTTP implements GET /internal/repos/{id}/clone-url.
 //
-// Returns an HTTPS URL with the GitHub App installation token embedded as
-// the basic-auth password. Runners use this to shallow-clone via go-git
-// without ever seeing the App private key.
+// When GitHubCloneBase is empty (production), returns an HTTPS URL with the
+// GitHub App installation token embedded as x-access-token basic-auth so
+// runners can clone private repos without seeing the App private key.
+// When GitHubCloneBase is set (tests), returns a plain URL against that base.
 //
 // Access is scoped to the authenticated run's own repo: the handler looks
 // up run.schedule.skill.repo_id via the run_id in the bearer claims and
-// rejects with 403 if the requested repo_id doesn't match. This prevents
-// any runner bearer from fetching an arbitrary repo's clone URL.
+// rejects with 403 if the requested repo_id doesn't match.
 func (h cloneURLHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	repoID, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
@@ -59,7 +59,7 @@ func (h cloneURLHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err = h.deps.Installations.Token(r.Context(), row.GithubAppInstallID)
+	tok, err := h.deps.Installations.Token(r.Context(), row.GithubAppInstallID)
 	if err != nil {
 		slog.Error("clone_url: mint install token failed",
 			"repo_id", repoID, "install_id", row.GithubAppInstallID, "err", err)
@@ -67,13 +67,14 @@ func (h cloneURLHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cloneBase := "https://github.com"
-	suffix := ".git"
+	var cloneURL string
 	if h.deps.GitHubCloneBase != "" {
-		cloneBase = h.deps.GitHubCloneBase
-		suffix = ""
+		// Test override — plain URL, no credentials needed.
+		cloneURL = fmt.Sprintf("%s/%s/%s", h.deps.GitHubCloneBase, row.Owner, row.Name)
+	} else {
+		// Embed token as basic-auth so runners can clone private repos.
+		cloneURL = fmt.Sprintf("https://x-access-token:%s@github.com/%s/%s.git", tok, row.Owner, row.Name)
 	}
-	cloneURL := fmt.Sprintf("%s/%s/%s%s", cloneBase, row.Owner, row.Name, suffix)
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"url": cloneURL})
 }

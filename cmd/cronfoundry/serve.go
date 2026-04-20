@@ -82,7 +82,7 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 	installs := github.NewInstallationCache(github.InstallationCacheConfig{
 		AppID:      appID,
 		PrivateKey: pemBytes,
-		BaseURL:    os.Getenv("CRONFOUNDRY_GITHUB_BASE_URL"),
+		BaseURL:    os.Getenv(envGitHubBaseURL),
 	})
 
 	// --- Initial orphan sweep ---
@@ -98,7 +98,7 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 		Signer:          signer,
 		Secrets:         store,
 		Installations:   installs,
-		GitHubCloneBase: os.Getenv("CRONFOUNDRY_GITHUB_CLONE_BASE"),
+		GitHubCloneBase: os.Getenv(envGitHubCloneBase),
 	})
 
 	self, err := os.Executable()

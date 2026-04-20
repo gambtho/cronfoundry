@@ -30,7 +30,6 @@ func TestWritebackPush_RejectsMismatchedRunID(t *testing.T) {
 	runID, orgID := seedRun(t, pool)
 	// Seed a second run so the URL path differs from the JWT claim.
 	runID2, _ := seedRunInOrg(t, pool, orgID)
-	bindRunHash(t, pool, runID, "dummy-hash")
 
 	signer := token.New(randomMaster(t))
 	// Sign for runID but request runID2's URL — middleware passes (runID exists),

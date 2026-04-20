@@ -40,6 +40,10 @@ func runAdminListRuns(ctx context.Context, limit int, scheduleName string, out i
 	if limit <= 0 {
 		limit = 20
 	}
+	const maxLimit = 1000
+	if limit > maxLimit {
+		limit = maxLimit
+	}
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 

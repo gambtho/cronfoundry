@@ -44,11 +44,22 @@ listens on `127.0.0.1:8080` by default.
 
 ### 3. Initialize the database and seed the org
 
+Build the host binary first, then run init:
+
 ```bash
+make build
+
 # First run: generates a master key and runs migrations.
 ./cronfoundry admin init
-# Copy the printed CRONFOUNDRY_MASTER_KEY into .env.local, then re-run:
+# Copy the printed CRONFOUNDRY_MASTER_KEY into .env.local, then source it and re-run:
+source .env.local
 ./cronfoundry admin init
+```
+
+Alternatively, run init inside the container:
+
+```bash
+docker compose -f deploy/docker-compose.yml exec cronfoundry /cronfoundry admin init
 ```
 
 ### 4. Connect a repo
@@ -76,7 +87,11 @@ echo 'sk-...'                               | ./cronfoundry admin set-secret ope
 
 ```bash
 # Look up the schedule UUID:
-./cronfoundry admin list-runs   # or query Postgres directly
+./cronfoundry admin list-schedules
+
+# Wire the LLM secret to the schedule (required until the P3 UI exposes this):
+psql "$CRONFOUNDRY_DATABASE_URL" \
+  -c "UPDATE schedule SET llm_secret_ref = 'openai_key' WHERE name = '<schedule-name>';"
 
 curl -s -X POST http://127.0.0.1:8080/internal/schedules/<schedule-id>/run-now \
   -H 'Content-Type: application/json' -d '{}'

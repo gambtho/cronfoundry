@@ -147,7 +147,6 @@ func (r *Runner) Run(ctx context.Context, in RunInput) (RunResult, error) {
 		Model:      sch.Model,
 		MaxTokens:  skill.Frontmatter.MaxTokens,
 		APIKey:     in.LLMAPIKey,
-		Endpoint:   in.LLMEndpoint,
 		Deployment: in.LLMDeployment,
 	}, func(c llm.StreamChunk) { sb.WriteString(c.Delta) })
 	if err != nil {

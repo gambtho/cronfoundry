@@ -130,7 +130,18 @@ func TestE2E_FullScheduleFire(t *testing.T) {
 	serveCmd.Stdout = serveLogs
 	serveCmd.Stderr = serveLogs
 	require.NoError(t, serveCmd.Start())
-	defer func() { _ = serveCmd.Process.Kill() }()
+	defer func() {
+		// Request graceful shutdown first; fall back to kill after 5s.
+		serveCancel()
+		done := make(chan struct{})
+		go func() { _ = serveCmd.Wait(); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			_ = serveCmd.Process.Kill()
+			<-done
+		}
+	}()
 
 	// Wait for healthz.
 	require.Eventually(t, func() bool {
@@ -147,15 +158,14 @@ func TestE2E_FullScheduleFire(t *testing.T) {
 	runID := triggerRunNow(t, "http://"+e2eAddr, scheduleID)
 
 	// Step 9: poll for run to finalize.
+	pollPool, err := pgxpool.New(context.Background(), dsn)
+	require.NoError(t, err)
+	defer pollPool.Close()
+
 	var finalStatus string
 	require.Eventually(t, func() bool {
-		pool, err := pgxpool.New(context.Background(), dsn)
-		if err != nil {
-			return false
-		}
-		defer pool.Close()
 		var status string
-		err = pool.QueryRow(context.Background(),
+		err := pollPool.QueryRow(context.Background(),
 			`SELECT status FROM run WHERE id = $1`, runID).Scan(&status)
 		if err == nil && status != "pending" && status != "running" {
 			finalStatus = status

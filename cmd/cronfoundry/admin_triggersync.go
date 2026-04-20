@@ -20,8 +20,10 @@ import (
 )
 
 const (
-	envGitHubAppID  = "CRONFOUNDRY_GITHUB_APP_ID"
-	envGitHubAppPEM = "CRONFOUNDRY_GITHUB_APP_PEM"
+	envGitHubAppID     = "CRONFOUNDRY_GITHUB_APP_ID"
+	envGitHubAppPEM    = "CRONFOUNDRY_GITHUB_APP_PEM"
+	envGitHubBaseURL   = "CRONFOUNDRY_GITHUB_BASE_URL"
+	envGitHubCloneBase = "CRONFOUNDRY_GITHUB_CLONE_BASE"
 )
 
 func newAdminTriggerSyncCmd() *cobra.Command {
@@ -94,9 +96,9 @@ func runAdminTriggerSync(ctx context.Context, repo string, out io.Writer) error 
 	cache := github.NewInstallationCache(github.InstallationCacheConfig{
 		AppID:      appID,
 		PrivateKey: pemBytes,
-		BaseURL:    os.Getenv("CRONFOUNDRY_GITHUB_BASE_URL"),
+		BaseURL:    os.Getenv(envGitHubBaseURL),
 	})
-	cloneBase := os.Getenv("CRONFOUNDRY_GITHUB_CLONE_BASE")
+	cloneBase := strings.TrimRight(os.Getenv(envGitHubCloneBase), "/")
 	var cloneURLFor func(owner, name string) string
 	if cloneBase != "" {
 		cloneURLFor = func(owner, name string) string {
@@ -107,7 +109,7 @@ func runAdminTriggerSync(ctx context.Context, repo string, out io.Writer) error 
 		Pool:          pool,
 		OrgID:         org.ID,
 		Installations: cache,
-		GitHubBaseURL: os.Getenv("CRONFOUNDRY_GITHUB_BASE_URL"),
+		GitHubBaseURL: os.Getenv(envGitHubBaseURL),
 		CloneURLFor:   cloneURLFor,
 	})
 
