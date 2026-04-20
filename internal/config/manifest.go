@@ -107,3 +107,67 @@ func ParseManifest(data []byte) (*Manifest, error) {
 	}
 	return &m, nil
 }
+
+var validOverlap = map[string]bool{
+	"":           true, // default to skip
+	"skip":       true,
+	"queue":      true,
+	"concurrent": true,
+}
+
+func (m *Manifest) Validate() error {
+	if m.Version == 0 {
+		return fmt.Errorf("version: required")
+	}
+	if m.Version != 1 {
+		return fmt.Errorf("version %d not supported (supported: 1)", m.Version)
+	}
+	seenSkills := map[string]bool{}
+	for _, s := range m.Skills {
+		if s.Path == "" {
+			return fmt.Errorf("skill: path required")
+		}
+		if seenSkills[s.Path] {
+			return fmt.Errorf("duplicate skill path %q", s.Path)
+		}
+		seenSkills[s.Path] = true
+
+		seenSched := map[string]bool{}
+		for _, sch := range s.Schedules {
+			if sch.Name == "" {
+				return fmt.Errorf("skill %q: schedule name required", s.Path)
+			}
+			if seenSched[sch.Name] {
+				return fmt.Errorf("skill %q: duplicate schedule name %q", s.Path, sch.Name)
+			}
+			seenSched[sch.Name] = true
+			if sch.Cron == "" {
+				return fmt.Errorf("skill %q schedule %q: cron required", s.Path, sch.Name)
+			}
+			if sch.Provider == "" {
+				return fmt.Errorf("skill %q schedule %q: provider required", s.Path, sch.Name)
+			}
+			if sch.Model == "" {
+				return fmt.Errorf("skill %q schedule %q: model required", s.Path, sch.Name)
+			}
+			if !validOverlap[sch.OverlapPolicy] {
+				return fmt.Errorf("skill %q schedule %q: overlap_policy %q invalid (want: skip|queue|concurrent)", s.Path, sch.Name, sch.OverlapPolicy)
+			}
+		}
+	}
+	return nil
+}
+
+func (m *Manifest) FindSchedule(skillPath, scheduleName string) (*SkillEntry, *Schedule, error) {
+	for i := range m.Skills {
+		if m.Skills[i].Path == skillPath {
+			for j := range m.Skills[i].Schedules {
+				if m.Skills[i].Schedules[j].Name == scheduleName {
+					return &m.Skills[i], &m.Skills[i].Schedules[j], nil
+				}
+			}
+			return nil, nil, fmt.Errorf("schedule %q not found under skill %q", scheduleName, skillPath)
+		}
+	}
+	return nil, nil, fmt.Errorf("skill %q not found in manifest", skillPath)
+}
