@@ -1,4 +1,14 @@
 -- +goose Up
+--
+-- NOTE: these are single-column FKs to organization(id). They prevent orphan
+-- rows but don't enforce same-org relationships between children (e.g.,
+-- schedule.org_id matching its skill.org_id). Composite FKs like
+--   FOREIGN KEY (org_id, skill_id) REFERENCES skill(org_id, id)
+-- would enforce that — requiring UNIQUE (org_id, id) indexes on each parent
+-- and coordinated drop/re-add of the existing ON DELETE CASCADE FKs. That
+-- hardening is deferred to a future migration once the full multi-tenant
+-- surface is exercised; the MVP is single-tenant so the current constraints
+-- are sufficient.
 
 -- Retrofit missing org_id FKs. In the original migrations, only
 -- repo_connection declared REFERENCES organization(id). The others relied on

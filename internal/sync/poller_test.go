@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gambtho/cronfoundry/internal/github"
+	"github.com/gambtho/cronfoundry/internal/githubtest"
 )
 
 // buildRepo creates a bare repo seeded with a cronfoundry.yaml + SKILL.md
@@ -109,7 +110,7 @@ prompt
 	tokSrv := fakeTokenServer(t)
 	defer tokSrv.Close()
 
-	privPEM, _ := github.MustTestPrivateKey(t)
+	privPEM, _ := githubtest.MustPrivateKey(t)
 
 	cache := github.NewInstallationCache(github.InstallationCacheConfig{
 		AppID:      "42",
@@ -178,7 +179,7 @@ func TestPoller_SyncOne_HeadCheckFailure_MarksError(t *testing.T) {
 	tokSrv := fakeTokenServer(t)
 	defer tokSrv.Close()
 
-	privPEM, _ := github.MustTestPrivateKey(t)
+	privPEM, _ := githubtest.MustPrivateKey(t)
 	cache := github.NewInstallationCache(github.InstallationCacheConfig{
 		AppID:      "42",
 		PrivateKey: privPEM,

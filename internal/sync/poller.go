@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 
@@ -15,6 +16,13 @@ import (
 
 // PollerConfig bundles the poller's collaborators. Only Pool, OrgID, and
 // Installations are required; the rest have sensible defaults.
+//
+// OrgID is retained for the P2c scheduler loop — it'll be used to list the
+// connections belonging to this org ("list connections for this org"
+// queries). It is NOT used for per-row upserts in SyncOne; each
+// repo_connection row carries its own OrgID and is the source of truth for
+// downstream skill/schedule writes to prevent cross-tenant writes if someone
+// ever hands SyncOne a connID from a different org.
 type PollerConfig struct {
 	Pool          *pgxpool.Pool
 	OrgID         pgtype.UUID
@@ -101,7 +109,7 @@ func (p *Poller) SyncOne(ctx context.Context, connID pgtype.UUID) error {
 	}
 	// PlainClone refuses non-empty dirs; hand CloneAtSHA a fresh subpath.
 	cloneDest := tmp + "/repo"
-	defer os.RemoveAll(tmp)
+	defer func() { _ = os.RemoveAll(tmp) }()
 
 	cloneURL := p.cfg.CloneURLFor(row.Owner, row.Name)
 	if err := github.CloneAtSHA(ctx, cloneURL, token, headSHA, cloneDest); err != nil {
@@ -113,7 +121,9 @@ func (p *Poller) SyncOne(ctx context.Context, connID pgtype.UUID) error {
 		return p.markErr(ctx, q, connID, fmt.Errorf("load manifest: %w", err))
 	}
 
-	if err := UpsertSkillsAndSchedules(ctx, p.cfg.Pool, p.cfg.OrgID, connID, manifest, skills, headSHA); err != nil {
+	// Use the connection row's own OrgID, not p.cfg.OrgID: the row is the
+	// source of truth for which tenant owns these skills/schedules.
+	if err := UpsertSkillsAndSchedules(ctx, p.cfg.Pool, row.OrgID, connID, manifest, skills, headSHA); err != nil {
 		return p.markErr(ctx, q, connID, fmt.Errorf("upsert: %w", err))
 	}
 
@@ -129,12 +139,18 @@ func (p *Poller) SyncOne(ctx context.Context, connID pgtype.UUID) error {
 
 // markErr persists the error to last_sync_error and returns it wrapped.
 // last_synced_at is still advanced so we retry on the normal cadence rather
-// than tight-looping on a broken repo.
+// than tight-looping on a broken repo. If persisting the error itself fails,
+// log the failure — swallowing it silently would mask operator-visible state.
 func (p *Poller) markErr(ctx context.Context, q *dbgen.Queries, connID pgtype.UUID, err error) error {
 	msg := err.Error()
-	_ = q.MarkRepoSyncError(ctx, dbgen.MarkRepoSyncErrorParams{
+	if markErr := q.MarkRepoSyncError(ctx, dbgen.MarkRepoSyncErrorParams{
 		ID:            connID,
 		LastSyncError: &msg,
-	})
+	}); markErr != nil {
+		slog.Warn("sync: failed to persist sync error",
+			"conn_id", connID,
+			"original_err", err,
+			"persist_err", markErr)
+	}
 	return fmt.Errorf("sync: SyncOne: %w", err)
 }
