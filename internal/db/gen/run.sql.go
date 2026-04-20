@@ -33,6 +33,7 @@ SET status               = $2,
     error_msg            = $8,
     writeback_commit_sha = $9
 WHERE id = $1
+  AND status NOT IN ('succeeded', 'partial_failure', 'failed')
 RETURNING id, org_id, schedule_id, skill_sha, fire_time, status, fire_reason, actor, started_at, finished_at, duration_ms, tokens_in, tokens_out, cost_cents, error_kind, error_msg, writeback_commit_sha, runner_pid, runner_token_hash, created_at
 `
 
@@ -48,6 +49,11 @@ type FinalizeRunParams struct {
 	WritebackCommitSha *string
 }
 
+// Guarded against stale/duplicate finalization: the WHERE clause refuses to
+// update a row already in a terminal state (succeeded / partial_failure /
+// failed). A runner that crashed and restarted can't clobber the original
+// finalization — the query returns zero rows (pgx.ErrNoRows) and the
+// handler maps that to 409 Conflict.
 func (q *Queries) FinalizeRun(ctx context.Context, arg FinalizeRunParams) (Run, error) {
 	row := q.db.QueryRow(ctx, finalizeRun,
 		arg.ID,
@@ -240,13 +246,21 @@ func (q *Queries) GetRunForContext(ctx context.Context, id pgtype.UUID) (GetRunF
 }
 
 const insertRun = `-- name: InsertRun :one
-INSERT INTO run (
-    org_id, schedule_id, skill_sha, fire_time, status, fire_reason, actor,
-    runner_token_hash
+WITH ins AS (
+    INSERT INTO run (
+        org_id, schedule_id, skill_sha, fire_time, status, fire_reason, actor,
+        runner_token_hash
+    )
+    VALUES ($1, $2, $3, $4, 'pending', $5, $6, $7)
+    ON CONFLICT (schedule_id, fire_time) WHERE fire_time IS NOT NULL DO NOTHING
+    RETURNING id, org_id, schedule_id, skill_sha, fire_time, status, fire_reason, actor, started_at, finished_at, duration_ms, tokens_in, tokens_out, cost_cents, error_kind, error_msg, writeback_commit_sha, runner_pid, runner_token_hash, created_at, true AS inserted
 )
-VALUES ($1, $2, $3, $4, 'pending', $5, $6, $7)
-ON CONFLICT (schedule_id, fire_time) WHERE fire_time IS NOT NULL DO NOTHING
-RETURNING id, org_id, schedule_id, skill_sha, fire_time, status, fire_reason, actor, started_at, finished_at, duration_ms, tokens_in, tokens_out, cost_cents, error_kind, error_msg, writeback_commit_sha, runner_pid, runner_token_hash, created_at
+SELECT id, org_id, schedule_id, skill_sha, fire_time, status, fire_reason, actor, started_at, finished_at, duration_ms, tokens_in, tokens_out, cost_cents, error_kind, error_msg, writeback_commit_sha, runner_pid, runner_token_hash, created_at, inserted FROM ins
+UNION ALL
+SELECT id, org_id, schedule_id, skill_sha, fire_time, status, fire_reason, actor, started_at, finished_at, duration_ms, tokens_in, tokens_out, cost_cents, error_kind, error_msg, writeback_commit_sha, runner_pid, runner_token_hash, created_at, false AS inserted FROM run
+  WHERE schedule_id = $2 AND fire_time = $4
+  AND NOT EXISTS (SELECT 1 FROM ins)
+LIMIT 1
 `
 
 type InsertRunParams struct {
@@ -259,12 +273,42 @@ type InsertRunParams struct {
 	RunnerTokenHash string
 }
 
+type InsertRunRow struct {
+	ID                 pgtype.UUID
+	OrgID              pgtype.UUID
+	ScheduleID         pgtype.UUID
+	SkillSha           string
+	FireTime           pgtype.Timestamptz
+	Status             string
+	FireReason         string
+	Actor              *string
+	StartedAt          pgtype.Timestamptz
+	FinishedAt         pgtype.Timestamptz
+	DurationMs         *int32
+	TokensIn           *int32
+	TokensOut          *int32
+	CostCents          *int32
+	ErrorKind          *string
+	ErrorMsg           *string
+	WritebackCommitSha *string
+	RunnerPid          *int32
+	RunnerTokenHash    string
+	CreatedAt          pgtype.Timestamptz
+	Inserted           bool
+}
+
 // Idempotent for scheduled fires (ON CONFLICT on the partial unique index
 // run_schedule_firetime_unique). Manual runs always have fire_time=NULL and
 // pass through without collision — the index predicate (WHERE fire_time IS
 // NOT NULL) must be repeated on ON CONFLICT so Postgres matches the partial
 // index rather than requiring a full unique constraint.
-func (q *Queries) InsertRun(ctx context.Context, arg InsertRunParams) (Run, error) {
+//
+// On conflict (i.e. another concurrent tick already inserted the same
+// (schedule_id, fire_time) row), this query returns the existing row with
+// `inserted=false`. This lets callers distinguish a brand-new insert
+// (`inserted=true`) from a concurrent-duplicate outcome — without falling
+// back to a zero-UUID sentinel that's easy to misuse.
+func (q *Queries) InsertRun(ctx context.Context, arg InsertRunParams) (InsertRunRow, error) {
 	row := q.db.QueryRow(ctx, insertRun,
 		arg.OrgID,
 		arg.ScheduleID,
@@ -274,7 +318,7 @@ func (q *Queries) InsertRun(ctx context.Context, arg InsertRunParams) (Run, erro
 		arg.Actor,
 		arg.RunnerTokenHash,
 	)
-	var i Run
+	var i InsertRunRow
 	err := row.Scan(
 		&i.ID,
 		&i.OrgID,
@@ -296,6 +340,7 @@ func (q *Queries) InsertRun(ctx context.Context, arg InsertRunParams) (Run, erro
 		&i.RunnerPid,
 		&i.RunnerTokenHash,
 		&i.CreatedAt,
+		&i.Inserted,
 	)
 	return i, err
 }

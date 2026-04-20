@@ -4,13 +4,27 @@
 -- pass through without collision — the index predicate (WHERE fire_time IS
 -- NOT NULL) must be repeated on ON CONFLICT so Postgres matches the partial
 -- index rather than requiring a full unique constraint.
-INSERT INTO run (
-    org_id, schedule_id, skill_sha, fire_time, status, fire_reason, actor,
-    runner_token_hash
+--
+-- On conflict (i.e. another concurrent tick already inserted the same
+-- (schedule_id, fire_time) row), this query returns the existing row with
+-- `inserted=false`. This lets callers distinguish a brand-new insert
+-- (`inserted=true`) from a concurrent-duplicate outcome — without falling
+-- back to a zero-UUID sentinel that's easy to misuse.
+WITH ins AS (
+    INSERT INTO run (
+        org_id, schedule_id, skill_sha, fire_time, status, fire_reason, actor,
+        runner_token_hash
+    )
+    VALUES ($1, $2, $3, $4, 'pending', $5, $6, $7)
+    ON CONFLICT (schedule_id, fire_time) WHERE fire_time IS NOT NULL DO NOTHING
+    RETURNING *, true AS inserted
 )
-VALUES ($1, $2, $3, $4, 'pending', $5, $6, $7)
-ON CONFLICT (schedule_id, fire_time) WHERE fire_time IS NOT NULL DO NOTHING
-RETURNING *;
+SELECT * FROM ins
+UNION ALL
+SELECT *, false AS inserted FROM run
+  WHERE schedule_id = $2 AND fire_time = $4
+  AND NOT EXISTS (SELECT 1 FROM ins)
+LIMIT 1;
 
 -- name: GetRun :one
 SELECT *
@@ -55,6 +69,11 @@ WHERE id = $1 AND status = 'pending'
 RETURNING *;
 
 -- name: FinalizeRun :one
+-- Guarded against stale/duplicate finalization: the WHERE clause refuses to
+-- update a row already in a terminal state (succeeded / partial_failure /
+-- failed). A runner that crashed and restarted can't clobber the original
+-- finalization — the query returns zero rows (pgx.ErrNoRows) and the
+-- handler maps that to 409 Conflict.
 UPDATE run
 SET status               = $2,
     finished_at          = now(),
@@ -66,6 +85,7 @@ SET status               = $2,
     error_msg            = $8,
     writeback_commit_sha = $9
 WHERE id = $1
+  AND status NOT IN ('succeeded', 'partial_failure', 'failed')
 RETURNING *;
 
 -- name: ListActiveRunsForSchedule :many

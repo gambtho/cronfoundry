@@ -21,6 +21,10 @@ type eventBatch struct {
 // ServeHTTP implements POST /internal/runs/{id}/events.
 // Body: {"events": [{"type": "...", "level": "info|warn|error", "payload": {...}}]}.
 // Empty level defaults to "info". 204 on success.
+//
+// The batch is inserted within a single transaction: either every event in
+// the request lands or none do. A mid-batch validation or DB error rolls
+// the transaction back, so the caller can safely retry the full batch.
 func (h eventsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	urlRunID, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
@@ -38,7 +42,15 @@ func (h eventsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	q := dbgen.New(h.deps.Pool)
+	tx, err := h.deps.Pool.Begin(r.Context())
+	if err != nil {
+		http.Error(w, "begin tx: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	// Rollback is a no-op after a successful Commit.
+	defer func() { _ = tx.Rollback(r.Context()) }()
+
+	q := dbgen.New(tx)
 	for _, ev := range batch.Events {
 		level := ev.Level
 		if level == "" {
@@ -61,6 +73,10 @@ func (h eventsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "persist: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
+	}
+	if err := tx.Commit(r.Context()); err != nil {
+		http.Error(w, "commit: "+err.Error(), http.StatusInternalServerError)
+		return
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

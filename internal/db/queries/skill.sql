@@ -20,3 +20,13 @@ ORDER BY path;
 DELETE FROM skill
 WHERE repo_id = $1
   AND NOT (path = ANY($2::text[]));
+
+-- name: GetRunRepoID :one
+-- Returns the repo_id the given run is bound to, via its schedule → skill.
+-- Used by the clone-url handler to enforce that a run can only fetch the
+-- clone URL for its own repo.
+SELECT sk.repo_id
+FROM run r
+JOIN schedule s ON s.id = r.schedule_id
+JOIN skill sk   ON sk.id = s.skill_id
+WHERE r.id = $1;

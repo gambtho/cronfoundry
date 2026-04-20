@@ -27,12 +27,13 @@ func TestEvents_PersistsBatch(t *testing.T) {
 	runID, orgID := seedRun(t, pool)
 
 	signer := token.New(randomMaster(t))
-	tok, _, err := signer.Sign(token.RunClaims{
+	tok, hash, err := signer.Sign(token.RunClaims{
 		RunID:     runID,
 		OrgID:     uuid.UUID(orgID.Bytes),
 		ExpiresAt: time.Now().Add(time.Minute),
 	})
 	require.NoError(t, err)
+	bindRunHash(t, pool, runID, hash)
 
 	srv := NewServer("127.0.0.1:0", Deps{Pool: pool, Signer: signer})
 	ts := httptest.NewServer(srv.Handler)
@@ -66,22 +67,27 @@ func TestEvents_RejectsMismatchedRunID(t *testing.T) {
 	pool, cleanup := bootPG(t)
 	defer cleanup()
 
-	actualRun, orgID := seedRun(t, pool)
+	// Two runs in the same org; sign for runA, POST to runB's events URL
+	// so the bearer middleware's hash check passes (runA + its bound hash)
+	// and the handler's URL-vs-claim guard is what fires.
+	runA, orgID := seedRun(t, pool)
+	runB, _ := seedRunInOrg(t, pool, orgID)
 
 	signer := token.New(randomMaster(t))
-	tok, _, err := signer.Sign(token.RunClaims{
-		RunID:     uuid.New(), // different from actualRun
+	tok, hash, err := signer.Sign(token.RunClaims{
+		RunID:     runA,
 		OrgID:     uuid.UUID(orgID.Bytes),
 		ExpiresAt: time.Now().Add(time.Minute),
 	})
 	require.NoError(t, err)
+	bindRunHash(t, pool, runA, hash)
 
 	srv := NewServer("127.0.0.1:0", Deps{Pool: pool, Signer: signer})
 	ts := httptest.NewServer(srv.Handler)
 	defer ts.Close()
 
 	buf, _ := json.Marshal(map[string]any{"events": []map[string]any{{"type": "x", "level": "info"}}})
-	req, _ := http.NewRequest("POST", ts.URL+"/internal/runs/"+actualRun.String()+"/events", bytes.NewReader(buf))
+	req, _ := http.NewRequest("POST", ts.URL+"/internal/runs/"+runB.String()+"/events", bytes.NewReader(buf))
 	req.Header.Set("Authorization", "Bearer "+tok)
 	resp, err := ts.Client().Do(req)
 	require.NoError(t, err)
@@ -99,12 +105,13 @@ func TestEvents_RejectsBadLevel(t *testing.T) {
 	runID, orgID := seedRun(t, pool)
 
 	signer := token.New(randomMaster(t))
-	tok, _, err := signer.Sign(token.RunClaims{
+	tok, hash, err := signer.Sign(token.RunClaims{
 		RunID:     runID,
 		OrgID:     uuid.UUID(orgID.Bytes),
 		ExpiresAt: time.Now().Add(time.Minute),
 	})
 	require.NoError(t, err)
+	bindRunHash(t, pool, runID, hash)
 
 	srv := NewServer("127.0.0.1:0", Deps{Pool: pool, Signer: signer})
 	ts := httptest.NewServer(srv.Handler)
@@ -129,12 +136,13 @@ func TestEvents_DefaultsLevelToInfo(t *testing.T) {
 	runID, orgID := seedRun(t, pool)
 
 	signer := token.New(randomMaster(t))
-	tok, _, err := signer.Sign(token.RunClaims{
+	tok, hash, err := signer.Sign(token.RunClaims{
 		RunID:     runID,
 		OrgID:     uuid.UUID(orgID.Bytes),
 		ExpiresAt: time.Now().Add(time.Minute),
 	})
 	require.NoError(t, err)
+	bindRunHash(t, pool, runID, hash)
 
 	srv := NewServer("127.0.0.1:0", Deps{Pool: pool, Signer: signer})
 	ts := httptest.NewServer(srv.Handler)

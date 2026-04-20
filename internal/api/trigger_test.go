@@ -146,6 +146,35 @@ func TestRunNow_NoActor(t *testing.T) {
 	assert.Nil(t, actor)
 }
 
+// TestRunNow_RejectsNonLoopback pins the MAJ-9 fix: until P3 gates the
+// endpoint behind UI session auth, run-now is loopback-only. A request
+// with a non-loopback RemoteAddr must be rejected with 403.
+func TestRunNow_RejectsNonLoopback(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, cleanup := bootPG(t)
+	defer cleanup()
+
+	schedID, _ := seedSchedule(t, pool)
+
+	// Exercise the handler directly via ServeHTTP so we can forge
+	// RemoteAddr (httptest.NewServer would route from a real loopback
+	// listener, which the check correctly accepts).
+	h := runNowHandler{deps: Deps{Pool: pool}}
+	// Wrap in a routing mux so the `{id}` path value works.
+	mux := http.NewServeMux()
+	mux.Handle("POST /internal/schedules/{id}/run-now", h)
+
+	buf := bytes.NewReader([]byte(`{}`))
+	req := httptest.NewRequest("POST",
+		"/internal/schedules/"+uuidString(schedID)+"/run-now", buf)
+	req.RemoteAddr = "203.0.113.1:54321" // TEST-NET-3, clearly non-loopback
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+	assert.Equal(t, http.StatusForbidden, rr.Code)
+}
+
 // uuidString converts a pgtype.UUID back to its canonical string form.
 func uuidString(u pgtype.UUID) string {
 	b, _ := u.Value() // returns (driver.Value, error); here the Value is a string

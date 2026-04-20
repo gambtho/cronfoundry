@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -24,10 +23,9 @@ func TestSecrets_ScopedToClaim(t *testing.T) {
 	pool, cleanup := bootPG(t)
 	defer cleanup()
 
-	// Seed an org and store two secrets.
-	var orgID pgtype.UUID
-	require.NoError(t, pool.QueryRow(context.Background(),
-		`INSERT INTO organization (name) VALUES ('o') RETURNING id`).Scan(&orgID))
+	// Seed a real run so the bearer middleware's hash check passes, then
+	// store two secrets on that run's org.
+	runID, orgID := seedRun(t, pool)
 
 	master := randomMaster(t)
 	store := secretstore.NewEnvelopePostgresStore(pool, orgID, master)
@@ -36,13 +34,14 @@ func TestSecrets_ScopedToClaim(t *testing.T) {
 
 	// Sign a token that only has "allowed" in its scope.
 	signer := token.New(master)
-	tok, _, err := signer.Sign(token.RunClaims{
-		RunID:      uuid.New(),
+	tok, hash, err := signer.Sign(token.RunClaims{
+		RunID:      runID,
 		OrgID:      uuid.UUID(orgID.Bytes),
 		SecretRefs: []string{"allowed"},
 		ExpiresAt:  time.Now().Add(time.Minute),
 	})
 	require.NoError(t, err)
+	bindRunHash(t, pool, runID, hash)
 
 	srv := NewServer("127.0.0.1:0", Deps{
 		Pool:    pool,
@@ -80,9 +79,7 @@ func TestSecrets_MultipleNames(t *testing.T) {
 	pool, cleanup := bootPG(t)
 	defer cleanup()
 
-	var orgID pgtype.UUID
-	require.NoError(t, pool.QueryRow(context.Background(),
-		`INSERT INTO organization (name) VALUES ('o') RETURNING id`).Scan(&orgID))
+	runID, orgID := seedRun(t, pool)
 
 	master := randomMaster(t)
 	store := secretstore.NewEnvelopePostgresStore(pool, orgID, master)
@@ -90,13 +87,14 @@ func TestSecrets_MultipleNames(t *testing.T) {
 	require.NoError(t, store.Put(context.Background(), "openai", "B"))
 
 	signer := token.New(master)
-	tok, _, err := signer.Sign(token.RunClaims{
-		RunID:      uuid.New(),
+	tok, hash, err := signer.Sign(token.RunClaims{
+		RunID:      runID,
 		OrgID:      uuid.UUID(orgID.Bytes),
 		SecretRefs: []string{"slack", "openai"},
 		ExpiresAt:  time.Now().Add(time.Minute),
 	})
 	require.NoError(t, err)
+	bindRunHash(t, pool, runID, hash)
 
 	srv := NewServer("127.0.0.1:0", Deps{Pool: pool, Signer: signer, Secrets: store})
 	ts := httptest.NewServer(srv.Handler)
@@ -122,13 +120,16 @@ func TestSecrets_MissingNamesParam(t *testing.T) {
 	pool, cleanup := bootPG(t)
 	defer cleanup()
 
+	runID, orgID := seedRun(t, pool)
+
 	signer := token.New(randomMaster(t))
-	tok, _, err := signer.Sign(token.RunClaims{
-		RunID:     uuid.New(),
-		OrgID:     uuid.New(),
+	tok, hash, err := signer.Sign(token.RunClaims{
+		RunID:     runID,
+		OrgID:     uuid.UUID(orgID.Bytes),
 		ExpiresAt: time.Now().Add(time.Minute),
 	})
 	require.NoError(t, err)
+	bindRunHash(t, pool, runID, hash)
 
 	srv := NewServer("127.0.0.1:0", Deps{Pool: pool, Signer: signer})
 	ts := httptest.NewServer(srv.Handler)

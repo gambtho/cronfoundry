@@ -29,6 +29,24 @@ func (q *Queries) DeleteMissingSkills(ctx context.Context, arg DeleteMissingSkil
 	return err
 }
 
+const getRunRepoID = `-- name: GetRunRepoID :one
+SELECT sk.repo_id
+FROM run r
+JOIN schedule s ON s.id = r.schedule_id
+JOIN skill sk   ON sk.id = s.skill_id
+WHERE r.id = $1
+`
+
+// Returns the repo_id the given run is bound to, via its schedule → skill.
+// Used by the clone-url handler to enforce that a run can only fetch the
+// clone URL for its own repo.
+func (q *Queries) GetRunRepoID(ctx context.Context, id pgtype.UUID) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, getRunRepoID, id)
+	var repo_id pgtype.UUID
+	err := row.Scan(&repo_id)
+	return repo_id, err
+}
+
 const listSkillsByRepo = `-- name: ListSkillsByRepo :many
 SELECT id, org_id, repo_id, path, name, current_sha, frontmatter_json, updated_at
 FROM skill
