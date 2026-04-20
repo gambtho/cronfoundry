@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/gambtho/cronfoundry/internal/testdb"
 	"github.com/gambtho/cronfoundry/internal/token"
 )
 
@@ -21,7 +22,7 @@ func TestFinalize_PersistsSuccess(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
 	}
-	pool, cleanup := bootPG(t)
+	pool, cleanup := testdb.BootPG(t)
 	defer cleanup()
 
 	runID, orgID := seedRun(t, pool)
@@ -82,7 +83,7 @@ func TestFinalize_PersistsFailure(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
 	}
-	pool, cleanup := bootPG(t)
+	pool, cleanup := testdb.BootPG(t)
 	defer cleanup()
 
 	runID, orgID := seedRun(t, pool)
@@ -126,7 +127,7 @@ func TestFinalize_RejectsInvalidStatus(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
 	}
-	pool, cleanup := bootPG(t)
+	pool, cleanup := testdb.BootPG(t)
 	defer cleanup()
 
 	runID, orgID := seedRun(t, pool)
@@ -156,7 +157,7 @@ func TestFinalize_RejectsNegativeAccounting(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
 	}
-	pool, cleanup := bootPG(t)
+	pool, cleanup := testdb.BootPG(t)
 	defer cleanup()
 
 	runID, orgID := seedRun(t, pool)
@@ -194,7 +195,7 @@ func TestFinalize_RejectsAlreadyTerminal(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
 	}
-	pool, cleanup := bootPG(t)
+	pool, cleanup := testdb.BootPG(t)
 	defer cleanup()
 
 	runID, orgID := seedRun(t, pool)
@@ -238,7 +239,7 @@ func TestFinalize_RejectsMismatchedRunID(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
 	}
-	pool, cleanup := bootPG(t)
+	pool, cleanup := testdb.BootPG(t)
 	defer cleanup()
 
 	// Sign for runA (seeded, hash bound); POST to runB's finalize URL so

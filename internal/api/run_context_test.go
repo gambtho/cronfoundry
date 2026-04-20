@@ -13,37 +13,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
 
-	"github.com/gambtho/cronfoundry/internal/db"
+	"github.com/gambtho/cronfoundry/internal/testdb"
 	"github.com/gambtho/cronfoundry/internal/token"
 )
-
-// bootPG starts a throwaway Postgres container, runs migrations, and returns
-// a ready-to-use pool.
-func bootPG(t *testing.T) (*pgxpool.Pool, func()) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	c, err := postgres.Run(ctx,
-		"postgres:16-alpine",
-		postgres.WithDatabase("cf"),
-		postgres.WithUsername("cf"),
-		postgres.WithPassword("cf"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).WithStartupTimeout(60*time.Second)),
-	)
-	require.NoError(t, err)
-	dsn, err := c.ConnectionString(ctx, "sslmode=disable")
-	require.NoError(t, err)
-	require.NoError(t, db.Migrate(ctx, dsn))
-	pool, err := pgxpool.New(ctx, dsn)
-	require.NoError(t, err)
-	return pool, func() { pool.Close(); _ = c.Terminate(context.Background()) }
-}
 
 // seedRun creates a full chain (organization → repo_connection → skill →
 // schedule → run) and returns the run's UUID (as uuid.UUID) plus org UUID.
@@ -134,7 +107,7 @@ func TestRunContext_ReturnsContext(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
 	}
-	pool, cleanup := bootPG(t)
+	pool, cleanup := testdb.BootPG(t)
 	defer cleanup()
 
 	runID, orgID := seedRun(t, pool)
@@ -176,7 +149,7 @@ func TestRunContext_RejectsMismatchedRunID(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
 	}
-	pool, cleanup := bootPG(t)
+	pool, cleanup := testdb.BootPG(t)
 	defer cleanup()
 
 	// Seed two runs under the same org: we'll sign for runA but request
@@ -211,7 +184,7 @@ func TestRunContext_MissingRun(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
 	}
-	pool, cleanup := bootPG(t)
+	pool, cleanup := testdb.BootPG(t)
 	defer cleanup()
 
 	signer := token.New(randomMaster(t))
@@ -243,7 +216,7 @@ func TestRunContext_BadURLID(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
 	}
-	pool, cleanup := bootPG(t)
+	pool, cleanup := testdb.BootPG(t)
 	defer cleanup()
 
 	// Seed a real run so the bearer middleware's hash check passes; then
