@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -54,7 +55,11 @@ func (h oauthHandlers) callback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "state mismatch", http.StatusBadRequest)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: "oauth_state", MaxAge: -1, Path: "/"})
+	// Verify the state cookie is a valid, unexpired signed token.
+	if _, err := VerifySession(stateCookie.Value, h.deps.MasterKey); err != nil {
+		http.Error(w, "invalid state", http.StatusBadRequest)
+		return
+	}
 
 	accessToken, err := h.exchangeCode(r.Context(), r.URL.Query().Get("code"))
 	if err != nil {
@@ -71,6 +76,7 @@ func (h oauthHandlers) callback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "access denied", http.StatusForbidden)
 		return
 	}
+	http.SetCookie(w, &http.Cookie{Name: "oauth_state", MaxAge: -1, Path: "/"})
 	session, err := SignSession(SessionClaims{Login: login, Role: role}, h.deps.MasterKey, 24*time.Hour)
 	if err != nil {
 		http.Error(w, "session creation failed", http.StatusInternalServerError)
@@ -113,6 +119,9 @@ func (h oauthHandlers) exchangeCode(ctx context.Context, code string) (string, e
 	if err != nil {
 		return "", err
 	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("github token endpoint returned %d", resp.StatusCode)
+	}
 	defer resp.Body.Close()
 	var result struct {
 		AccessToken string `json:"access_token"`
@@ -142,6 +151,9 @@ func (h oauthHandlers) fetchLogin(ctx context.Context, accessToken string) (stri
 	if err != nil {
 		return "", err
 	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("github user endpoint returned %d", resp.StatusCode)
+	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	var user struct {
@@ -164,6 +176,11 @@ func SignOAuthState(key []byte, ttl time.Duration) (string, error) {
 }
 
 func isLocalhost(host string) bool {
-	h := strings.Split(host, ":")[0]
+	h, _, err := net.SplitHostPort(host)
+	if err != nil {
+		h = host // no port present
+	}
+	// Strip brackets from IPv6 addresses like [::1]
+	h = strings.TrimPrefix(strings.TrimSuffix(h, "]"), "[")
 	return h == "localhost" || h == "127.0.0.1" || h == "::1"
 }
