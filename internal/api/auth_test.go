@@ -38,7 +38,7 @@ func TestRequireBearer_Accepts(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	h := requireBearer(signer)(http.HandlerFunc(helloHandler))
+	h := requireBearer(signer, nil)(http.HandlerFunc(helloHandler))
 
 	req := httptest.NewRequest("GET", "/internal/runs/anything", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
@@ -51,7 +51,7 @@ func TestRequireBearer_Accepts(t *testing.T) {
 
 func TestRequireBearer_Rejects_NoHeader(t *testing.T) {
 	signer := token.New(randomMaster(t))
-	h := requireBearer(signer)(http.HandlerFunc(helloHandler))
+	h := requireBearer(signer, nil)(http.HandlerFunc(helloHandler))
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, httptest.NewRequest("GET", "/internal/runs/x", nil))
 	assert.Equal(t, http.StatusUnauthorized, rr.Code)
@@ -59,7 +59,7 @@ func TestRequireBearer_Rejects_NoHeader(t *testing.T) {
 
 func TestRequireBearer_Rejects_NotBearerScheme(t *testing.T) {
 	signer := token.New(randomMaster(t))
-	h := requireBearer(signer)(http.HandlerFunc(helloHandler))
+	h := requireBearer(signer, nil)(http.HandlerFunc(helloHandler))
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/internal/runs/x", nil)
 	req.Header.Set("Authorization", "Basic dXNlcjpwYXNz")
@@ -69,7 +69,7 @@ func TestRequireBearer_Rejects_NotBearerScheme(t *testing.T) {
 
 func TestRequireBearer_Rejects_BadToken(t *testing.T) {
 	signer := token.New(randomMaster(t))
-	h := requireBearer(signer)(http.HandlerFunc(helloHandler))
+	h := requireBearer(signer, nil)(http.HandlerFunc(helloHandler))
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/internal/runs/x", nil)
 	req.Header.Set("Authorization", "Bearer not-a-jwt")
@@ -89,7 +89,7 @@ func TestRequireBearer_Rejects_WrongKey(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verified by `b` (different key) — must reject.
-	h := requireBearer(b)(http.HandlerFunc(helloHandler))
+	h := requireBearer(b, nil)(http.HandlerFunc(helloHandler))
 	rr := httptest.NewRecorder()
 	req := httptest.NewRequest("GET", "/internal/runs/x", nil)
 	req.Header.Set("Authorization", "Bearer "+tok)
@@ -134,8 +134,14 @@ func TestNewServer_RoutesRegistered(t *testing.T) {
 	// Manual trigger endpoint is unauthenticated — no 401 is produced. With a
 	// bad-format UUID the handler rejects with 400 (not 401), confirming the
 	// route is reachable without a bearer token.
+	//
+	// httptest.NewRequest defaults RemoteAddr to 192.0.2.1:1234 (non-loopback),
+	// which the MAJ-9 loopback guard rejects before the handler's UUID parse
+	// runs. Force RemoteAddr to a real loopback IP so we reach the 400 path.
 	rr4 := httptest.NewRecorder()
-	srv.Handler.ServeHTTP(rr4, httptest.NewRequest(
-		"POST", "/internal/schedules/anything/run-now", nil))
+	req4 := httptest.NewRequest(
+		"POST", "/internal/schedules/anything/run-now", nil)
+	req4.RemoteAddr = "127.0.0.1:1234"
+	srv.Handler.ServeHTTP(rr4, req4)
 	assert.Equal(t, http.StatusBadRequest, rr4.Code)
 }

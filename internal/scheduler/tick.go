@@ -41,7 +41,9 @@ type Stats struct {
 //     update schedule.next_fire_at.
 //  3. Apply overlap policy using the count of existing active runs.
 //  4. Dispatch via cloud.JobDispatcher when decided.
-//  5. Run OrphanSweep to reclaim stalled runs.
+//  5. Dispatch any already-pending rows not tied to a due schedule — manual
+//     run-now triggers and queued scheduled runs whose prior run finished.
+//  6. Run OrphanSweep to reclaim stalled runs.
 //
 // Stats fields are informational for logging; errors from individual
 // schedules are logged but don't abort the whole tick.
@@ -61,6 +63,14 @@ func Tick(ctx context.Context, deps Deps) (Stats, error) {
 				"schedule_id", uuid.UUID(sched.ID.Bytes).String(),
 				"err", err)
 		}
+	}
+
+	// Dispatch pending manual triggers + queued scheduled runs whose prior
+	// run has terminated. Due-schedule processing above doesn't touch these:
+	// manual rows aren't tied to next_fire_at, and queued rows were left
+	// pending by a previous tick's overlap-policy decision.
+	if err := dispatchPending(ctx, deps, &stats); err != nil {
+		slog.Error("scheduler: Tick: dispatch pending failed", "err", err)
 	}
 
 	if _, err := q.OrphanSweep(ctx); err != nil {
@@ -121,9 +131,10 @@ func processOne(
 		return fmt.Errorf("update next_fire_at: %w", err)
 	}
 
-	// If ON CONFLICT skipped the insert, `run.ID` will be the zero value.
-	if !run.ID.Valid {
-		// Another tick already inserted; no dispatch work for us.
+	// If ON CONFLICT fired, our query returned the pre-existing row with
+	// Inserted=false. That means another tick won the race — we have no
+	// dispatch work for this fire_time.
+	if !run.Inserted {
 		return nil
 	}
 
@@ -149,56 +160,187 @@ func processOne(
 		stats.Skipped++
 		return nil
 	case DecisionQueue:
+		// Leave the pending row in place. dispatchPending (invoked at the
+		// end of Tick, and on every subsequent tick) will pick it up once
+		// the prior run terminates. See TODO(P2d) in overlap.go.
 		stats.Queued++
 		return nil
 	case DecisionDispatch:
 		// fall through
 	}
 
-	// Sign a per-run JWT.
-	timeout := time.Duration(sched.TimeoutSec) * time.Second
-	tok, hash, err := deps.Signer.Sign(token.RunClaims{
-		RunID:      uuid.UUID(run.ID.Bytes),
-		OrgID:      uuid.UUID(sched.OrgID.Bytes),
+	if err := dispatchRun(ctx, deps, dispatchArgs{
+		RunID:      run.ID,
+		OrgID:      sched.OrgID,
+		TimeoutSec: sched.TimeoutSec,
 		SecretRefs: secretRefsFor(sched),
-		ExpiresAt:  time.Now().Add(timeout + 120*time.Second),
-	})
-	if err != nil {
-		return fmt.Errorf("sign token: %w", err)
-	}
-
-	// Update runner_token_hash on the run so /internal/* can validate.
-	if _, err := deps.Pool.Exec(ctx,
-		`UPDATE run SET runner_token_hash = $1 WHERE id = $2`,
-		hash, run.ID); err != nil {
-		return fmt.Errorf("update token hash: %w", err)
-	}
-
-	// Dispatch.
-	spec := cloud.DispatchSpec{
-		BinaryPath: deps.RunnerBinary,
-		Args:       []string{"runner", "--run-id", uuid.UUID(run.ID.Bytes).String()},
-		Env: []string{
-			"CRONFOUNDRY_API_URL=" + deps.APIBaseURL,
-			"CRONFOUNDRY_RUN_ID=" + uuid.UUID(run.ID.Bytes).String(),
-			"CRONFOUNDRY_RUN_TOKEN=" + tok,
-		},
-	}
-	if _, err := deps.Dispatcher.Dispatch(ctx, spec); err != nil {
-		return fmt.Errorf("dispatch: %w", err)
+	}); err != nil {
+		return err
 	}
 
 	stats.Dispatched++
 	return nil
 }
 
+// dispatchArgs bundles the inputs shared between processOne's happy path and
+// dispatchPending's catch-up path. Keeps the two call sites behaviorally
+// identical (sign JWT, persist hash, dispatch, mark running).
+type dispatchArgs struct {
+	RunID      pgtype.UUID
+	OrgID      pgtype.UUID
+	TimeoutSec int32
+	SecretRefs []string
+}
+
+// dispatchRun signs a JWT for the run, persists its hash, dispatches the
+// runner subprocess, and flips the row to 'running'. Returns an error only
+// on failures that should abort the caller's loop iteration — the
+// SetRunRunning step is best-effort and logged on failure (a runner that
+// already finalized by the time we get here is benign).
+func dispatchRun(ctx context.Context, deps Deps, args dispatchArgs) error {
+	timeout := time.Duration(args.TimeoutSec) * time.Second
+	tok, hash, err := deps.Signer.Sign(token.RunClaims{
+		RunID:      uuid.UUID(args.RunID.Bytes),
+		OrgID:      uuid.UUID(args.OrgID.Bytes),
+		SecretRefs: args.SecretRefs,
+		ExpiresAt:  time.Now().Add(timeout + 120*time.Second),
+	})
+	if err != nil {
+		return fmt.Errorf("sign token: %w", err)
+	}
+
+	// Persist the hash so /internal/* can bind the bearer to this run.
+	if _, err := deps.Pool.Exec(ctx,
+		`UPDATE run SET runner_token_hash = $1 WHERE id = $2`,
+		hash, args.RunID); err != nil {
+		return fmt.Errorf("update token hash: %w", err)
+	}
+
+	spec := cloud.DispatchSpec{
+		BinaryPath: deps.RunnerBinary,
+		Args:       []string{"runner", "--run-id", uuid.UUID(args.RunID.Bytes).String()},
+		Env: []string{
+			"CRONFOUNDRY_API_URL=" + deps.APIBaseURL,
+			"CRONFOUNDRY_RUN_ID=" + uuid.UUID(args.RunID.Bytes).String(),
+			"CRONFOUNDRY_RUN_TOKEN=" + tok,
+		},
+	}
+	h, err := deps.Dispatcher.Dispatch(ctx, spec)
+	if err != nil {
+		return fmt.Errorf("dispatch: %w", err)
+	}
+
+	// Flip to 'running' and record the pid. The WHERE clause in SetRunRunning
+	// only matches status='pending' — if the runner already finalized by the
+	// time we get here, this is a no-op and we swallow the pgx.ErrNoRows.
+	q := dbgen.New(deps.Pool)
+	pid := int32(h.PID())
+	if _, err := q.SetRunRunning(ctx, dbgen.SetRunRunningParams{
+		ID:        args.RunID,
+		RunnerPid: &pid,
+	}); err != nil {
+		slog.Warn("scheduler: SetRunRunning failed (non-fatal)",
+			"run_id", uuid.UUID(args.RunID.Bytes).String(),
+			"err", err)
+	}
+	return nil
+}
+
+// dispatchPending scans for pending runs that are ready for dispatch but
+// which the due-schedule loop wouldn't reach:
+//
+//   - fire_reason='manual' rows inserted by POST /internal/schedules/:id/run-now
+//   - fire_reason='schedule' rows left pending by a prior tick's
+//     Queue decision, whose prior run has since terminated
+//
+// Runs are processed oldest-first. Errors on individual runs are logged but
+// don't abort the sweep.
+func dispatchPending(ctx context.Context, deps Deps, stats *Stats) error {
+	rows, err := deps.Pool.Query(ctx, `
+		SELECT r.id, r.org_id,
+		       s.timeout_sec, s.destinations_json, s.env_json, s.llm_secret_ref
+		FROM run r
+		JOIN schedule s ON s.id = r.schedule_id
+		WHERE r.status = 'pending'
+		  AND s.enabled = true
+		  AND (
+		      r.fire_reason = 'manual'
+		      OR (
+		          r.fire_reason = 'schedule'
+		          AND s.overlap_policy = 'queue'
+		          AND NOT EXISTS (
+		              SELECT 1 FROM run r2
+		              WHERE r2.schedule_id = r.schedule_id
+		                AND r2.id != r.id
+		                AND r2.status IN ('pending','running')
+		                AND r2.created_at < r.created_at
+		          )
+		      )
+		  )
+		ORDER BY r.created_at ASC
+	`)
+	if err != nil {
+		return fmt.Errorf("query pending: %w", err)
+	}
+	defer rows.Close()
+
+	type pendingRow struct {
+		ID         pgtype.UUID
+		OrgID      pgtype.UUID
+		TimeoutSec int32
+		SecretRefs []string
+	}
+	var pending []pendingRow
+	for rows.Next() {
+		var r pendingRow
+		var destsJSON, envJSON []byte
+		var llmRef *string
+		if err := rows.Scan(&r.ID, &r.OrgID, &r.TimeoutSec, &destsJSON, &envJSON, &llmRef); err != nil {
+			slog.Error("scheduler: dispatchPending: scan failed", "err", err)
+			continue
+		}
+		r.SecretRefs = secretRefsFromJSON(destsJSON, envJSON, llmRef)
+		pending = append(pending, r)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iter pending: %w", err)
+	}
+
+	for _, r := range pending {
+		if err := dispatchRun(ctx, deps, dispatchArgs{
+			RunID:      r.ID,
+			OrgID:      r.OrgID,
+			TimeoutSec: r.TimeoutSec,
+			SecretRefs: r.SecretRefs,
+		}); err != nil {
+			slog.Error("scheduler: dispatchPending: dispatch failed",
+				"run_id", uuid.UUID(r.ID.Bytes).String(),
+				"err", err)
+			stats.Errored++
+			continue
+		}
+		stats.Dispatched++
+	}
+	return nil
+}
+
 // secretRefsFor returns the list of secret names a run may fetch via
 // /internal/secrets. Parses the destinations_json + env_json to collect
-// every { "secret": "name" } reference. For MVP we use a conservative
-// string scan — the JSON is small and the secret-ref shape is well-known.
+// every { "secret": "name" } reference.
+func secretRefsFor(sched dbgen.ListDueSchedulesWithShaRow) []string {
+	return secretRefsFromJSON(sched.DestinationsJson, sched.EnvJson, sched.LlmSecretRef)
+}
+
+// secretRefsFromJSON is the shared helper used by both secretRefsFor
+// (scheduled runs) and dispatchPending (manual/queued runs). It walks
+// destinations + env JSON looking for { "secret": "name" } entries plus
+// any llm_secret_ref. A non-string value after `"secret"` (e.g.,
+// {"secret": {...}} or {"secret": 42}) is skipped — we resume scanning
+// after the key so a single malformed entry doesn't blind us to later
+// legitimate references.
 //
 // TODO(P2d): extract to internal/config/secretrefs.go once other sites need it.
-func secretRefsFor(sched dbgen.ListDueSchedulesWithShaRow) []string {
+func secretRefsFromJSON(dests, env []byte, llmRef *string) []string {
 	seen := map[string]struct{}{}
 	scanJSON := func(b []byte) {
 		// Naive but safe: walk JSON looking for "secret":"<name>" entries.
@@ -218,7 +360,11 @@ func secretRefsFor(sched dbgen.ListDueSchedulesWithShaRow) []string {
 				j++
 			}
 			if j >= len(s) || s[j] != '"' {
-				break
+				// Not a string value for this "secret" key — advance past
+				// the key and keep scanning. A nested object or non-string
+				// shouldn't hide later legitimate refs.
+				i = idx + len(`"secret"`)
+				continue
 			}
 			j++ // past opening quote
 			end := strings.IndexByte(s[j:], '"')
@@ -233,10 +379,10 @@ func secretRefsFor(sched dbgen.ListDueSchedulesWithShaRow) []string {
 			i = end + 1
 		}
 	}
-	scanJSON(sched.DestinationsJson)
-	scanJSON(sched.EnvJson)
-	if sched.LlmSecretRef != nil && *sched.LlmSecretRef != "" {
-		seen[*sched.LlmSecretRef] = struct{}{}
+	scanJSON(dests)
+	scanJSON(env)
+	if llmRef != nil && *llmRef != "" {
+		seen[*llmRef] = struct{}{}
 	}
 
 	out := make([]string, 0, len(seen))

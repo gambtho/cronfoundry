@@ -27,12 +27,13 @@ func TestFinalize_PersistsSuccess(t *testing.T) {
 	runID, orgID := seedRun(t, pool)
 
 	signer := token.New(randomMaster(t))
-	tok, _, err := signer.Sign(token.RunClaims{
+	tok, hash, err := signer.Sign(token.RunClaims{
 		RunID:     runID,
 		OrgID:     uuid.UUID(orgID.Bytes),
 		ExpiresAt: time.Now().Add(time.Minute),
 	})
 	require.NoError(t, err)
+	bindRunHash(t, pool, runID, hash)
 
 	srv := NewServer("127.0.0.1:0", Deps{Pool: pool, Signer: signer})
 	ts := httptest.NewServer(srv.Handler)
@@ -86,10 +87,11 @@ func TestFinalize_PersistsFailure(t *testing.T) {
 
 	runID, orgID := seedRun(t, pool)
 	signer := token.New(randomMaster(t))
-	tok, _, err := signer.Sign(token.RunClaims{
+	tok, hash, err := signer.Sign(token.RunClaims{
 		RunID: runID, OrgID: uuid.UUID(orgID.Bytes), ExpiresAt: time.Now().Add(time.Minute),
 	})
 	require.NoError(t, err)
+	bindRunHash(t, pool, runID, hash)
 
 	srv := NewServer("127.0.0.1:0", Deps{Pool: pool, Signer: signer})
 	ts := httptest.NewServer(srv.Handler)
@@ -129,10 +131,11 @@ func TestFinalize_RejectsInvalidStatus(t *testing.T) {
 
 	runID, orgID := seedRun(t, pool)
 	signer := token.New(randomMaster(t))
-	tok, _, err := signer.Sign(token.RunClaims{
+	tok, hash, err := signer.Sign(token.RunClaims{
 		RunID: runID, OrgID: uuid.UUID(orgID.Bytes), ExpiresAt: time.Now().Add(time.Minute),
 	})
 	require.NoError(t, err)
+	bindRunHash(t, pool, runID, hash)
 
 	srv := NewServer("127.0.0.1:0", Deps{Pool: pool, Signer: signer})
 	ts := httptest.NewServer(srv.Handler)
@@ -147,6 +150,90 @@ func TestFinalize_RejectsInvalidStatus(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
+// TestFinalize_RejectsNegativeAccounting pins the MAJ-6 fix: runners must
+// not be able to log negative token counts, durations, or costs.
+func TestFinalize_RejectsNegativeAccounting(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, cleanup := bootPG(t)
+	defer cleanup()
+
+	runID, orgID := seedRun(t, pool)
+	signer := token.New(randomMaster(t))
+	tok, hash, err := signer.Sign(token.RunClaims{
+		RunID: runID, OrgID: uuid.UUID(orgID.Bytes), ExpiresAt: time.Now().Add(time.Minute),
+	})
+	require.NoError(t, err)
+	bindRunHash(t, pool, runID, hash)
+
+	srv := NewServer("127.0.0.1:0", Deps{Pool: pool, Signer: signer})
+	ts := httptest.NewServer(srv.Handler)
+	defer ts.Close()
+
+	fields := []string{"duration_ms", "tokens_in", "tokens_out", "cost_cents"}
+	for _, field := range fields {
+		t.Run(field, func(t *testing.T) {
+			body := map[string]any{"status": "succeeded", field: -1}
+			buf, _ := json.Marshal(body)
+			req, _ := http.NewRequest("POST",
+				ts.URL+"/internal/runs/"+runID.String()+"/finalize", bytes.NewReader(buf))
+			req.Header.Set("Authorization", "Bearer "+tok)
+			resp, err := ts.Client().Do(req)
+			require.NoError(t, err)
+			defer resp.Body.Close()
+			assert.Equal(t, http.StatusBadRequest, resp.StatusCode,
+				"negative %s must be rejected", field)
+		})
+	}
+}
+
+// TestFinalize_RejectsAlreadyTerminal pins the MAJ-7 fix: a crashed-then-
+// restarted runner can't clobber the original terminal state.
+func TestFinalize_RejectsAlreadyTerminal(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, cleanup := bootPG(t)
+	defer cleanup()
+
+	runID, orgID := seedRun(t, pool)
+
+	// Force the run into a terminal state directly.
+	_, err := pool.Exec(context.Background(),
+		`UPDATE run SET status='succeeded', finished_at=now() WHERE id=$1`,
+		pgtype.UUID{Bytes: runID, Valid: true})
+	require.NoError(t, err)
+
+	signer := token.New(randomMaster(t))
+	tok, hash, err := signer.Sign(token.RunClaims{
+		RunID: runID, OrgID: uuid.UUID(orgID.Bytes), ExpiresAt: time.Now().Add(time.Minute),
+	})
+	require.NoError(t, err)
+	bindRunHash(t, pool, runID, hash)
+
+	srv := NewServer("127.0.0.1:0", Deps{Pool: pool, Signer: signer})
+	ts := httptest.NewServer(srv.Handler)
+	defer ts.Close()
+
+	body := map[string]any{"status": "failed", "error_msg": "restart"}
+	buf, _ := json.Marshal(body)
+	req, _ := http.NewRequest("POST",
+		ts.URL+"/internal/runs/"+runID.String()+"/finalize", bytes.NewReader(buf))
+	req.Header.Set("Authorization", "Bearer "+tok)
+	resp, err := ts.Client().Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusConflict, resp.StatusCode)
+
+	// The original status must be unchanged.
+	var status string
+	require.NoError(t, pool.QueryRow(context.Background(),
+		`SELECT status FROM run WHERE id = $1`,
+		pgtype.UUID{Bytes: runID, Valid: true}).Scan(&status))
+	assert.Equal(t, "succeeded", status)
+}
+
 func TestFinalize_RejectsMismatchedRunID(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
@@ -154,21 +241,26 @@ func TestFinalize_RejectsMismatchedRunID(t *testing.T) {
 	pool, cleanup := bootPG(t)
 	defer cleanup()
 
-	actualRun, orgID := seedRun(t, pool)
+	// Sign for runA (seeded, hash bound); POST to runB's finalize URL so
+	// the middleware accepts the token and the handler's URL-vs-claim
+	// guard fires with 403.
+	runA, orgID := seedRun(t, pool)
+	runB, _ := seedRunInOrg(t, pool, orgID)
 	signer := token.New(randomMaster(t))
-	tok, _, err := signer.Sign(token.RunClaims{
-		RunID:     uuid.New(),
+	tok, hash, err := signer.Sign(token.RunClaims{
+		RunID:     runA,
 		OrgID:     uuid.UUID(orgID.Bytes),
 		ExpiresAt: time.Now().Add(time.Minute),
 	})
 	require.NoError(t, err)
+	bindRunHash(t, pool, runA, hash)
 
 	srv := NewServer("127.0.0.1:0", Deps{Pool: pool, Signer: signer})
 	ts := httptest.NewServer(srv.Handler)
 	defer ts.Close()
 
 	buf, _ := json.Marshal(map[string]any{"status": "succeeded"})
-	req, _ := http.NewRequest("POST", ts.URL+"/internal/runs/"+actualRun.String()+"/finalize", bytes.NewReader(buf))
+	req, _ := http.NewRequest("POST", ts.URL+"/internal/runs/"+runB.String()+"/finalize", bytes.NewReader(buf))
 	req.Header.Set("Authorization", "Bearer "+tok)
 	resp, err := ts.Client().Do(req)
 	require.NoError(t, err)

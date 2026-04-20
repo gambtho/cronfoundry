@@ -2,12 +2,15 @@ package token
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"testing"
 	"time"
 
+	jwtv5 "github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/hkdf"
 )
 
 func randomMaster(t *testing.T) []byte {
@@ -81,4 +84,32 @@ func TestHashToken_IsSha256Hex(t *testing.T) {
 	assert.Len(t, hash, 64)
 	// sha256("anything") = hex ee0874170b7f6f32b8c2ac9573c428d35b575270a66b757c2c0185d2bd09718d
 	assert.Equal(t, "ee0874170b7f6f32b8c2ac9573c428d35b575270a66b757c2c0185d2bd09718d", hash)
+}
+
+// TestVerify_RejectsMissingExp confirms that a token without an exp claim
+// fails verification — jwtv5's default validator accepts tokens without
+// exp, but we require exp to defend against accidentally issuing a
+// never-expiring bearer.
+func TestVerify_RejectsMissingExp(t *testing.T) {
+	master := randomMaster(t)
+	signer := New(master)
+
+	// Reconstruct the internal HKDF key so we can hand-sign a token with
+	// no exp claim without going through Sign (which always adds exp).
+	h := hkdf.New(sha256.New, master, nil, []byte(hkdfInfo))
+	key := make([]byte, 32)
+	_, _ = h.Read(key)
+
+	claims := jwtv5.MapClaims{
+		"run_id": uuid.New().String(),
+		"org_id": uuid.New().String(),
+		// Deliberately omit "exp".
+	}
+	jwt := jwtv5.NewWithClaims(jwtv5.SigningMethodHS256, claims)
+	tok, err := jwt.SignedString(key)
+	require.NoError(t, err)
+
+	_, err = signer.Verify(tok)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "exp")
 }
