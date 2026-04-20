@@ -1,0 +1,19 @@
+version: 1
+skills:
+  - path: skills/weekly-digest
+    schedules:
+      - name: monday-morning
+        cron: "0 9 * * MON"
+        timezone: America/Los_Angeles
+        provider: openai
+        model: gpt-5.1
+        destinations:
+          - slack:
+              secret: slack_url
+              text: "Digest for {{ run.date }}:\n{{ output.truncated 35000 }}"
+        writeback:
+          enabled: true
+          path: memory.md
+          mode: append
+        env:
+          LOOKBACK_DAYS: "7"
