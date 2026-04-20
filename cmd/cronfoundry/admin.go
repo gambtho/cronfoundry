@@ -9,9 +9,10 @@ import (
 func newAdminCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "admin",
-		Short: "Operator utilities — init, secrets, triggers",
+		Short: "Operator utilities — init, secrets, repos, triggers",
 	}
 	cmd.AddCommand(newAdminInitCmd())
 	cmd.AddCommand(newAdminSetSecretCmd())
+	cmd.AddCommand(newAdminConnectRepoCmd())
 	return cmd
 }
