@@ -5,7 +5,9 @@ import (
 )
 
 // newAdminCmd returns the `admin` subcommand group. Leaf subcommands are
-// registered in sibling files (admin_init.go, admin_setsecret.go).
+// registered in sibling files (admin_init.go, admin_setsecret.go,
+// admin_connectrepo.go, admin_listconnections.go, admin_listschedules.go,
+// admin_triggersync.go).
 func newAdminCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "admin",
