@@ -104,10 +104,15 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 	// --- Construct collaborators ---
 	store := secretstore.NewEnvelopePostgresStore(pool, org.ID, master)
 	signer := token.New(master)
-	installs := github.NewInstallationCache(github.InstallationCacheConfig{
+	ghBaseURL := os.Getenv("CRONFOUNDRY_GITHUB_BASE_URL")
+	installsCfg := github.InstallationCacheConfig{
 		AppID:      appID,
 		PrivateKey: pemBytes,
-	})
+	}
+	if ghBaseURL != "" {
+		installsCfg.BaseURL = ghBaseURL
+	}
+	installs := github.NewInstallationCache(installsCfg)
 
 	// --- Initial orphan sweep ---
 	if n, err := scheduler.SweepOrphans(ctx, scheduler.Deps{Pool: pool}); err != nil {

@@ -32,6 +32,10 @@ func RegisterRoutes(mux *http.ServeMux, deps Deps) {
 	mux.Handle("GET /internal/repos/{id}/clone-url", auth(cloneURLHandler{deps}))
 	mux.Handle("POST /internal/runs/{id}/events", auth(eventsHandler{deps}))
 	mux.Handle("POST /internal/runs/{id}/finalize", auth(finalizeHandler{deps}))
+	mux.Handle("POST /internal/runs/{id}/writeback-push", auth(writebackPushHandler{deps}))
+
+	// Manual trigger is unauthenticated (CLI-local). P3 will gate behind UI
+	// session auth.
 	mux.Handle("POST /internal/schedules/{id}/run-now", runNowHandler{deps})
 }
 

@@ -334,6 +334,37 @@ func (q *Queries) GetRunForContext(ctx context.Context, id pgtype.UUID) (GetRunF
 	return i, err
 }
 
+const getRunWritebackConfig = `-- name: GetRunWritebackConfig :one
+SELECT s.writeback_json,
+       rc.github_app_install_id,
+       rc.owner,
+       rc.name AS repo_name
+FROM run r
+JOIN schedule s ON s.id = r.schedule_id
+JOIN skill sk ON sk.id = s.skill_id
+JOIN repo_connection rc ON rc.id = sk.repo_id
+WHERE r.id = $1
+`
+
+type GetRunWritebackConfigRow struct {
+	WritebackJson      []byte
+	GithubAppInstallID int64
+	Owner              string
+	RepoName           string
+}
+
+func (q *Queries) GetRunWritebackConfig(ctx context.Context, id pgtype.UUID) (GetRunWritebackConfigRow, error) {
+	row := q.db.QueryRow(ctx, getRunWritebackConfig, id)
+	var i GetRunWritebackConfigRow
+	err := row.Scan(
+		&i.WritebackJson,
+		&i.GithubAppInstallID,
+		&i.Owner,
+		&i.RepoName,
+	)
+	return i, err
+}
+
 const insertRun = `-- name: InsertRun :one
 WITH ins AS (
     INSERT INTO run (
