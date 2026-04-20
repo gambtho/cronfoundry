@@ -5,8 +5,9 @@ OpenAI / Anthropic / Azure AI Foundry on a schedule, publishes the output to
 GitHub issues, Slack, Discord, or Teams, and commits learnings back to the
 skill repo.
 
-**Status:** `P1 — core runner CLI only`. The scheduler, API, web UI, and Azure
-Bicep deployment are in later phases (P2–P4). See
+**Status:** `P2 — service layer complete`. Includes always-on scheduler, GitHub
+App sync, `/internal` HTTP API, subprocess runner dispatch, and docker-compose
+dev harness. Web UI and Azure deployment are in later phases (P3–P4). See
 [`docs/superpowers/plans/`](docs/superpowers/plans/) for the roadmap.
 
 ## Requirements
@@ -27,7 +28,37 @@ go build -o cronfoundry-runner ./cmd/runner
 
 Produces a single ~25 MB static binary.
 
-## Quick start
+## Quick start (local dev)
+
+```bash
+# 1. Build.
+make build
+
+# 2. Generate a master key on first run, copy the env line it prints.
+./cronfoundry admin init
+export CRONFOUNDRY_MASTER_KEY='<paste>'
+
+# 3. Start Postgres + cronfoundry (docker-compose).
+cp .env.example .env.local   # edit with your values
+# Place your GitHub App's private key at ./app.pem
+make dev
+
+# 4. Run migrations + seed the default organization.
+export CRONFOUNDRY_DATABASE_URL='postgres://cronfoundry:cronfoundry@localhost:5432/cronfoundry?sslmode=disable'
+make migrate
+
+# 5. Connect a repo + set secrets via the CLI.
+./cronfoundry admin connect-repo myorg/skills-repo --installation-id 12345
+echo -n 'https://hooks.slack.com/...' | ./cronfoundry admin set-secret slack_webhook
+echo -n 'sk-...' | ./cronfoundry admin set-secret openai_key
+
+# 6. Watch logs.
+cd deploy && docker compose logs -f cronfoundry
+```
+
+See [`docs/guides/smoke-test-p2.md`](docs/guides/smoke-test-p2.md) for the full walkthrough with GitHub App registration.
+
+## Quick start (standalone runner)
 
 A tiny end-to-end run with the bundled smoke fixture:
 
