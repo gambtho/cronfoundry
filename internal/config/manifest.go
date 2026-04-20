@@ -2,6 +2,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 
@@ -67,27 +68,41 @@ type EnvValue struct {
 }
 
 func (e *EnvValue) UnmarshalJSON(data []byte) error {
-	var s string
-	if err := json.Unmarshal(data, &s); err == nil {
+	trimmed := bytes.TrimSpace(data)
+	if len(trimmed) == 0 {
+		return fmt.Errorf("env value must not be empty")
+	}
+	if bytes.Equal(trimmed, []byte("null")) {
+		return fmt.Errorf("env value must not be null")
+	}
+	switch trimmed[0] {
+	case '"':
+		var s string
+		if err := json.Unmarshal(data, &s); err != nil {
+			return fmt.Errorf("env string value: %w", err)
+		}
 		e.Literal = s
 		return nil
+	case '{':
+		var ref struct {
+			Secret string `json:"secret"`
+		}
+		if err := json.Unmarshal(data, &ref); err != nil {
+			return fmt.Errorf("env object value: %w", err)
+		}
+		if ref.Secret == "" {
+			return fmt.Errorf("env object value must set 'secret'")
+		}
+		e.Secret = ref.Secret
+		return nil
+	default:
+		return fmt.Errorf("env value must be a string or { secret: name } object, got %s", string(trimmed))
 	}
-	var ref struct {
-		Secret string `json:"secret"`
-	}
-	if err := json.Unmarshal(data, &ref); err != nil {
-		return fmt.Errorf("env value must be string or { secret: name }: %w", err)
-	}
-	if ref.Secret == "" {
-		return fmt.Errorf("env value object must set 'secret'")
-	}
-	e.Secret = ref.Secret
-	return nil
 }
 
 func ParseManifest(data []byte) (*Manifest, error) {
 	var m Manifest
-	if err := yaml.Unmarshal(data, &m); err != nil {
+	if err := yaml.Unmarshal(data, &m, yaml.DisallowUnknownFields); err != nil {
 		return nil, fmt.Errorf("parse manifest: %w", err)
 	}
 	return &m, nil
