@@ -18,6 +18,7 @@ import (
 type RunContext struct {
 	RunID           string          `json:"run_id"`
 	OrgID           string          `json:"org_id"`
+	ScheduleName    string          `json:"schedule_name"`
 	SkillPath       string          `json:"skill_path"`
 	SkillSha        string          `json:"skill_sha"`
 	Repo            string          `json:"repo"` // "owner/name"
@@ -68,6 +69,7 @@ func (h runContextHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	out := RunContext{
 		RunID:           urlRunID.String(),
 		OrgID:           uuid.UUID(row.OrgID.Bytes).String(),
+		ScheduleName:    row.ScheduleName,
 		SkillPath:       row.SkillPath,
 		SkillSha:        row.SkillSha,
 		Repo:            row.Owner + "/" + row.RepoName,
