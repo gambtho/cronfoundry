@@ -19,7 +19,7 @@
 
 ## File Structure (locked in upfront)
 
-```
+```text
 cronfoundry/
 ├── cmd/cronfoundry/
 │   ├── admin.go                              # MODIFY — register the three new subcommands

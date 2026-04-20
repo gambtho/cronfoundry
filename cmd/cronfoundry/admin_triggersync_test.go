@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gambtho/cronfoundry/internal/github"
+	"github.com/gambtho/cronfoundry/internal/githubtest"
 )
 
 func TestAdminTriggerSync_MissingEnv(t *testing.T) {
@@ -32,7 +32,7 @@ func TestAdminTriggerSync_MissingConnection(t *testing.T) {
 	t.Setenv(envGitHubAppID, "42")
 
 	// Write a throwaway PEM to a temp file.
-	priv, _ := github.MustTestPrivateKey(t)
+	priv, _ := githubtest.MustPrivateKey(t)
 	pemPath := filepath.Join(t.TempDir(), "app.pem")
 	require.NoError(t, os.WriteFile(pemPath, priv, 0o600))
 	t.Setenv(envGitHubAppPEM, pemPath)

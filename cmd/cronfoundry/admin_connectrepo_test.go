@@ -24,6 +24,32 @@ func TestAdminConnectRepo_BadRepoFormat(t *testing.T) {
 	assert.Contains(t, err.Error(), "owner/name")
 }
 
+func TestAdminConnectRepo_ValidatesInputs(t *testing.T) {
+	t.Setenv(envDatabaseURL, "postgres://example")
+	cases := []struct {
+		name, repo, wantErr string
+		installID           int64
+		branch              string
+		syncSec             int
+	}{
+		{"owner missing", "/repo", "owner/name", 1, "main", 60},
+		{"name missing", "owner/", "owner/name", 1, "main", 60},
+		{"too many slashes", "owner/name/extra", "owner/name", 1, "main", 60},
+		{"zero install id", "o/r", "installation-id", 0, "main", 60},
+		{"negative install id", "o/r", "installation-id", -1, "main", 60},
+		{"empty branch", "o/r", "branch", 1, "", 60},
+		{"zero interval", "o/r", "sync-interval-sec", 1, "main", 0},
+		{"negative interval", "o/r", "sync-interval-sec", 1, "main", -5},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := runAdminConnectRepo(context.Background(), tc.repo, tc.installID, tc.branch, tc.syncSec, &bytes.Buffer{})
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
+}
+
 func TestAdminConnectRepo_Success(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
