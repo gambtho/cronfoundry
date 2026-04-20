@@ -21,7 +21,7 @@ import (
 // The returned JWT includes:
 //   - iss = appID (numeric App identifier, passed as a string)
 //   - iat = now - 60s (clock-skew tolerance)
-//   - exp = now + 9min (GitHub rejects >10min; we leave a 1min cushion)
+//   - exp = iat + 9min (≈ now + 8min; GitHub caps at 10min so this leaves a 2min cushion)
 //
 // Accepts PKCS#1 ("RSA PRIVATE KEY") or PKCS#8 ("PRIVATE KEY") PEM blocks.
 func AppJWT(appID string, privateKeyPEM []byte) (string, error) {

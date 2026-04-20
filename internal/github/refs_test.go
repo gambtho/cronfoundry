@@ -52,3 +52,18 @@ func TestGetBranchHead_EmptyShaIsError(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "empty")
 }
+
+func TestGetBranchHead_BranchWithSlash(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/repos/o/r/branches/feat%2Fmine", r.URL.EscapedPath())
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"commit": map[string]any{"sha": "abc"},
+		})
+	}))
+	defer srv.Close()
+
+	sha, err := GetBranchHead(context.Background(), srv.Client(), srv.URL, "tok", "o", "r", "feat/mine")
+	require.NoError(t, err)
+	assert.Equal(t, "abc", sha)
+}

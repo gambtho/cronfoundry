@@ -37,13 +37,24 @@ func newAdminConnectRepoCmd() *cobra.Command {
 }
 
 func runAdminConnectRepo(ctx context.Context, repo string, installID int64, branch string, syncSec int, out io.Writer) error {
+	if installID <= 0 {
+		return fmt.Errorf("installation-id must be positive; got %d", installID)
+	}
+	if branch == "" {
+		return fmt.Errorf("branch must not be empty")
+	}
+	if syncSec <= 0 {
+		return fmt.Errorf("sync-interval-sec must be positive; got %d", syncSec)
+	}
+	owner, rest, ok := strings.Cut(repo, "/")
+	if !ok || owner == "" || rest == "" || strings.Contains(rest, "/") {
+		return fmt.Errorf("repo must be exactly owner/name (no extra slashes); got %q", repo)
+	}
+	name := rest
+
 	dsn := os.Getenv(envDatabaseURL)
 	if dsn == "" {
 		return fmt.Errorf("%s is required", envDatabaseURL)
-	}
-	owner, name, ok := strings.Cut(repo, "/")
-	if !ok || owner == "" || name == "" {
-		return fmt.Errorf("repo must be owner/name; got %q", repo)
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -76,7 +87,9 @@ func runAdminConnectRepo(ctx context.Context, repo string, installID int64, bran
 		return fmt.Errorf("insert repo connection: %w", err)
 	}
 
-	fmt.Fprintf(out, "Connected %s/%s (install=%d, branch=%s, interval=%ds)\n",
-		row.Owner, row.Name, row.GithubAppInstallID, row.DefaultBranch, row.SyncIntervalSec)
+	if _, err := fmt.Fprintf(out, "Connected %s/%s (install=%d, branch=%s, interval=%ds)\n",
+		row.Owner, row.Name, row.GithubAppInstallID, row.DefaultBranch, row.SyncIntervalSec); err != nil {
+		return fmt.Errorf("write output: %w", err)
+	}
 	return nil
 }

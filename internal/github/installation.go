@@ -103,7 +103,7 @@ func (c *InstallationCache) fetch(ctx context.Context, installID int64) (string,
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("github: installation: http do: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -116,6 +116,9 @@ func (c *InstallationCache) fetch(ctx context.Context, installID int64) (string,
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		return "", time.Time{}, fmt.Errorf("github: installation: decode: %w", err)
+	}
+	if payload.Token == "" {
+		return "", time.Time{}, fmt.Errorf("github: installation: empty token in response")
 	}
 	expires, err := time.Parse(time.RFC3339, payload.ExpiresAt)
 	if err != nil {

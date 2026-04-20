@@ -65,3 +65,16 @@ skills:
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "SKILL.md")
 }
+
+func TestLoadManifest_RejectsPathTraversal(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, root, "cronfoundry.yaml", `version: 1
+skills:
+  - path: "../escape"
+    schedules:
+      - { name: x, cron: "* * * * *", provider: openai, model: m, destinations: [] }
+`)
+	_, _, err := LoadManifest(root)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "escapes")
+}
