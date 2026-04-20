@@ -1,0 +1,36 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: cronfoundry
+      POSTGRES_PASSWORD: ${CRONFOUNDRY_DB_PASSWORD:-cronfoundry}
+      POSTGRES_DB: cronfoundry
+    ports: ["5432:5432"]
+    volumes: ["db-data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cronfoundry -d cronfoundry"]
+      interval: 5s
+      retries: 10
+
+  cronfoundry:
+    image: cronfoundry:dev
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    environment:
+      CRONFOUNDRY_DATABASE_URL: postgres://cronfoundry:${CRONFOUNDRY_DB_PASSWORD:-cronfoundry}@db:5432/cronfoundry?sslmode=disable
+      CRONFOUNDRY_MASTER_KEY: ${CRONFOUNDRY_MASTER_KEY}
+      CRONFOUNDRY_GITHUB_APP_ID: ${CRONFOUNDRY_GITHUB_APP_ID}
+      CRONFOUNDRY_GITHUB_APP_PEM: /run/secrets/app.pem
+    ports: ["8080:8080"]
+    depends_on:
+      db: { condition: service_healthy }
+    secrets: [app_pem]
+    command: ["serve", "--addr", "0.0.0.0:8080"]
+
+secrets:
+  app_pem:
+    file: ../app.pem
+
+volumes:
+  db-data:
