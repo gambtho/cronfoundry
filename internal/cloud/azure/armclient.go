@@ -18,5 +18,5 @@ type JobExecutionTemplate struct {
 
 // ARMJobsClient is the testability seam over armappcontainers job execution.
 type ARMJobsClient interface {
-	BeginStartExecution(ctx context.Context, resourceGroup, jobName string, spec JobExecutionTemplate, opts interface{}) (string, error)
+	BeginStartExecution(ctx context.Context, resourceGroup, jobName string, spec JobExecutionTemplate) (string, error)
 }

@@ -15,7 +15,7 @@ type fakeKVClient struct {
 	secrets map[string]string
 }
 
-func (f *fakeKVClient) GetSecret(ctx context.Context, name, version string, opts interface{}) (string, error) {
+func (f *fakeKVClient) GetSecret(ctx context.Context, name, version string) (string, error) {
 	v, ok := f.secrets[name]
 	if !ok {
 		return "", azuresecretstore.ErrSecretNotFound
@@ -23,12 +23,15 @@ func (f *fakeKVClient) GetSecret(ctx context.Context, name, version string, opts
 	return v, nil
 }
 
-func (f *fakeKVClient) SetSecret(ctx context.Context, name, value string, opts interface{}) error {
+func (f *fakeKVClient) SetSecret(ctx context.Context, name, value string) error {
 	f.secrets[name] = value
 	return nil
 }
 
-func (f *fakeKVClient) DeleteSecret(ctx context.Context, name string, opts interface{}) error {
+func (f *fakeKVClient) DeleteSecret(ctx context.Context, name string) error {
+	if _, ok := f.secrets[name]; !ok {
+		return azuresecretstore.ErrSecretNotFound
+	}
 	delete(f.secrets, name)
 	return nil
 }
@@ -71,6 +74,13 @@ func TestKeyVaultStore_Delete(t *testing.T) {
 	require.NoError(t, store.Delete(context.Background(), "K"))
 	_, err := store.Get(context.Background(), "K")
 	require.ErrorIs(t, err, secretstore.ErrNotFound)
+}
+
+func TestKeyVaultStore_Delete_NotFound_ReturnsNil(t *testing.T) {
+	client := &fakeKVClient{secrets: map[string]string{}}
+	store := azuresecretstore.NewKeyVaultStore(client)
+	// SecretStore.Delete contract: returns nil if the secret does not exist.
+	require.NoError(t, store.Delete(context.Background(), "NONEXISTENT"))
 }
 
 func TestKeyVaultStore_List_Sorted(t *testing.T) {

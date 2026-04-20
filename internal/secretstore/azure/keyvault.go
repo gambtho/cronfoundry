@@ -13,8 +13,11 @@ type KeyVaultStore struct {
 	client KVClient
 }
 
-// NewKeyVaultStore wraps a KVClient as a SecretStore.
+// NewKeyVaultStore wraps a KVClient as a SecretStore. Panics if client is nil.
 func NewKeyVaultStore(client KVClient) *KeyVaultStore {
+	if client == nil {
+		panic("secretstore/azure: NewKeyVaultStore: client must not be nil")
+	}
 	return &KeyVaultStore{client: client}
 }
 
@@ -22,7 +25,7 @@ func NewKeyVaultStore(client KVClient) *KeyVaultStore {
 var _ secretstore.SecretStore = (*KeyVaultStore)(nil)
 
 func (s *KeyVaultStore) Get(ctx context.Context, name string) (string, error) {
-	val, err := s.client.GetSecret(ctx, name, "", nil)
+	val, err := s.client.GetSecret(ctx, name, "")
 	if err != nil {
 		if errors.Is(err, ErrSecretNotFound) {
 			return "", secretstore.ErrNotFound
@@ -33,11 +36,15 @@ func (s *KeyVaultStore) Get(ctx context.Context, name string) (string, error) {
 }
 
 func (s *KeyVaultStore) Put(ctx context.Context, name, value string) error {
-	return s.client.SetSecret(ctx, name, value, nil)
+	return s.client.SetSecret(ctx, name, value)
 }
 
 func (s *KeyVaultStore) Delete(ctx context.Context, name string) error {
-	return s.client.DeleteSecret(ctx, name, nil)
+	err := s.client.DeleteSecret(ctx, name)
+	if errors.Is(err, ErrSecretNotFound) {
+		return nil
+	}
+	return err
 }
 
 func (s *KeyVaultStore) List(ctx context.Context) ([]string, error) {

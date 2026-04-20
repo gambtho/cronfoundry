@@ -3,6 +3,7 @@ package azure
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets"
@@ -18,12 +19,12 @@ type realKVClient struct {
 func NewRealKVClient(vaultURL string, cred azcore.TokenCredential) (KVClient, error) {
 	c, err := azsecrets.NewClient(vaultURL, cred, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("azsecrets.NewClient(%q): %w", vaultURL, err)
 	}
 	return &realKVClient{c: c}, nil
 }
 
-func (r *realKVClient) GetSecret(ctx context.Context, name, version string, _ interface{}) (string, error) {
+func (r *realKVClient) GetSecret(ctx context.Context, name, version string) (string, error) {
 	resp, err := r.c.GetSecret(ctx, name, version, nil)
 	if err != nil {
 		var respErr *azcore.ResponseError
@@ -38,15 +39,22 @@ func (r *realKVClient) GetSecret(ctx context.Context, name, version string, _ in
 	return *resp.Value, nil
 }
 
-func (r *realKVClient) SetSecret(ctx context.Context, name, value string, _ interface{}) error {
+func (r *realKVClient) SetSecret(ctx context.Context, name, value string) error {
 	params := azsecrets.SetSecretParameters{Value: &value}
 	_, err := r.c.SetSecret(ctx, name, params, nil)
 	return err
 }
 
-func (r *realKVClient) DeleteSecret(ctx context.Context, name string, _ interface{}) error {
+func (r *realKVClient) DeleteSecret(ctx context.Context, name string) error {
 	_, err := r.c.DeleteSecret(ctx, name, nil)
-	return err
+	if err != nil {
+		var respErr *azcore.ResponseError
+		if errors.As(err, &respErr) && respErr.StatusCode == 404 {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 func (r *realKVClient) ListSecrets(ctx context.Context) ([]string, error) {

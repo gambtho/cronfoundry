@@ -12,8 +12,9 @@ var ErrSecretNotFound = errors.New("azure: secret not found")
 // KVClient is the testability seam over azsecrets.Client.
 // The real implementation wraps azsecrets.Client; tests use fakeKVClient.
 type KVClient interface {
-	GetSecret(ctx context.Context, name, version string, opts interface{}) (string, error)
-	SetSecret(ctx context.Context, name, value string, opts interface{}) error
-	DeleteSecret(ctx context.Context, name string, opts interface{}) error
+	// GetSecret returns the value of the named secret. Pass version "" to retrieve the latest.
+	GetSecret(ctx context.Context, name, version string) (string, error)
+	SetSecret(ctx context.Context, name, value string) error
+	DeleteSecret(ctx context.Context, name string) error
 	ListSecrets(ctx context.Context) ([]string, error)
 }

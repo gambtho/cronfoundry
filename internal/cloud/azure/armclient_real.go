@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v2"
 )
 
@@ -17,7 +16,7 @@ type realARMJobsClient struct {
 
 // NewRealARMJobsClient constructs an ARMJobsClient backed by the Azure SDK.
 func NewRealARMJobsClient(subscriptionID string, cred azcore.TokenCredential) (ARMJobsClient, error) {
-	jobs, err := armappcontainers.NewJobsClient(subscriptionID, cred, &arm.ClientOptions{})
+	jobs, err := armappcontainers.NewJobsClient(subscriptionID, cred, nil)
 	if err != nil {
 		return nil, fmt.Errorf("armappcontainers.NewJobsClient: %w", err)
 	}
@@ -26,7 +25,7 @@ func NewRealARMJobsClient(subscriptionID string, cred azcore.TokenCredential) (A
 
 // BeginStartExecution starts a Container Apps Job execution and polls until completion,
 // returning the execution name.
-func (c *realARMJobsClient) BeginStartExecution(ctx context.Context, resourceGroup, jobName string, spec JobExecutionTemplate, _ interface{}) (string, error) {
+func (c *realARMJobsClient) BeginStartExecution(ctx context.Context, resourceGroup, jobName string, spec JobExecutionTemplate) (string, error) {
 	template := toARMTemplate(spec)
 	poller, err := c.jobs.BeginStart(ctx, resourceGroup, jobName, &armappcontainers.JobsClientBeginStartOptions{
 		Template: &template,

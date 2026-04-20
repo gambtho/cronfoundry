@@ -16,7 +16,7 @@ type fakeARMClient struct {
 	err        error
 }
 
-func (f *fakeARMClient) BeginStartExecution(ctx context.Context, resourceGroup, jobName string, spec cloudazure.JobExecutionTemplate, opts interface{}) (string, error) {
+func (f *fakeARMClient) BeginStartExecution(ctx context.Context, resourceGroup, jobName string, spec cloudazure.JobExecutionTemplate) (string, error) {
 	if f.err != nil {
 		return "", f.err
 	}
@@ -49,22 +49,24 @@ func TestContainerAppsJobDispatcher_DispatchCreatesExecution(t *testing.T) {
 	require.Equal(t, []string{"RUN_ID=abc123"}, fake.dispatched[0].Template.Env)
 }
 
-func TestContainerAppsJobDispatcher_HandleWait_IsNoOp(t *testing.T) {
+func TestContainerAppsJobDispatcher_HandleWait_NotImplemented(t *testing.T) {
 	fake := &fakeARMClient{}
 	d := cloudazure.NewContainerAppsJobDispatcher(fake, "rg-test", "cronfoundry-runner")
 	spec := cloud.DispatchSpec{BinaryPath: "/usr/local/bin/cronfoundry", Args: []string{"runner"}}
 	h, err := d.Dispatch(context.Background(), spec)
 	require.NoError(t, err)
-	require.NoError(t, h.Wait())
+	require.Error(t, h.Wait())
+	require.Contains(t, h.Wait().Error(), "not implemented")
 }
 
-func TestContainerAppsJobDispatcher_HandleKill_IsNoOp(t *testing.T) {
+func TestContainerAppsJobDispatcher_HandleKill_NotImplemented(t *testing.T) {
 	fake := &fakeARMClient{}
 	d := cloudazure.NewContainerAppsJobDispatcher(fake, "rg-test", "cronfoundry-runner")
 	spec := cloud.DispatchSpec{BinaryPath: "/usr/local/bin/cronfoundry", Args: []string{"runner"}}
 	h, err := d.Dispatch(context.Background(), spec)
 	require.NoError(t, err)
-	require.NoError(t, h.Kill())
+	require.Error(t, h.Kill())
+	require.Contains(t, h.Kill().Error(), "not implemented")
 }
 
 func TestContainerAppsJobDispatcher_DispatchReturnsError(t *testing.T) {

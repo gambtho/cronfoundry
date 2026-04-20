@@ -172,6 +172,12 @@ func buildJobDispatcher() (cloud.JobDispatcher, error) {
 	jobName := os.Getenv("AZURE_CAE_JOB_NAME")
 	subID := os.Getenv("AZURE_SUBSCRIPTION_ID")
 	if rg == "" || jobName == "" || subID == "" {
+		if rg != "" || jobName != "" || subID != "" {
+			slog.Warn("serve: partial Azure dispatcher config — falling back to subprocess",
+				"AZURE_CAE_RESOURCE_GROUP_set", rg != "",
+				"AZURE_CAE_JOB_NAME_set", jobName != "",
+				"AZURE_SUBSCRIPTION_ID_set", subID != "")
+		}
 		return cloud.NewSubprocessDispatcher(), nil
 	}
 	cred, err := azidentity.NewDefaultAzureCredential(nil)

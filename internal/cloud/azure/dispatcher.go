@@ -37,7 +37,7 @@ func (d *ContainerAppsJobDispatcher) Dispatch(ctx context.Context, spec cloud.Di
 		ContainerArgs: append([]string{}, spec.Args...),
 		Env:           append([]string{}, spec.Env...),
 	}
-	executionName, err := d.client.BeginStartExecution(ctx, d.resourceGroup, d.jobName, tmpl, nil)
+	executionName, err := d.client.BeginStartExecution(ctx, d.resourceGroup, d.jobName, tmpl)
 	if err != nil {
 		return nil, fmt.Errorf("cloud/azure: dispatch job %s: %w", d.jobName, err)
 	}
@@ -45,6 +45,8 @@ func (d *ContainerAppsJobDispatcher) Dispatch(ctx context.Context, spec cloud.Di
 }
 
 type containerAppsHandle struct {
+	// executionName is the ARM execution identifier returned by BeginStartExecution.
+	// Retained for a future Wait implementation that polls job status.
 	executionName string
 }
 
@@ -53,8 +55,14 @@ var _ cloud.Handle = (*containerAppsHandle)(nil)
 // PID returns 0 — Azure Container Apps Jobs have no OS process identifier.
 func (h *containerAppsHandle) PID() int { return 0 }
 
-// Wait is a no-op for MVP — job outcomes are observed via Log Analytics.
-func (h *containerAppsHandle) Wait() error { return nil }
+// Wait is not implemented for Azure Container Apps Jobs.
+// Observe job outcomes via Log Analytics or the ARM jobs API.
+func (h *containerAppsHandle) Wait() error {
+	return fmt.Errorf("cloud/azure: Wait not implemented: observe execution %q via Log Analytics", h.executionName)
+}
 
-// Kill is not supported for Container Apps Jobs in MVP.
-func (h *containerAppsHandle) Kill() error { return nil }
+// Kill is not implemented for Azure Container Apps Jobs.
+// Cancel via the Azure Portal or `az containerapp job stop`.
+func (h *containerAppsHandle) Kill() error {
+	return fmt.Errorf("cloud/azure: Kill not implemented for execution %q", h.executionName)
+}
