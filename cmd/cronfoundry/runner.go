@@ -21,6 +21,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/gambtho/cronfoundry/internal/config"
 	"github.com/gambtho/cronfoundry/internal/github"
 	"github.com/gambtho/cronfoundry/internal/publish"
 	"github.com/gambtho/cronfoundry/internal/runner"
@@ -88,7 +89,7 @@ func runRunnerHTTP(ctx context.Context, runIDFlag string) error {
 
 	// 2) Fetch scoped secrets. We collect every `{"secret": "name"}`
 	//    reference from destinations + env, plus llm_secret_ref.
-	secretNames := collectSecretNames(runCtx)
+	secretNames := config.CollectSecretRefs(runCtx.Destinations, runCtx.Env, runCtx.LLMSecretRef)
 	secretMap, err := client.GetSecrets(ctx, secretNames)
 	if err != nil {
 		return failRun(ctx, client, runID, "secrets_fetch", err)
@@ -384,60 +385,4 @@ func (c *apiClient) do(ctx context.Context, method, path string, body, decodeInt
 		}
 	}
 	return nil
-}
-
-// collectSecretNames extracts the list of secret names referenced by the run.
-//
-// Rather than reparsing the full JSON schema for destinations + env — which
-// evolves — we do a string scan for `"secret": "NAME"` pairs. This is robust
-// against top-level array vs object shapes and against nested nesting in
-// different publisher configs, at the cost of being slightly loose: literal
-// values that happen to contain the string `"secret"` could theoretically
-// produce a false match. In practice the JSON comes from our own manifest
-// parser which only emits this pattern for actual secret references.
-func collectSecretNames(ctx runContext) []string {
-	seen := map[string]struct{}{}
-	scan := func(raw json.RawMessage) {
-		if len(raw) == 0 {
-			return
-		}
-		s := string(raw)
-		i := 0
-		for {
-			idx := strings.Index(s[i:], `"secret"`)
-			if idx < 0 {
-				break
-			}
-			idx += i
-			j := idx + len(`"secret"`)
-			for j < len(s) && (s[j] == ' ' || s[j] == ':' || s[j] == '\t' || s[j] == '\n' || s[j] == '\r') {
-				j++
-			}
-			if j >= len(s) || s[j] != '"' {
-				i = idx + 1
-				continue
-			}
-			j++
-			end := strings.IndexByte(s[j:], '"')
-			if end < 0 {
-				break
-			}
-			end += j
-			name := s[j:end]
-			if name != "" {
-				seen[name] = struct{}{}
-			}
-			i = end + 1
-		}
-	}
-	scan(ctx.Destinations)
-	scan(ctx.Env)
-	if ctx.LLMSecretRef != nil && *ctx.LLMSecretRef != "" {
-		seen[*ctx.LLMSecretRef] = struct{}{}
-	}
-	out := make([]string, 0, len(seen))
-	for n := range seen {
-		out = append(out, n)
-	}
-	return out
 }
