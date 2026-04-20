@@ -107,7 +107,7 @@ func TestCloneURL_MintsURL(t *testing.T) {
 
 	var body map[string]string
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
-	assert.Contains(t, body["url"], "x-access-token:ghs_xyz@github.com/acme/widgets.git")
+	assert.Equal(t, "https://github.com/acme/widgets.git", body["url"])
 }
 
 func TestCloneURL_MissingRepo(t *testing.T) {
