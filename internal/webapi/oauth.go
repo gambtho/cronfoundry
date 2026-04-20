@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
@@ -19,6 +20,10 @@ const (
 	githubAccessTokenURL = "https://github.com/login/oauth/access_token"
 	githubUserURL        = "https://api.github.com/user"
 )
+
+// githubClient is used for all outbound GitHub API calls. The 10-second timeout
+// prevents slow or hung GitHub endpoints from holding goroutines indefinitely.
+var githubClient = &http.Client{Timeout: 10 * time.Second}
 
 type oauthHandlers struct{ deps Deps }
 
@@ -51,11 +56,15 @@ func (h oauthHandlers) callback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing state cookie", http.StatusBadRequest)
 		return
 	}
+	// Clear state cookie immediately — it's single-use regardless of outcome.
+	http.SetCookie(w, &http.Cookie{Name: "oauth_state", MaxAge: -1, Path: "/"})
 	if r.URL.Query().Get("state") != stateCookie.Value {
 		http.Error(w, "state mismatch", http.StatusBadRequest)
 		return
 	}
-	// Verify the state cookie is a valid, unexpired signed token.
+	// Verify signature and expiry — the equality check above is necessary but not
+	// sufficient; without this, any attacker-supplied consistent (state, cookie) pair
+	// would pass. VerifySession is the actual integrity guard.
 	if _, err := VerifySession(stateCookie.Value, h.deps.MasterKey); err != nil {
 		http.Error(w, "invalid state", http.StatusBadRequest)
 		return
@@ -63,11 +72,13 @@ func (h oauthHandlers) callback(w http.ResponseWriter, r *http.Request) {
 
 	accessToken, err := h.exchangeCode(r.Context(), r.URL.Query().Get("code"))
 	if err != nil {
+		slog.Error("oauth: token exchange failed", "err", err)
 		http.Error(w, "token exchange failed", http.StatusBadGateway)
 		return
 	}
 	login, err := h.fetchLogin(r.Context(), accessToken)
 	if err != nil {
+		slog.Error("oauth: user fetch failed", "err", err)
 		http.Error(w, "user fetch failed", http.StatusBadGateway)
 		return
 	}
@@ -76,7 +87,6 @@ func (h oauthHandlers) callback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "access denied", http.StatusForbidden)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: "oauth_state", MaxAge: -1, Path: "/"})
 	session, err := SignSession(SessionClaims{Login: login, Role: role}, h.deps.MasterKey, 24*time.Hour)
 	if err != nil {
 		http.Error(w, "session creation failed", http.StatusInternalServerError)
@@ -115,14 +125,14 @@ func (h oauthHandlers) exchangeCode(ctx context.Context, code string) (string, e
 	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := githubClient.Do(req)
 	if err != nil {
 		return "", err
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("github token endpoint returned %d", resp.StatusCode)
 	}
-	defer resp.Body.Close()
 	var result struct {
 		AccessToken string `json:"access_token"`
 		Error       string `json:"error"`
@@ -147,15 +157,18 @@ func (h oauthHandlers) fetchLogin(ctx context.Context, accessToken string) (stri
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
 	req.Header.Set("Accept", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := githubClient.Do(req)
 	if err != nil {
 		return "", err
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("github user endpoint returned %d", resp.StatusCode)
 	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read github user response: %w", err)
+	}
 	var user struct {
 		Login string `json:"login"`
 	}

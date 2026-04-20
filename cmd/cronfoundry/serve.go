@@ -134,7 +134,13 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 		AdminLogins:       adminLogins,
 		ViewerLogins:      viewerLogins,
 	})
-	srv := &http.Server{Addr: addr, Handler: mux}
+	srv := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
 
 	self, err := os.Executable()
 	if err != nil {

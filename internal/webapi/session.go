@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -41,7 +42,7 @@ func VerifySession(cookie string, key []byte) (SessionClaims, error) {
 	if len(key) == 0 {
 		return SessionClaims{}, errors.New("session: signing key must not be empty")
 	}
-	dot := lastDot(cookie)
+	dot := strings.LastIndexByte(cookie, '.')
 	if dot < 0 {
 		return SessionClaims{}, errors.New("invalid signature: malformed cookie")
 	}
@@ -74,13 +75,4 @@ func sign(data, key []byte) []byte {
 	mac := hmac.New(sha256.New, key)
 	mac.Write(data)
 	return mac.Sum(nil)
-}
-
-func lastDot(s string) int {
-	for i := len(s) - 1; i >= 0; i-- {
-		if s[i] == '.' {
-			return i
-		}
-	}
-	return -1
 }
