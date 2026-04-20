@@ -1,0 +1,9 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: cronfoundry
+      POSTGRES_PASSWORD: cronfoundry
+      POSTGRES_DB: cronfoundry
+    ports: ["5433:5432"]
+    tmpfs: ["/var/lib/postgresql/data"]

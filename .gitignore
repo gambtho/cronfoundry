@@ -6,6 +6,7 @@
 coverage.out
 .env
 .env.local
+app.pem
 
 # Claude Code local state
 .claude/
