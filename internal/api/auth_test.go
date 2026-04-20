@@ -115,7 +115,9 @@ func TestNewServer_RoutesRegistered(t *testing.T) {
 		"GET", "/internal/runs/00000000-0000-0000-0000-000000000001/context", nil))
 	assert.Equal(t, http.StatusUnauthorized, rr2.Code)
 
-	// Protected route with bearer → 501 (stub handler returns not-implemented).
+	// Protected route with bearer whose run_id doesn't match the URL →
+	// runContextHandler returns 403 Forbidden (the URL-vs-claim guard fires
+	// before any DB work).
 	tok, _, err := signer.Sign(token.RunClaims{
 		RunID:     uuid.New(),
 		OrgID:     uuid.New(),
@@ -127,7 +129,7 @@ func TestNewServer_RoutesRegistered(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+tok)
 	rr3 := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(rr3, req)
-	assert.Equal(t, http.StatusNotImplemented, rr3.Code)
+	assert.Equal(t, http.StatusForbidden, rr3.Code)
 
 	// Manual trigger endpoint is unauthenticated — it returns 501 directly.
 	rr4 := httptest.NewRecorder()
