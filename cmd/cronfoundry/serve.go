@@ -82,6 +82,7 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 	installs := github.NewInstallationCache(github.InstallationCacheConfig{
 		AppID:      appID,
 		PrivateKey: pemBytes,
+		BaseURL:    os.Getenv("CRONFOUNDRY_GITHUB_BASE_URL"),
 	})
 
 	// --- Initial orphan sweep ---
@@ -93,10 +94,11 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 
 	// --- Build API + scheduler ---
 	srv := api.NewServer(addr, api.Deps{
-		Pool:          pool,
-		Signer:        signer,
-		Secrets:       store,
-		Installations: installs,
+		Pool:            pool,
+		Signer:          signer,
+		Secrets:         store,
+		Installations:   installs,
+		GitHubCloneBase: os.Getenv("CRONFOUNDRY_GITHUB_CLONE_BASE"),
 	})
 
 	self, err := os.Executable()

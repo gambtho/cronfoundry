@@ -39,7 +39,7 @@ type RunInput struct {
 	Secrets *secrets.Resolver
 
 	LLMAPIKey     string
-	LLMEndpoint   string // Azure AI Foundry only
+	LLMEndpoint   string // overrides provider's default API base URL; required for azure-foundry
 	LLMDeployment string // Azure AI Foundry only
 
 	DryRun   bool // don't publish, don't writeback, don't push
@@ -64,7 +64,7 @@ type RunResult struct {
 // Deps inject the runner's collaborators. Tests pass fakes; the CLI wires real
 // provider factory and publishers.
 type Deps struct {
-	ProviderFactory func(name string) (llm.Provider, error)
+	ProviderFactory func(name, endpoint string) (llm.Provider, error)
 	Publishers      map[string]publish.Publisher
 	Now             func() time.Time
 }
@@ -137,7 +137,7 @@ func (r *Runner) Run(ctx context.Context, in RunInput) (RunResult, error) {
 	}
 	msgs = append(msgs, llm.Message{Role: llm.RoleUser, Content: body})
 
-	provider, err := r.deps.ProviderFactory(sch.Provider)
+	provider, err := r.deps.ProviderFactory(sch.Provider, in.LLMEndpoint)
 	if err != nil {
 		return fail(&result, err, r.deps.Now)
 	}

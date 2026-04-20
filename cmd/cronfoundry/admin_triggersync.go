@@ -94,11 +94,21 @@ func runAdminTriggerSync(ctx context.Context, repo string, out io.Writer) error 
 	cache := github.NewInstallationCache(github.InstallationCacheConfig{
 		AppID:      appID,
 		PrivateKey: pemBytes,
+		BaseURL:    os.Getenv("CRONFOUNDRY_GITHUB_BASE_URL"),
 	})
+	cloneBase := os.Getenv("CRONFOUNDRY_GITHUB_CLONE_BASE")
+	var cloneURLFor func(owner, name string) string
+	if cloneBase != "" {
+		cloneURLFor = func(owner, name string) string {
+			return cloneBase + "/" + owner + "/" + name
+		}
+	}
 	poller := sync.NewPoller(sync.PollerConfig{
 		Pool:          pool,
 		OrgID:         org.ID,
 		Installations: cache,
+		GitHubBaseURL: os.Getenv("CRONFOUNDRY_GITHUB_BASE_URL"),
+		CloneURLFor:   cloneURLFor,
 	})
 
 	if err := poller.SyncOne(ctx, connID); err != nil {

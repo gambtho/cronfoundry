@@ -58,13 +58,19 @@ func (h cloneURLHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tok, err := h.deps.Installations.Token(r.Context(), row.GithubAppInstallID)
+	_, err = h.deps.Installations.Token(r.Context(), row.GithubAppInstallID)
 	if err != nil {
 		http.Error(w, "mint install token: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 
-	url := fmt.Sprintf("https://x-access-token:%s@github.com/%s/%s.git", tok, row.Owner, row.Name)
+	cloneBase := "https://github.com"
+	suffix := ".git"
+	if h.deps.GitHubCloneBase != "" {
+		cloneBase = h.deps.GitHubCloneBase
+		suffix = ""
+	}
+	cloneURL := fmt.Sprintf("%s/%s/%s%s", cloneBase, row.Owner, row.Name, suffix)
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(map[string]string{"url": url})
+	_ = json.NewEncoder(w).Encode(map[string]string{"url": cloneURL})
 }

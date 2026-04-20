@@ -111,7 +111,7 @@ Please write a digest using {{ include "notes.md" }}.
 
 	// Fake LLM provider that emits a response with a memory block.
 	fake := &fakeProvider{response: "Weekly summary.\n<memory>learned X</memory>"}
-	providerFactory := func(name string) (llm.Provider, error) {
+	providerFactory := func(name, _ string) (llm.Provider, error) {
 		require.Equal(t, "fake", name)
 		return fake, nil
 	}
@@ -193,7 +193,7 @@ skills:
 
 	fake := &fakeProvider{response: "output text"}
 	r := New(Deps{
-		ProviderFactory: func(string) (llm.Provider, error) { return fake, nil },
+		ProviderFactory: func(string, string) (llm.Provider, error) { return fake, nil },
 		Publishers: map[string]publish.Publisher{
 			"slack":   publish.NewSlackPublisher(),
 			"discord": publish.NewDiscordPublisher(),

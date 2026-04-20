@@ -20,6 +20,10 @@ type Deps struct {
 	Signer        *token.Signer
 	Secrets       secretstore.SecretStore
 	Installations *github.InstallationCache
+	// GitHubCloneBase overrides the base URL used to build clone URLs in the
+	// /internal/repos/{id}/clone-url handler. Empty means "github.com" (default).
+	// Used in e2e tests to redirect clones at a local fixture repo.
+	GitHubCloneBase string
 }
 
 // NewServer builds an *http.Server with all handlers registered under
