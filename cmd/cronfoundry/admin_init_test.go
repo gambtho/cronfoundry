@@ -52,7 +52,7 @@ func captureStdout(t *testing.T, fn func()) string {
 	}()
 
 	fn()
-	w.Close()
+	require.NoError(t, w.Close())
 	<-done
 	return buf.String()
 }
