@@ -135,11 +135,20 @@ func TestTick_DispatchesDue(t *testing.T) {
 		`SELECT id, status FROM run WHERE schedule_id = $1`, schedID).Scan(&runID, &status))
 	assert.Equal(t, "pending", status)
 
-	// next_fire_at should have advanced.
+	// next_fire_at should have advanced past the original ("1 minute ago")
+	// value. For a "* * * * *" schedule, NextFire(past) returns the next
+	// minute boundary after past — which is within (past, past+60s]. That
+	// window always lies in the future relative to wall-clock time when
+	// the seed-to-assertion elapsed is under a minute, but tying the
+	// assertion to wall-clock `now` is wall-clock-position-sensitive. Pin
+	// against the seed value instead.
 	var nextFire time.Time
 	require.NoError(t, pool.QueryRow(context.Background(),
 		`SELECT next_fire_at FROM schedule WHERE id = $1`, schedID).Scan(&nextFire))
-	assert.True(t, nextFire.After(time.Now().Add(-30*time.Second)))
+	// next_fire_at must be within one minute of seed time (`past` was
+	// now-1m; cron advances to the next boundary, at most 1 min later).
+	assert.True(t, nextFire.After(time.Now().Add(-90*time.Second)),
+		"next_fire_at %v should be after ~90s ago", nextFire)
 }
 
 func TestTick_SkipsWhenActiveExists(t *testing.T) {
