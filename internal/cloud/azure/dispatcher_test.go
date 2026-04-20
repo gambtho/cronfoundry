@@ -2,6 +2,7 @@ package azure_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -12,9 +13,13 @@ import (
 
 type fakeARMClient struct {
 	dispatched []cloudazure.JobExecution
+	err        error
 }
 
 func (f *fakeARMClient) BeginStartExecution(ctx context.Context, resourceGroup, jobName string, spec cloudazure.JobExecutionTemplate, opts interface{}) (string, error) {
+	if f.err != nil {
+		return "", f.err
+	}
 	f.dispatched = append(f.dispatched, cloudazure.JobExecution{
 		ResourceGroup: resourceGroup,
 		JobName:       jobName,
@@ -60,4 +65,13 @@ func TestContainerAppsJobDispatcher_HandleKill_IsNoOp(t *testing.T) {
 	h, err := d.Dispatch(context.Background(), spec)
 	require.NoError(t, err)
 	require.NoError(t, h.Kill())
+}
+
+func TestContainerAppsJobDispatcher_DispatchReturnsError(t *testing.T) {
+	fake := &fakeARMClient{err: errors.New("azure: quota exceeded")}
+	d := cloudazure.NewContainerAppsJobDispatcher(fake, "rg-test", "cronfoundry-runner")
+	spec := cloud.DispatchSpec{BinaryPath: "/usr/local/bin/cronfoundry", Args: []string{"runner"}}
+	_, err := d.Dispatch(context.Background(), spec)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "cronfoundry-runner")
 }

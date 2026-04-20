@@ -15,7 +15,11 @@ type ContainerAppsJobDispatcher struct {
 }
 
 // NewContainerAppsJobDispatcher returns a dispatcher targeting the named Container Apps Job.
+// It panics if client is nil.
 func NewContainerAppsJobDispatcher(client ARMJobsClient, resourceGroup, jobName string) *ContainerAppsJobDispatcher {
+	if client == nil {
+		panic("cloud/azure: NewContainerAppsJobDispatcher: client must not be nil")
+	}
 	return &ContainerAppsJobDispatcher{
 		client:        client,
 		resourceGroup: resourceGroup,
