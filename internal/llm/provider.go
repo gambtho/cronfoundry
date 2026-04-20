@@ -9,6 +9,9 @@ import (
 // Role is the conversational role of a Message.
 type Role string
 
+// Conversational roles supported by the Provider interface. The chat
+// protocol currently distinguishes only system (instructions) and user
+// (prompt) messages; assistant replies are streamed back as StreamChunks.
 const (
 	RoleSystem Role = "system"
 	RoleUser   Role = "user"
@@ -45,11 +48,14 @@ type CallOptions struct {
 // Provider executes a single chat completion with streaming output.
 //
 // Implementations MUST:
-//   - stream chunks to `onChunk` as they arrive,
-//   - return `Usage` with final input/output token counts,
+//   - stream chunks to onChunk as they arrive (empty deltas are skipped),
+//   - return Usage with final input/output token counts when reported by
+//     the upstream API; zero values are returned if the provider does not
+//     emit a usage record,
 //   - honor ctx cancellation / deadline,
-//   - return an error wrapping the provider's status classification
-//     when the call ultimately fails after retries.
+//   - return an error wrapping the underlying SDK error, prefixed with
+//     the provider name (e.g. "openai chat: ..."), when the streamed call
+//     ultimately fails.
 type Provider interface {
 	Chat(ctx context.Context, messages []Message, opts CallOptions, onChunk func(StreamChunk)) (Usage, error)
 }
