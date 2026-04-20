@@ -3,10 +3,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
 
@@ -76,6 +78,9 @@ func runAdminInit(ctx context.Context, orgName string) error {
 	if err == nil {
 		fmt.Fprintf(os.Stdout, "Organization already seeded (id=%s, name=%q). Ready.\n", existing.ID.String(), existing.Name)
 		return nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("load organization: %w", err)
 	}
 
 	row, err := q.CreateOrganization(ctx, orgName)

@@ -14,15 +14,18 @@ import (
 // Migrate applies all up-migrations from MigrationsFS against the database at
 // dsn. The call is idempotent: re-running against an up-to-date database is a
 // no-op.
-func Migrate(ctx context.Context, dsn string) error {
+func Migrate(ctx context.Context, dsn string) (retErr error) {
 	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
 		return fmt.Errorf("db: migrate: parse DSN: %w", err)
 	}
 	// goose speaks database/sql; adapt pgx's ConnConfig into one.
 	db := stdlib.OpenDB(*cfg.ConnConfig)
-	defer db.Close()
-
+	defer func() {
+		if err := db.Close(); err != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("db: migrate: close: %w", err))
+		}
+	}()
 	return migrateDB(ctx, db)
 }
 

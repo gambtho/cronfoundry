@@ -3,12 +3,14 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
 
@@ -63,7 +65,10 @@ func runAdminSetSecret(ctx context.Context, name string, in io.Reader, out io.Wr
 	q := dbgen.New(pool)
 	org, err := q.GetFirstOrganization(ctx)
 	if err != nil {
-		return fmt.Errorf("no organization seeded; run `cronfoundry admin init` first: %w", err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("no organization seeded; run `cronfoundry admin init` first: %w", err)
+		}
+		return fmt.Errorf("load organization: %w", err)
 	}
 
 	store := secretstore.NewEnvelopePostgresStore(pool, org.ID, master)
