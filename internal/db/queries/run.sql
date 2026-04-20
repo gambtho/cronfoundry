@@ -21,6 +21,7 @@ WHERE id = $1;
 -- Returns the run + its schedule + skill + repo so the runner can assemble
 -- its full context in one query.
 SELECT r.*,
+       s.name  AS schedule_name,
        s.cron,
        s.timezone,
        s.provider,

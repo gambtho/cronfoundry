@@ -122,6 +122,7 @@ func (q *Queries) GetRun(ctx context.Context, id pgtype.UUID) (Run, error) {
 
 const getRunForContext = `-- name: GetRunForContext :one
 SELECT r.id, r.org_id, r.schedule_id, r.skill_sha, r.fire_time, r.status, r.fire_reason, r.actor, r.started_at, r.finished_at, r.duration_ms, r.tokens_in, r.tokens_out, r.cost_cents, r.error_kind, r.error_msg, r.writeback_commit_sha, r.runner_pid, r.runner_token_hash, r.created_at,
+       s.name  AS schedule_name,
        s.cron,
        s.timezone,
        s.provider,
@@ -168,6 +169,7 @@ type GetRunForContextRow struct {
 	RunnerPid          *int32
 	RunnerTokenHash    string
 	CreatedAt          pgtype.Timestamptz
+	ScheduleName       string
 	Cron               string
 	Timezone           string
 	Provider           string
@@ -214,6 +216,7 @@ func (q *Queries) GetRunForContext(ctx context.Context, id pgtype.UUID) (GetRunF
 		&i.RunnerPid,
 		&i.RunnerTokenHash,
 		&i.CreatedAt,
+		&i.ScheduleName,
 		&i.Cron,
 		&i.Timezone,
 		&i.Provider,
