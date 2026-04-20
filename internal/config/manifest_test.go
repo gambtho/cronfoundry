@@ -184,6 +184,53 @@ func TestManifest_Validate(t *testing.T) {
 	}
 }
 
+func TestManifest_Validate_AcceptsMinimalValid(t *testing.T) {
+	yaml := []byte(`
+version: 1
+skills:
+  - path: skills/a
+    schedules:
+      - name: s1
+        cron: "* * * * *"
+        provider: openai
+        model: gpt
+`)
+	m, err := ParseManifest(yaml)
+	require.NoError(t, err)
+	require.NoError(t, m.Validate())
+}
+
+func TestManifest_Validate_AcceptsEmptyOverlapPolicy(t *testing.T) {
+	// Empty overlap_policy must validate (default to skip via accessor).
+	m := &Manifest{
+		Version: 1,
+		Skills: []SkillEntry{{
+			Path: "a",
+			Schedules: []Schedule{{
+				Name: "s", Cron: "* * * * *",
+				Provider: "openai", Model: "m",
+				OverlapPolicy: "",
+			}},
+		}},
+	}
+	assert.NoError(t, m.Validate())
+}
+
+func TestSchedule_EffectiveOverlapPolicy(t *testing.T) {
+	cases := map[string]string{
+		"":           "skip",
+		"skip":       "skip",
+		"queue":      "queue",
+		"concurrent": "concurrent",
+	}
+	for in, want := range cases {
+		t.Run(in, func(t *testing.T) {
+			s := &Schedule{OverlapPolicy: in}
+			assert.Equal(t, want, s.EffectiveOverlapPolicy())
+		})
+	}
+}
+
 func TestManifest_FindSchedule(t *testing.T) {
 	m := &Manifest{
 		Version: 1,
