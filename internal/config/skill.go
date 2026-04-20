@@ -41,7 +41,7 @@ func ParseSkillFile(data []byte) (*Skill, error) {
 		rest = rest[1:]
 	}
 	end := -1
-	for i := 0; i < len(rest); i++ {
+	for i := range len(rest) {
 		lineStart := i == 0 || rest[i-1] == '\n'
 		if !lineStart {
 			continue
