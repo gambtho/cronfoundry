@@ -13,8 +13,7 @@ import (
 
 // Migrate applies all up-migrations from MigrationsFS against the database at
 // dsn. The call is idempotent: re-running against an up-to-date database is a
-// no-op. An empty migrations directory is also valid — goose will create its
-// goose_db_version bookkeeping table and return without applying anything.
+// no-op.
 func Migrate(ctx context.Context, dsn string) error {
 	cfg, err := pgxpool.ParseConfig(dsn)
 	if err != nil {
