@@ -61,7 +61,7 @@ func (s *Signer) Sign(c RunClaims) (tok, hash string, err error) {
 // claims or an error. Expired tokens produce an error whose message contains
 // "expired".
 func (s *Signer) Verify(bearer string) (RunClaims, error) {
-	parsed, err := jwtv5.Parse(bearer, func(t *jwtv5.Token) (interface{}, error) {
+	parsed, err := jwtv5.Parse(bearer, func(t *jwtv5.Token) (any, error) {
 		return s.key, nil
 	}, jwtv5.WithValidMethods([]string{"HS256"}))
 	if err != nil {
@@ -87,7 +87,7 @@ func (s *Signer) Verify(bearer string) (RunClaims, error) {
 	if expF, ok := claims["exp"].(float64); ok {
 		out.ExpiresAt = time.Unix(int64(expF), 0)
 	}
-	if raw, ok := claims["secret_refs"].([]interface{}); ok {
+	if raw, ok := claims["secret_refs"].([]any); ok {
 		out.SecretRefs = make([]string, 0, len(raw))
 		for _, v := range raw {
 			if s, ok := v.(string); ok {
