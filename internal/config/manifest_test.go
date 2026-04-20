@@ -57,10 +57,10 @@ skills:
 	assert.Equal(t, "gpt-5.1", sch.Model)
 
 	require.Len(t, sch.Destinations, 2)
-	assert.NotNil(t, sch.Destinations[0].GitHubIssue)
+	require.NotNil(t, sch.Destinations[0].GitHubIssue)
 	assert.Equal(t, "myorg/reports", sch.Destinations[0].GitHubIssue.Repo)
 	assert.Equal(t, []string{"digest", "automated"}, sch.Destinations[0].GitHubIssue.Labels)
-	assert.NotNil(t, sch.Destinations[1].Slack)
+	require.NotNil(t, sch.Destinations[1].Slack)
 	assert.Equal(t, "slack_digest_webhook", sch.Destinations[1].Slack.Secret)
 
 	require.NotNil(t, sch.Writeback)
@@ -70,4 +70,60 @@ skills:
 
 	assert.Equal(t, "7", sch.Env["LOOKBACK_DAYS"].Literal)
 	assert.Equal(t, "team_name", sch.Env["TEAM_NAME"].Secret)
+}
+
+func TestParseManifest_EnvValue_RejectsBadShapes(t *testing.T) {
+	cases := []struct {
+		name   string
+		yaml   string
+		substr string
+	}{
+		{
+			name:   "env value is boolean",
+			yaml:   "version: 1\nskills:\n  - path: a\n    schedules:\n      - { name: s, cron: \"* * * * *\", provider: p, model: m, env: { X: true } }",
+			substr: "env value must be a string or { secret: name }",
+		},
+		{
+			name:   "env value is number",
+			yaml:   "version: 1\nskills:\n  - path: a\n    schedules:\n      - { name: s, cron: \"* * * * *\", provider: p, model: m, env: { X: 7 } }",
+			substr: "env value must be a string or { secret: name }",
+		},
+		{
+			name:   "env value is null",
+			yaml:   "version: 1\nskills:\n  - path: a\n    schedules:\n      - { name: s, cron: \"* * * * *\", provider: p, model: m, env: { X: ~ } }",
+			substr: "env value must not be null",
+		},
+		{
+			name:   "env object missing secret",
+			yaml:   "version: 1\nskills:\n  - path: a\n    schedules:\n      - { name: s, cron: \"* * * * *\", provider: p, model: m, env: { X: { other: y } } }",
+			substr: "must set 'secret'",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := ParseManifest([]byte(tc.yaml))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.substr)
+		})
+	}
+}
+
+func TestParseManifest_RejectsUnknownFields(t *testing.T) {
+	// "overlap-policy" (hyphen) is a typo of "overlap_policy".
+	bad := []byte(`
+version: 1
+skills:
+  - path: a
+    schedules:
+      - name: s
+        cron: "* * * * *"
+        provider: p
+        model: m
+        overlap-policy: skip
+`)
+	_, err := ParseManifest(bad)
+	require.Error(t, err)
+	// Depending on SDK, error phrasing may be "unknown field" or "unknown fields".
+	// Just require that the field name appears in the error.
+	assert.Contains(t, err.Error(), "overlap-policy")
 }
