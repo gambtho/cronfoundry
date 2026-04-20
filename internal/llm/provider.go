@@ -1,0 +1,55 @@
+// Package llm defines a provider-agnostic interface for streaming chat
+// completions against OpenAI, Anthropic, and Azure AI Foundry.
+package llm
+
+import (
+	"context"
+)
+
+// Role is the conversational role of a Message.
+type Role string
+
+const (
+	RoleSystem Role = "system"
+	RoleUser   Role = "user"
+)
+
+// Message is a single chat message.
+type Message struct {
+	Role    Role
+	Content string
+}
+
+// StreamChunk is an incremental portion of the assistant's response.
+type StreamChunk struct {
+	Delta string
+}
+
+// Usage records token accounting for a completed call.
+type Usage struct {
+	InputTokens  int
+	OutputTokens int
+}
+
+// CallOptions controls a single provider invocation.
+type CallOptions struct {
+	Model     string
+	MaxTokens int
+	APIKey    string
+	// Endpoint is used by Azure AI Foundry only; OpenAI and Anthropic ignore it.
+	Endpoint string
+	// Deployment (Azure AI Foundry): the model-deployment name.
+	Deployment string
+}
+
+// Provider executes a single chat completion with streaming output.
+//
+// Implementations MUST:
+//   - stream chunks to `onChunk` as they arrive,
+//   - return `Usage` with final input/output token counts,
+//   - honor ctx cancellation / deadline,
+//   - return an error wrapping the provider's status classification
+//     when the call ultimately fails after retries.
+type Provider interface {
+	Chat(ctx context.Context, messages []Message, opts CallOptions, onChunk func(StreamChunk)) (Usage, error)
+}
