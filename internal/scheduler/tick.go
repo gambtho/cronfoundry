@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/gambtho/cronfoundry/internal/cloud"
+	"github.com/gambtho/cronfoundry/internal/config"
 	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
 	"github.com/gambtho/cronfoundry/internal/token"
 )
@@ -173,7 +173,7 @@ func processOne(
 		RunID:      run.ID,
 		OrgID:      sched.OrgID,
 		TimeoutSec: sched.TimeoutSec,
-		SecretRefs: secretRefsFor(sched),
+		SecretRefs: config.CollectSecretRefs(sched.DestinationsJson, sched.EnvJson, sched.LlmSecretRef),
 	}); err != nil {
 		return err
 	}
@@ -299,7 +299,7 @@ func dispatchPending(ctx context.Context, deps Deps, stats *Stats) error {
 			slog.Error("scheduler: dispatchPending: scan failed", "err", err)
 			continue
 		}
-		r.SecretRefs = secretRefsFromJSON(destsJSON, envJSON, llmRef)
+		r.SecretRefs = config.CollectSecretRefs(destsJSON, envJSON, llmRef)
 		pending = append(pending, r)
 	}
 	if err := rows.Err(); err != nil {
@@ -322,74 +322,6 @@ func dispatchPending(ctx context.Context, deps Deps, stats *Stats) error {
 		stats.Dispatched++
 	}
 	return nil
-}
-
-// secretRefsFor returns the list of secret names a run may fetch via
-// /internal/secrets. Parses the destinations_json + env_json to collect
-// every { "secret": "name" } reference.
-func secretRefsFor(sched dbgen.ListDueSchedulesWithShaRow) []string {
-	return secretRefsFromJSON(sched.DestinationsJson, sched.EnvJson, sched.LlmSecretRef)
-}
-
-// secretRefsFromJSON is the shared helper used by both secretRefsFor
-// (scheduled runs) and dispatchPending (manual/queued runs). It walks
-// destinations + env JSON looking for { "secret": "name" } entries plus
-// any llm_secret_ref. A non-string value after `"secret"` (e.g.,
-// {"secret": {...}} or {"secret": 42}) is skipped — we resume scanning
-// after the key so a single malformed entry doesn't blind us to later
-// legitimate references.
-//
-// TODO(P2d): extract to internal/config/secretrefs.go once other sites need it.
-func secretRefsFromJSON(dests, env []byte, llmRef *string) []string {
-	seen := map[string]struct{}{}
-	scanJSON := func(b []byte) {
-		// Naive but safe: walk JSON looking for "secret":"<name>" entries.
-		// A full config-parser round-trip would be cleaner but requires
-		// JSON → Destination parsing we haven't exposed at the DB layer.
-		s := string(b)
-		i := 0
-		for {
-			idx := strings.Index(s[i:], `"secret"`)
-			if idx < 0 {
-				break
-			}
-			idx += i
-			j := idx + len(`"secret"`)
-			// Skip whitespace + colon.
-			for j < len(s) && (s[j] == ' ' || s[j] == ':' || s[j] == '\t' || s[j] == '\n' || s[j] == '\r') {
-				j++
-			}
-			if j >= len(s) || s[j] != '"' {
-				// Not a string value for this "secret" key — advance past
-				// the key and keep scanning. A nested object or non-string
-				// shouldn't hide later legitimate refs.
-				i = idx + len(`"secret"`)
-				continue
-			}
-			j++ // past opening quote
-			end := strings.IndexByte(s[j:], '"')
-			if end < 0 {
-				break
-			}
-			end += j
-			name := s[j:end]
-			if name != "" {
-				seen[name] = struct{}{}
-			}
-			i = end + 1
-		}
-	}
-	scanJSON(dests)
-	scanJSON(env)
-	if llmRef != nil && *llmRef != "" {
-		seen[*llmRef] = struct{}{}
-	}
-
-	out := make([]string, 0, len(seen))
-	for name := range seen {
-		out = append(out, name)
-	}
-	return out
 }
 
 func randomHex(n int) (string, error) {

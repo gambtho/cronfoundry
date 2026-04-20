@@ -12,49 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCollectSecretNames_Extracts(t *testing.T) {
-	llmRef := "openai_key"
-	ctx := runContext{
-		Destinations: json.RawMessage(
-			`[{"type":"slack","webhook":{"secret":"slack_url"}},{"type":"discord","webhook":{"secret":"discord_url"}}]`),
-		Env: json.RawMessage(
-			`{"FOO":"bar","API_KEY":{"secret":"api_key"}}`),
-		LLMSecretRef: &llmRef,
-	}
-	names := collectSecretNames(ctx)
-	assert.ElementsMatch(t,
-		[]string{"slack_url", "discord_url", "api_key", "openai_key"},
-		names)
-}
-
-func TestCollectSecretNames_Empty(t *testing.T) {
-	assert.Empty(t, collectSecretNames(runContext{}))
-}
-
-func TestCollectSecretNames_DedupesWithLLMRef(t *testing.T) {
-	// If the LLM secret ref is also mentioned in env/destinations, it
-	// should appear once.
-	llmRef := "shared_key"
-	ctx := runContext{
-		Env:          json.RawMessage(`{"API":{"secret":"shared_key"}}`),
-		LLMSecretRef: &llmRef,
-	}
-	names := collectSecretNames(ctx)
-	assert.ElementsMatch(t, []string{"shared_key"}, names)
-}
-
-func TestCollectSecretNames_IgnoresNonStringSecretValues(t *testing.T) {
-	// A "secret" whose value isn't a string (e.g., a nested object) should
-	// not produce a phantom name entry. The scanner advances past the
-	// non-string occurrence rather than aborting, so a later legitimate
-	// {"secret":"real"} is still picked up.
-	ctx := runContext{
-		Env: json.RawMessage(`{"A":{"secret":{"nested":true}},"B":{"secret":"real"}}`),
-	}
-	names := collectSecretNames(ctx)
-	assert.ElementsMatch(t, []string{"real"}, names)
-}
-
 // TestRedactCloneURL_StripsUserInfo is the MAJ-4 guard: the token-bearing
 // userinfo ("x-access-token:<tok>@") must be stripped from clone URLs
 // before they appear in error messages or event payloads.
