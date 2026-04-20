@@ -1,0 +1,15 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "env": { "value": "prod" },
+    "location": { "value": "eastus" },
+    "imageTag": { "value": "latest" },
+    "githubAppId": { "value": "YOUR_GITHUB_APP_ID" },
+    "githubAppOAuthClientId": { "value": "YOUR_OAUTH_CLIENT_ID" },
+    "postgresAdminPassword": { "value": "REPLACE_WITH_STRONG_PASSWORD" },
+    "adminLogins": { "value": "your-github-login" },
+    "viewerLogins": { "value": "" },
+    "ingressExternal": { "value": false }
+  }
+}

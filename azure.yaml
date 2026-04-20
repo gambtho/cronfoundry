@@ -1,0 +1,11 @@
+# Azure Developer CLI manifest
+# Deploy:   azd up
+# Teardown: azd down  (WARNING: deletes the resource group and all data)
+name: cronfoundry
+metadata:
+  template: cronfoundry
+
+infra:
+  provider: bicep
+  path: deploy
+  module: main
