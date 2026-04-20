@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -26,8 +27,16 @@ type runNowBody struct {
 // path. Returns {"run_id": "<uuid>"} on success.
 //
 // Not authenticated (NOT attached to `auth` middleware in server.go).
-// Triggered by the local CLI; P3 will gate behind UI session auth.
+// Triggered by the local CLI; P3 will gate behind UI session auth. Until
+// that ships we enforce a loopback-only check here: even if an operator
+// binds `cronfoundry serve --addr 0.0.0.0`, remote callers are rejected
+// with 403 rather than getting a free state-changing endpoint.
 func (h runNowHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if !isLoopbackRequest(r) {
+		http.Error(w, "run-now is loopback-only", http.StatusForbidden)
+		return
+	}
+
 	scheduleID, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid schedule id", http.StatusBadRequest)
@@ -91,4 +100,23 @@ func randomHex(n int) (string, error) {
 		return "", fmt.Errorf("rand: %w", err)
 	}
 	return hex.EncodeToString(buf), nil
+}
+
+// isLoopbackRequest reports whether r.RemoteAddr is a loopback address
+// (127.0.0.0/8 or ::1). An empty or malformed RemoteAddr is treated as
+// non-loopback so the default is fail-closed.
+func isLoopbackRequest(r *http.Request) bool {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		// Unparseable RemoteAddr — treat as untrusted.
+		return false
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		// "localhost" or similar — the stdlib dial resolves it before we
+		// see it, so accepting the literal string is harmless but
+		// unnecessary. Only accept actual IPs.
+		return false
+	}
+	return ip.IsLoopback()
 }

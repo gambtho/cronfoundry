@@ -84,9 +84,15 @@ func (s *Signer) Verify(bearer string) (RunClaims, error) {
 	if out.OrgID, err = uuid.Parse(orgStr); err != nil {
 		return RunClaims{}, fmt.Errorf("token: verify: org_id: %w", err)
 	}
-	if expF, ok := claims["exp"].(float64); ok {
-		out.ExpiresAt = time.Unix(int64(expF), 0)
+	// Require an exp claim. jwtv5 enforces exp > now automatically when the
+	// claim is present, but it accepts tokens with no exp at all. A
+	// never-expiring bearer is worse than a short-lived one, so we refuse
+	// to verify unless the claim is set.
+	expF, ok := claims["exp"].(float64)
+	if !ok {
+		return RunClaims{}, fmt.Errorf("token: verify: missing exp claim")
 	}
+	out.ExpiresAt = time.Unix(int64(expF), 0)
 	if raw, ok := claims["secret_refs"].([]any); ok {
 		out.SecretRefs = make([]string, 0, len(raw))
 		for _, v := range raw {

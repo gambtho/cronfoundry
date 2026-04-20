@@ -45,12 +45,49 @@ func TestCollectSecretNames_DedupesWithLLMRef(t *testing.T) {
 
 func TestCollectSecretNames_IgnoresNonStringSecretValues(t *testing.T) {
 	// A "secret" whose value isn't a string (e.g., a nested object) should
-	// not produce a phantom name entry.
+	// not produce a phantom name entry. The scanner advances past the
+	// non-string occurrence rather than aborting, so a later legitimate
+	// {"secret":"real"} is still picked up.
 	ctx := runContext{
 		Env: json.RawMessage(`{"A":{"secret":{"nested":true}},"B":{"secret":"real"}}`),
 	}
 	names := collectSecretNames(ctx)
 	assert.ElementsMatch(t, []string{"real"}, names)
+}
+
+// TestRedactCloneURL_StripsUserInfo is the MAJ-4 guard: the token-bearing
+// userinfo ("x-access-token:<tok>@") must be stripped from clone URLs
+// before they appear in error messages or event payloads.
+func TestRedactCloneURL_StripsUserInfo(t *testing.T) {
+	cases := []struct {
+		name, in, want string
+	}{
+		{
+			name: "github_install_token",
+			in:   "https://x-access-token:ghs_abcdef123@github.com/owner/repo.git",
+			want: "https://github.com/owner/repo.git",
+		},
+		{
+			name: "userinfo_with_password",
+			in:   "https://user:pw@example.com/repo.git",
+			want: "https://example.com/repo.git",
+		},
+		{
+			name: "url_without_userinfo_unchanged",
+			in:   "https://github.com/owner/repo.git",
+			want: "https://github.com/owner/repo.git",
+		},
+		{
+			name: "unparseable_collapses_to_placeholder",
+			in:   "://not a url",
+			want: "<clone-url>",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, redactCloneURL(tc.in))
+		})
+	}
 }
 
 func TestEnvMapForSecrets_UppercasesKeys(t *testing.T) {

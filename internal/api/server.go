@@ -34,8 +34,10 @@ func NewServer(addr string, deps Deps) *http.Server {
 	})
 
 	// All /internal/runs/* and /internal/secrets and /internal/repos/*
-	// routes require a valid per-run bearer token.
-	auth := requireBearer(deps.Signer)
+	// routes require a valid per-run bearer token. When a pool is present,
+	// the middleware also binds the token to run.runner_token_hash — a
+	// replayed or leaked JWT is rejected once the hash column rotates.
+	auth := requireBearer(deps.Signer, deps.Pool)
 
 	mux.Handle("GET /internal/runs/{id}/context", auth(runContextHandler{deps}))
 	mux.Handle("GET /internal/secrets", auth(secretsHandler{deps}))

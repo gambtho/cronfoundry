@@ -109,8 +109,12 @@ func runRunnerHTTP(ctx context.Context, runIDFlag string) error {
 
 	// The clone URL already embeds the installation token as basic auth, so
 	// we pass "" for the installToken arg of CloneAtSHA.
+	//
+	// A clone failure's error string may contain the full URL (and thus the
+	// installation token) — redact before posting events or logging.
 	if err := github.CloneAtSHA(ctx, cloneURL, "", runCtx.SkillSha, cloneDir); err != nil {
-		return failRun(ctx, client, runID, "clone", err)
+		return failRun(ctx, client, runID, "clone",
+			fmt.Errorf("clone %s: %s", redactCloneURL(cloneURL), err.Error()))
 	}
 
 	// 5) Build a Resolver from the fetched secrets. P1's secrets.Resolver
@@ -177,9 +181,9 @@ func runRunnerHTTP(ctx context.Context, runIDFlag string) error {
 		Type:  endType,
 		Level: map[bool]string{true: "error", false: "info"}[runErr != nil],
 		Payload: map[string]any{
-			"status":       string(result.Status),
-			"finished_at":  time.Now().UTC().Format(time.RFC3339),
-			"input_tokens": result.Usage.InputTokens,
+			"status":        string(result.Status),
+			"finished_at":   time.Now().UTC().Format(time.RFC3339),
+			"input_tokens":  result.Usage.InputTokens,
 			"output_tokens": result.Usage.OutputTokens,
 		},
 	}})
@@ -217,6 +221,20 @@ func runRunnerHTTP(ctx context.Context, runIDFlag string) error {
 		return fmt.Errorf("runner: %w", runErr)
 	}
 	return nil
+}
+
+// redactCloneURL strips the userinfo component (which holds the installation
+// token) from an otherwise-opaque clone URL, so the URL is safe to embed in
+// error messages and event payloads. A URL we can't parse collapses to a
+// constant rather than being returned verbatim, since a parse failure is
+// often a sign that the string contains bytes we shouldn't log anyway.
+func redactCloneURL(s string) string {
+	u, err := url.Parse(s)
+	if err != nil {
+		return "<clone-url>"
+	}
+	u.User = nil
+	return u.String()
 }
 
 // envMapForSecrets converts a name → value map into CRONFOUNDRY_SECRET_<UPPER>
@@ -423,4 +441,3 @@ func collectSecretNames(ctx runContext) []string {
 	}
 	return out
 }
-
