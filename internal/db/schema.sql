@@ -29,7 +29,7 @@ CREATE TABLE repo_connection (
 
 CREATE TABLE skill (
     id                uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-    org_id            uuid NOT NULL,
+    org_id            uuid NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
     repo_id           uuid NOT NULL REFERENCES repo_connection(id) ON DELETE CASCADE,
     path              text NOT NULL,
     name              text NOT NULL,
@@ -41,7 +41,7 @@ CREATE TABLE skill (
 
 CREATE TABLE schedule (
     id                  uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-    org_id              uuid NOT NULL,
+    org_id              uuid NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
     skill_id            uuid NOT NULL REFERENCES skill(id) ON DELETE CASCADE,
     name                text NOT NULL,
     cron                text NOT NULL,
@@ -65,7 +65,7 @@ CREATE TABLE schedule (
 
 CREATE TABLE run (
     id                    uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-    org_id                uuid NOT NULL,
+    org_id                uuid NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
     schedule_id           uuid NOT NULL REFERENCES schedule(id) ON DELETE CASCADE,
     skill_sha             text NOT NULL,
     fire_time             timestamptz,
@@ -83,7 +83,11 @@ CREATE TABLE run (
     writeback_commit_sha  text,
     runner_pid            int,
     runner_token_hash     text NOT NULL,
-    created_at            timestamptz NOT NULL DEFAULT now()
+    created_at            timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT run_fire_reason_time_consistent CHECK (
+        (fire_reason = 'manual'   AND fire_time IS NULL) OR
+        (fire_reason = 'schedule' AND fire_time IS NOT NULL)
+    )
 );
 
 CREATE TABLE run_event (
@@ -97,7 +101,7 @@ CREATE TABLE run_event (
 
 CREATE TABLE secret (
     id           uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
-    org_id       uuid NOT NULL,
+    org_id       uuid NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
     name         text NOT NULL,
     dek_wrapped  bytea NOT NULL,
     ciphertext   bytea NOT NULL,
@@ -111,7 +115,7 @@ CREATE TABLE secret (
 
 CREATE TABLE audit_log (
     id           bigserial PRIMARY KEY,
-    org_id       uuid NOT NULL,
+    org_id       uuid NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
     actor        text,
     action       text NOT NULL,
     target_kind  text,

@@ -1,4 +1,4 @@
-.PHONY: sqlc schema test test-short build
+.PHONY: sqlc test test-short build
 
 sqlc:
 	cd internal/db && sqlc generate
