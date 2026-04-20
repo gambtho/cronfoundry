@@ -15,20 +15,6 @@ import (
 	"github.com/gambtho/cronfoundry/internal/template"
 )
 
-type mapSecrets map[string]string
-
-func (m mapSecrets) Get(k string) (string, error) {
-	v, ok := m[k]
-	if !ok {
-		return "", &missingSecret{key: k}
-	}
-	return v, nil
-}
-
-type missingSecret struct{ key string }
-
-func (m *missingSecret) Error() string { return "missing secret: " + m.key }
-
 func TestSlack_Publish_PostsTemplatedText(t *testing.T) {
 	var gotBody map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

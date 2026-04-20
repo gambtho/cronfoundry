@@ -16,7 +16,9 @@ type discordPub struct {
 	http *http.Client
 }
 
-// NewDiscordPublisher returns a Publisher that posts to Discord webhooks.
+// NewDiscordPublisher returns a Publisher that posts messages to Discord
+// incoming webhooks. The webhook URL is resolved from the destination's
+// Secret via the SecretGetter.
 func NewDiscordPublisher() Publisher {
 	return &discordPub{http: &http.Client{Timeout: 30 * time.Second}}
 }
