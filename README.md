@@ -5,69 +5,110 @@ OpenAI / Anthropic / Azure AI Foundry on a schedule, publishes the output to
 GitHub issues, Slack, Discord, or Teams, and commits learnings back to the
 skill repo.
 
-**Status:** `P1 — core runner CLI only`. The scheduler, API, web UI, and Azure
-Bicep deployment are in later phases (P2–P4). See
+**Status:** `P2 — Postgres + API + scheduler`. The web UI and Azure Bicep
+deployment are in later phases (P3–P4). See
 [`docs/superpowers/plans/`](docs/superpowers/plans/) for the roadmap.
 
 ## Requirements
 
 - **Go 1.25 or later** (required by `github.com/openai/openai-go/v3`).
-- Git working tree (the skill repo the runner operates on must be a git repo —
-  writeback commits through `go-git`).
+- Docker + Docker Compose (for the local dev harness).
+- A **GitHub App** with read access to your skill repo, installed on the target
+  owner/org. You'll need its App ID and a private key PEM file.
 - An API key for one of: OpenAI, Anthropic, or Azure AI Foundry.
-- An Incoming Webhook URL for at least one destination you want to publish to
-  (Slack, Discord, Teams via Power Automate), or a GitHub PAT for the GitHub
-  issue destination.
+- An Incoming Webhook URL for at least one destination (Slack, Discord, Teams),
+  or a GitHub PAT for the GitHub issue destination.
 
-## Build
+## Quick start (docker-compose)
 
-```bash
-go build -o cronfoundry-runner ./cmd/runner
-```
+### 1. Configure secrets
 
-Produces a single ~25 MB static binary.
-
-## Quick start
-
-A tiny end-to-end run with the bundled smoke fixture:
+Copy the example env file and edit it:
 
 ```bash
-export OPENAI_API_KEY='sk-...'
-export CRONFOUNDRY_SECRET_SLACK_URL='https://hooks.slack.com/...'
-
-./cronfoundry-runner run \
-  --repo ./testdata \
-  --manifest cronfoundry.yaml \
-  --skill-path skills/weekly-digest \
-  --schedule-name monday-morning \
-  --skip-push
+cp .env.example .env.local
+# Fill in CRONFOUNDRY_MASTER_KEY (or leave blank to auto-generate on first init),
+# CRONFOUNDRY_GITHUB_APP_ID, CRONFOUNDRY_DB_PASSWORD.
 ```
 
-The runner will:
+Place your GitHub App private key at `deploy/app.pem` (gitignored).
 
-1. Parse `testdata/cronfoundry.yaml` and resolve the named schedule.
-2. Load `testdata/skills/weekly-digest/SKILL.md`, inline `{{ include "..." }}`
-   directives, and build the final prompt.
-3. Stream a completion from OpenAI with your key.
-4. Strip any `<memory>…</memory>` block from the output.
-5. POST the remaining text to the Slack webhook (isolated retries).
-6. If a `<memory>` block was present, append it to `memory.md` and commit
-   as `cronfoundry[bot]`. `--skip-push` keeps it local.
-7. Print a JSON run summary to stdout.
+### 2. Start the stack
 
-## Flags
+```bash
+make dev
+```
 
-| Flag | Default | Purpose |
+This builds the image and starts Postgres + the CronFoundry service. The API
+listens on `127.0.0.1:8080` by default.
+
+### 3. Initialize the database and seed the org
+
+```bash
+# First run: generates a master key and runs migrations.
+./cronfoundry admin init
+# Copy the printed CRONFOUNDRY_MASTER_KEY into .env.local, then re-run:
+./cronfoundry admin init
+```
+
+### 4. Connect a repo
+
+```bash
+./cronfoundry admin connect-repo owner/repo \
+  --installation-id <GitHub App installation ID> \
+  --branch main
+```
+
+### 5. Store secrets
+
+```bash
+echo 'https://discord.com/api/webhooks/...' | ./cronfoundry admin set-secret discord_webhook
+echo 'sk-...'                               | ./cronfoundry admin set-secret openai_key
+```
+
+### 6. Sync the repo (fetch skills + create schedules)
+
+```bash
+./cronfoundry admin trigger-sync owner/repo
+```
+
+### 7. Trigger a manual run (optional smoke-test)
+
+```bash
+# Look up the schedule UUID:
+./cronfoundry admin list-runs   # or query Postgres directly
+
+curl -s -X POST http://127.0.0.1:8080/internal/schedules/<schedule-id>/run-now \
+  -H 'Content-Type: application/json' -d '{}'
+```
+
+The scheduler tick runs every 30 seconds (configurable via `--tick-cadence`).
+Skills fire automatically according to their cron expressions.
+
+### 8. Tear down
+
+```bash
+make dev-down
+```
+
+## Build from source
+
+```bash
+make build
+```
+
+Produces `cronfoundry` (the server + admin CLI) in the project root.
+
+## Environment variables (serve + admin)
+
+| Variable | Required | Purpose |
 |---|---|---|
-| `--repo` | `.` | Repo root containing the manifest and skill files |
-| `--manifest` | `cronfoundry.yaml` | Manifest path (relative to `--repo`) |
-| `--skill-path` | *(required)* | Skill path as declared in the manifest |
-| `--schedule-name` | *(required)* | Schedule name within the skill |
-| `--llm-key-env` | `OPENAI_API_KEY` | Env var name holding the LLM API key |
-| `--llm-endpoint` | — | Azure AI Foundry endpoint URL |
-| `--llm-deployment` | — | Azure AI Foundry deployment name |
-| `--dry-run` | false | Skip publish + writeback; print output only |
-| `--skip-push` | false | Perform writeback commit locally but don't push |
+| `CRONFOUNDRY_DATABASE_URL` | Yes | Postgres DSN (e.g. `postgres://user:pass@host/db`) |
+| `CRONFOUNDRY_MASTER_KEY` | Yes (serve) | 32-byte hex key for envelope encryption of secrets |
+| `CRONFOUNDRY_GITHUB_APP_ID` | Yes | GitHub App numeric ID |
+| `CRONFOUNDRY_GITHUB_APP_PEM` | Yes | Path to GitHub App private key PEM |
+| `CRONFOUNDRY_GITHUB_BASE_URL` | No | Override GitHub API base (testing) |
+| `CRONFOUNDRY_GITHUB_CLONE_BASE` | No | Override clone URL base (testing) |
 
 ## Configuration format
 
@@ -100,7 +141,7 @@ skills:
         env:
           LOOKBACK_DAYS: "7"
           TEAM_NAME:
-            secret: team_name      # resolved from CRONFOUNDRY_SECRET_TEAM_NAME
+            secret: team_name
 ```
 
 ### `SKILL.md` — per-skill prompt
@@ -126,16 +167,21 @@ escape it.
 
 ## Secret resolution
 
-Secrets referenced by `{ secret: name }` in the manifest resolve from
-environment variables with the prefix `CRONFOUNDRY_SECRET_<UPPER(name)>`.
+Secrets set via `cronfoundry admin set-secret <name>` are stored encrypted in
+Postgres using envelope encryption (AES-GCM with a per-secret data key, wrapped
+by `CRONFOUNDRY_MASTER_KEY`).
 
-Example: `secret: slack_webhook` ⇒ `CRONFOUNDRY_SECRET_SLACK_WEBHOOK`.
+Secrets are referenced in `cronfoundry.yaml` with `{ secret: name }` objects:
 
-The LLM API key itself comes from whatever env var `--llm-key-env` names
-(default `OPENAI_API_KEY`). The writeback push (if enabled) uses `GITHUB_TOKEN`.
+```yaml
+destinations:
+  - discord:
+      secret: discord_webhook   # resolved from the encrypted store
+```
 
-All known secret values are scrubbed from stderr (slog attrs, errors, and
-direct prints) before emission.
+The LLM API key is set separately by updating `llm_secret_ref` on the schedule
+row (P3 will expose this in the UI). All secret values are scrubbed from logs
+before emission.
 
 ## Destination templates
 
@@ -156,32 +202,38 @@ Unknown variables render as their literal form and emit a warning.
 
 ## Architecture
 
-P1 is a single static binary driven by flags. Internal packages are pure
-libraries — no global state, no hidden I/O:
-
 ```
 cronfoundry/
-├── cmd/runner/                    # CLI entry (cobra, slog, redacting stderr)
+├── cmd/cronfoundry/               # CLI entry (cobra) — serve + admin subcommands
+│                                  # runner subcommand invoked as subprocess by scheduler
+├── deploy/
+│   ├── Dockerfile                 # multi-stage distroless image (~25 MB)
+│   ├── docker-compose.yml         # Postgres + cronfoundry serve (local dev)
+│   └── docker-compose.test.yml    # ephemeral Postgres only (CI / e2e)
 └── internal/
+    ├── api/                       # /internal/* HTTP surface (runner ↔ serve IPC)
     ├── config/                    # cronfoundry.yaml + SKILL.md parsers
     │                              # {{ include }} preprocessor, validation
-    ├── secrets/                   # env-based secret resolver
-    ├── memory/                    # <memory>...</memory> block parser
-    ├── template/                  # safe variable-set template renderer
-    ├── redact/                    # scrub known values from logs
+    ├── db/                        # sqlc-generated queries + migrations
+    ├── github/                    # GitHub App install token cache
     ├── llm/                       # Provider interface + adapters:
-    │                              #   openai, anthropic, azure-foundry
-    │                              #   (all streaming, usage-aware)
+    │                              #   openai, anthropic, azure-foundry (streaming)
+    ├── memory/                    # <memory>...</memory> block parser
     ├── publish/                   # Publisher interface + parallel dispatcher
     │                              # github-issue, slack, discord, teams
-    ├── writeback/                 # go-git commit + optional push
-    └── runner/                    # orchestration:
-                                   #   load → LLM → memory parse → publish → writeback
+    ├── runner/                    # skill orchestration:
+    │                              #   load → LLM → memory parse → publish → writeback
+    ├── scheduler/                 # tick loop, orphan sweep, subprocess dispatcher
+    ├── secretstore/               # envelope-encrypted Postgres secret store
+    ├── sync/                      # repo poller: HEAD check → clone → upsert schedules
+    ├── template/                  # safe variable-set template renderer
+    ├── token/                     # per-run JWT signer/verifier
+    └── writeback/                 # go-git commit + optional push
 ```
 
 A run's status is one of `succeeded`, `partial_failure` (publish or writeback
-failure), or `failed` (load/LLM error). Per-destination failures are isolated
-— one broken webhook does not prevent other destinations from publishing.
+failure), or `failed` (load/LLM error). Per-destination failures are isolated —
+one broken webhook does not prevent other destinations from publishing.
 
 ## Design & spec
 
@@ -191,9 +243,8 @@ failure), or `failed` (load/LLM error). Per-destination failures are isolated
 
 ## Roadmap
 
-- **P1** (this release) — Core runner CLI. ✅
-- **P2** — Postgres + API + scheduler + Azure Key Vault. Skills run on cron,
-  not just one-shot.
+- **P1** — Core runner CLI. ✅
+- **P2** — Postgres + API + scheduler + admin CLI + docker-compose. ✅
 - **P3** — React web UI with GitHub OAuth, read-only dashboard + secret CRUD.
 - **P4** — Azure Bicep deployment, GHCR image publishing, CI/CD.
 
