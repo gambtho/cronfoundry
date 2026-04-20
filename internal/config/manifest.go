@@ -115,6 +115,17 @@ var validOverlap = map[string]bool{
 	"concurrent": true,
 }
 
+// EffectiveOverlapPolicy returns the overlap policy with the default resolved.
+// An empty OverlapPolicy in the YAML means "skip" — this method centralizes
+// that default so callers don't need to handle both forms.
+func (s *Schedule) EffectiveOverlapPolicy() string {
+	if s.OverlapPolicy == "" {
+		return "skip"
+	}
+	return s.OverlapPolicy
+}
+
+// Validate returns the first validation error found, or nil.
 func (m *Manifest) Validate() error {
 	if m.Version == 0 {
 		return fmt.Errorf("version: required")
@@ -158,6 +169,8 @@ func (m *Manifest) Validate() error {
 	return nil
 }
 
+// FindSchedule returns pointers to the skill and schedule matching the given
+// coordinates, or an error if either is not found.
 func (m *Manifest) FindSchedule(skillPath, scheduleName string) (*SkillEntry, *Schedule, error) {
 	for i := range m.Skills {
 		if m.Skills[i].Path == skillPath {
