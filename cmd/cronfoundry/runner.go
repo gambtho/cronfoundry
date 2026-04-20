@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -213,6 +214,14 @@ func runRunnerHTTP(ctx context.Context, runIDFlag string) error {
 	if result.WritebackSHA != "" {
 		sha := result.WritebackSHA
 		body.WritebackCommitSha = &sha
+		// Push the commit via the server endpoint so the App private key stays
+		// in the serve process and never enters this subprocess.
+		if err := client.PostWritebackPush(ctx, runID, sha, cloneDir); err != nil {
+			slog.Warn("writeback push failed", "err", err)
+			if body.Status == "succeeded" {
+				body.Status = "partial_failure"
+			}
+		}
 	}
 	if err := client.PostFinalize(ctx, runID, body); err != nil {
 		return fmt.Errorf("finalize: %w", err)
@@ -348,6 +357,11 @@ type finalizeRequest struct {
 
 func (c *apiClient) PostFinalize(ctx context.Context, runID string, body finalizeRequest) error {
 	return c.do(ctx, http.MethodPost, "/internal/runs/"+url.PathEscape(runID)+"/finalize", body, nil)
+}
+
+func (c *apiClient) PostWritebackPush(ctx context.Context, runID, commitSHA, repoRoot string) error {
+	body := map[string]string{"commit_sha": commitSHA, "repo_root": repoRoot}
+	return c.do(ctx, http.MethodPost, "/internal/runs/"+url.PathEscape(runID)+"/writeback-push", body, nil)
 }
 
 // do issues a JSON-over-HTTP request with bearer auth and decodes the

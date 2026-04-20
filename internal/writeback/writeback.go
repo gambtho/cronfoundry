@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5"
+	gogitconfig "github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
 )
@@ -108,6 +109,27 @@ func (w *Writer) Push(repoRoot, remoteName, username, token string) error {
 		Auth:       &http.BasicAuth{Username: username, Password: token},
 	})
 	if err != nil && err != git.NoErrAlreadyUpToDate {
+		return fmt.Errorf("writeback: push: %w", err)
+	}
+	return nil
+}
+
+// PushToURL pushes the current HEAD to the given remote URL, overriding any
+// existing origin remote. Used by the /internal/writeback-push endpoint so
+// the push uses a fresh install token without requiring a pre-configured remote.
+func (w *Writer) PushToURL(repoRoot, remoteURL string) error {
+	repo, err := git.PlainOpen(repoRoot)
+	if err != nil {
+		return fmt.Errorf("writeback: open repo: %w", err)
+	}
+	_ = repo.DeleteRemote("origin")
+	if _, err := repo.CreateRemote(&gogitconfig.RemoteConfig{
+		Name: "origin",
+		URLs: []string{remoteURL},
+	}); err != nil {
+		return fmt.Errorf("writeback: create remote: %w", err)
+	}
+	if err := repo.Push(&git.PushOptions{RemoteName: "origin"}); err != nil && err != git.NoErrAlreadyUpToDate {
 		return fmt.Errorf("writeback: push: %w", err)
 	}
 	return nil

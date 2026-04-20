@@ -195,3 +195,16 @@ JOIN schedule s         ON s.id = r.schedule_id
 JOIN skill sk           ON sk.id = s.skill_id
 JOIN repo_connection rc ON rc.id = sk.repo_id
 WHERE r.id = $1;
+
+-- name: GetRunWritebackConfig :one
+-- Returns the fields needed to push a writeback commit: install ID for
+-- the token and owner/name for the remote URL.
+SELECT s.writeback_json,
+       rc.github_app_install_id,
+       rc.owner,
+       rc.name AS repo_name
+FROM run r
+JOIN schedule s ON s.id = r.schedule_id
+JOIN skill sk ON sk.id = s.skill_id
+JOIN repo_connection rc ON rc.id = sk.repo_id
+WHERE r.id = $1;
