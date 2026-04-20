@@ -145,6 +145,9 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 		OAuthClientSecret: oauthClientSecret,
 		AdminLogins:       adminLogins,
 		ViewerLogins:      viewerLogins,
+		Queries:           q,
+		Secrets:           store,
+		APIBaseURL:        "http://" + addr,
 	})
 	srv := &http.Server{
 		Addr:              addr,
