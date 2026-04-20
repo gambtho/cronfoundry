@@ -59,9 +59,6 @@ type eventsHandler struct{ deps Deps }
 type finalizeHandler struct{ deps Deps }
 type runNowHandler struct{ deps Deps }
 
-func (h eventsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "not implemented", http.StatusNotImplemented)
-}
 func (h finalizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "not implemented", http.StatusNotImplemented)
 }
