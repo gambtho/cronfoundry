@@ -71,7 +71,10 @@ func runAdminSetSecret(ctx context.Context, name string, in io.Reader, out io.Wr
 		return fmt.Errorf("load organization: %w", err)
 	}
 
-	store := secretstore.NewEnvelopePostgresStore(pool, org.ID, master)
+	store, err := buildSecretStore(pool, org.ID, master)
+	if err != nil {
+		return fmt.Errorf("build secret store: %w", err)
+	}
 	if err := store.Put(ctx, name, value); err != nil {
 		return fmt.Errorf("put secret: %w", err)
 	}
