@@ -106,6 +106,7 @@ func runAdminShowRun(ctx context.Context, runIDStr string, out io.Writer) error 
 	start := 0
 	if len(events) > 20 {
 		start = len(events) - 20
+		fmt.Fprintf(out, "  ... (%d earlier events omitted)\n", start)
 	}
 	for _, ev := range events[start:] {
 		fmt.Fprintf(out, "  [%s] %-5s %s: %s\n",

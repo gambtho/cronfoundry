@@ -79,7 +79,7 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 	// --- Construct collaborators ---
 	store := secretstore.NewEnvelopePostgresStore(pool, org.ID, master)
 	signer := token.New(master)
-	ghBaseURL := os.Getenv("CRONFOUNDRY_GITHUB_BASE_URL")
+	ghBaseURL := os.Getenv(envGitHubBaseURL)
 	installsCfg := github.InstallationCacheConfig{
 		AppID:      appID,
 		PrivateKey: pemBytes,

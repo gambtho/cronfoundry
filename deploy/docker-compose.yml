@@ -5,7 +5,7 @@ services:
       POSTGRES_USER: cronfoundry
       POSTGRES_PASSWORD: ${CRONFOUNDRY_DB_PASSWORD:-cronfoundry}
       POSTGRES_DB: cronfoundry
-    ports: ["5432:5432"]
+    ports: ["127.0.0.1:5432:5432"]
     volumes: ["db-data:/var/lib/postgresql/data"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U cronfoundry -d cronfoundry"]
@@ -25,7 +25,9 @@ services:
     ports: ["8080:8080"]
     depends_on:
       db: { condition: service_healthy }
-    secrets: [app_pem]
+    secrets:
+      - source: app_pem
+        target: app.pem
     command: ["serve", "--addr", "0.0.0.0:8080"]
 
 secrets:

@@ -45,6 +45,9 @@ migrate:
 	@if [ -z "$$CRONFOUNDRY_DATABASE_URL" ]; then \
 	  echo 'CRONFOUNDRY_DATABASE_URL not set'; exit 1; \
 	 fi
+	@if [ -z "$$CRONFOUNDRY_MASTER_KEY" ]; then \
+	  echo 'CRONFOUNDRY_MASTER_KEY not set (run `cronfoundry admin init` to generate one)'; exit 1; \
+	 fi
 	go run ./cmd/cronfoundry admin init
 
 e2e:

@@ -3,15 +3,13 @@ package config
 import (
 	"encoding/json"
 	"sort"
-	"strings"
 )
 
 // CollectSecretRefs extracts all secret names referenced from destinations
 // JSON, env JSON, and an optional LLM secret reference. Secret references
-// appear in the form { "secret": "name" } anywhere in the JSON.
+// appear in the form `{ "secret": "name" }` anywhere in the JSON.
 //
-// Non-string "secret" values are skipped without aborting the scan.
-// Results are sorted + deduplicated.
+// Non-string "secret" values are skipped. Results are sorted + deduplicated.
 func CollectSecretRefs(destinations, env json.RawMessage, llmRef *string) []string {
 	seen := map[string]struct{}{}
 	scan(destinations, seen)
@@ -27,39 +25,31 @@ func CollectSecretRefs(destinations, env json.RawMessage, llmRef *string) []stri
 	return out
 }
 
-// scan finds every "secret":"<name>" pair in raw JSON and adds the name to seen.
+// scan finds every `{"secret":"<name>"}` occurrence in the JSON tree and adds
+// the name to seen. Uses a proper JSON walk to avoid false positives.
 func scan(raw json.RawMessage, seen map[string]struct{}) {
 	if len(raw) == 0 {
 		return
 	}
-	s := string(raw)
-	i := 0
-	for {
-		idx := strings.Index(s[i:], `"secret"`)
-		if idx < 0 {
-			return
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return
+	}
+	walkSecretRefs(v, seen)
+}
+
+func walkSecretRefs(v any, seen map[string]struct{}) {
+	switch t := v.(type) {
+	case map[string]any:
+		if s, ok := t["secret"].(string); ok && s != "" {
+			seen[s] = struct{}{}
 		}
-		idx += i
-		j := idx + len(`"secret"`)
-		// Skip whitespace + colon.
-		for j < len(s) && (s[j] == ' ' || s[j] == ':' || s[j] == '\t' || s[j] == '\n' || s[j] == '\r') {
-			j++
+		for _, child := range t {
+			walkSecretRefs(child, seen)
 		}
-		if j >= len(s) || s[j] != '"' {
-			// Not a string value — skip this occurrence and keep scanning.
-			i = idx + len(`"secret"`)
-			continue
+	case []any:
+		for _, child := range t {
+			walkSecretRefs(child, seen)
 		}
-		j++ // past opening quote
-		end := strings.IndexByte(s[j:], '"')
-		if end < 0 {
-			return
-		}
-		end += j
-		name := s[j:end]
-		if name != "" {
-			seen[name] = struct{}{}
-		}
-		i = end + 1
 	}
 }
