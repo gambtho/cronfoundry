@@ -277,6 +277,49 @@ func (q *Queries) ListSchedulesByOrg(ctx context.Context, orgID pgtype.UUID) ([]
 	return items, nil
 }
 
+const setScheduleEnabled = `-- name: SetScheduleEnabled :one
+UPDATE schedule
+SET enabled    = $2,
+    updated_at = now()
+WHERE id = $1
+  AND org_id = $3
+RETURNING id, org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec, enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment, destinations_json, writeback_json, env_json, next_fire_at, created_at, updated_at
+`
+
+type SetScheduleEnabledParams struct {
+	ID      pgtype.UUID
+	Enabled bool
+	OrgID   pgtype.UUID
+}
+
+func (q *Queries) SetScheduleEnabled(ctx context.Context, arg SetScheduleEnabledParams) (Schedule, error) {
+	row := q.db.QueryRow(ctx, setScheduleEnabled, arg.ID, arg.Enabled, arg.OrgID)
+	var i Schedule
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.SkillID,
+		&i.Name,
+		&i.Cron,
+		&i.Timezone,
+		&i.OverlapPolicy,
+		&i.TimeoutSec,
+		&i.Enabled,
+		&i.Provider,
+		&i.Model,
+		&i.LlmSecretRef,
+		&i.LlmEndpoint,
+		&i.LlmDeployment,
+		&i.DestinationsJson,
+		&i.WritebackJson,
+		&i.EnvJson,
+		&i.NextFireAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const updateScheduleNextFireAt = `-- name: UpdateScheduleNextFireAt :exec
 UPDATE schedule
 SET next_fire_at = $2,

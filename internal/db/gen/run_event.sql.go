@@ -66,3 +66,43 @@ func (q *Queries) ListRunEvents(ctx context.Context, runID pgtype.UUID) ([]RunEv
 	}
 	return items, nil
 }
+
+const listRunEventsSince = `-- name: ListRunEventsSince :many
+SELECT id, run_id, ts, level, event_type, payload_json
+FROM run_event
+WHERE run_id = $1
+  AND id > $2
+ORDER BY id ASC
+`
+
+type ListRunEventsSinceParams struct {
+	RunID pgtype.UUID
+	ID    int64
+}
+
+func (q *Queries) ListRunEventsSince(ctx context.Context, arg ListRunEventsSinceParams) ([]RunEvent, error) {
+	rows, err := q.db.Query(ctx, listRunEventsSince, arg.RunID, arg.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []RunEvent
+	for rows.Next() {
+		var i RunEvent
+		if err := rows.Scan(
+			&i.ID,
+			&i.RunID,
+			&i.Ts,
+			&i.Level,
+			&i.EventType,
+			&i.PayloadJson,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

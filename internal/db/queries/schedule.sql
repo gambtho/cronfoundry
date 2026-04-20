@@ -41,6 +41,14 @@ JOIN repo_connection rc ON rc.id = sk.repo_id
 WHERE s.org_id = $1
 ORDER BY rc.owner, rc.name, sk.path, s.name;
 
+-- name: SetScheduleEnabled :one
+UPDATE schedule
+SET enabled    = $2,
+    updated_at = now()
+WHERE id = $1
+  AND org_id = $3
+RETURNING *;
+
 -- name: ListDueSchedules :many
 -- Returns schedules ready to fire: enabled AND next_fire_at <= now.
 -- Ordered by next_fire_at so we dispatch oldest-due first.
