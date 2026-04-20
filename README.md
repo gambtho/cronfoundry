@@ -5,14 +5,19 @@ OpenAI / Anthropic / Azure AI Foundry on a schedule, publishes the output to
 GitHub issues, Slack, Discord, or Teams, and commits learnings back to the
 skill repo.
 
-Status: **P1 — core runner CLI only.** The scheduler, API, web UI, and Azure
-Bicep deployment are in later phases (P2–P4).
+**Status:** `P1 — core runner CLI only`. The scheduler, API, web UI, and Azure
+Bicep deployment are in later phases (P2–P4). See
+[`docs/superpowers/plans/`](docs/superpowers/plans/) for the roadmap.
 
 ## Requirements
 
-- **Go 1.25 or later.** (Driven by the `github.com/openai/openai-go/v3` dependency.)
-- Git working tree (for writeback).
+- **Go 1.25 or later** (required by `github.com/openai/openai-go/v3`).
+- Git working tree (the skill repo the runner operates on must be a git repo —
+  writeback commits through `go-git`).
 - An API key for one of: OpenAI, Anthropic, or Azure AI Foundry.
+- An Incoming Webhook URL for at least one destination you want to publish to
+  (Slack, Discord, Teams via Power Automate), or a GitHub PAT for the GitHub
+  issue destination.
 
 ## Build
 
@@ -20,11 +25,15 @@ Bicep deployment are in later phases (P2–P4).
 go build -o cronfoundry-runner ./cmd/runner
 ```
 
-## Run the smoke fixture
+Produces a single ~25 MB static binary.
+
+## Quick start
+
+A tiny end-to-end run with the bundled smoke fixture:
 
 ```bash
-export OPENAI_API_KEY=sk-...
-export CRONFOUNDRY_SECRET_SLACK_URL=https://hooks.slack.com/...
+export OPENAI_API_KEY='sk-...'
+export CRONFOUNDRY_SECRET_SLACK_URL='https://hooks.slack.com/...'
 
 ./cronfoundry-runner run \
   --repo ./testdata \
@@ -33,6 +42,18 @@ export CRONFOUNDRY_SECRET_SLACK_URL=https://hooks.slack.com/...
   --schedule-name monday-morning \
   --skip-push
 ```
+
+The runner will:
+
+1. Parse `testdata/cronfoundry.yaml` and resolve the named schedule.
+2. Load `testdata/skills/weekly-digest/SKILL.md`, inline `{{ include "..." }}`
+   directives, and build the final prompt.
+3. Stream a completion from OpenAI with your key.
+4. Strip any `<memory>…</memory>` block from the output.
+5. POST the remaining text to the Slack webhook (isolated retries).
+6. If a `<memory>` block was present, append it to `memory.md` and commit
+   as `cronfoundry[bot]`. `--skip-push` keeps it local.
+7. Print a JSON run summary to stdout.
 
 ## Flags
 
@@ -48,15 +69,134 @@ export CRONFOUNDRY_SECRET_SLACK_URL=https://hooks.slack.com/...
 | `--dry-run` | false | Skip publish + writeback; print output only |
 | `--skip-push` | false | Perform writeback commit locally but don't push |
 
+## Configuration format
+
+### `cronfoundry.yaml` — the manifest
+
+```yaml
+version: 1
+skills:
+  - path: skills/weekly-digest
+    schedules:
+      - name: monday-morning
+        cron: "0 9 * * MON"
+        timezone: America/Los_Angeles
+        overlap_policy: skip       # skip | queue | concurrent
+        timeout_sec: 600
+        provider: openai           # openai | anthropic | azure-foundry
+        model: gpt-4o-mini
+        destinations:
+          - github-issue:
+              repo: myorg/reports
+              title: "Digest — {{ run.date }}"
+              labels: [digest]
+          - slack:
+              secret: slack_webhook
+              text: "{{ output.truncated 35000 }}"
+        writeback:
+          enabled: true
+          path: memory.md
+          mode: append             # append | replace
+        env:
+          LOOKBACK_DAYS: "7"
+          TEAM_NAME:
+            secret: team_name      # resolved from CRONFOUNDRY_SECRET_TEAM_NAME
+```
+
+### `SKILL.md` — per-skill prompt
+
+```markdown
+---
+name: weekly-digest
+description: Aggregates last week's activity
+max_tokens: 4000
+---
+You are writing a weekly digest.
+
+Context:
+{{ include "context/template.md" }}
+
+Respond with a short summary, then a <memory>...</memory> block with one
+short learning.
+```
+
+Only `{{ include "relative/path.md" }}` is supported inside the body — no
+conditionals or loops. Paths are relative to the skill directory and may not
+escape it.
+
 ## Secret resolution
 
 Secrets referenced by `{ secret: name }` in the manifest resolve from
 environment variables with the prefix `CRONFOUNDRY_SECRET_<UPPER(name)>`.
 
-For example, `secret: slack_url` reads `CRONFOUNDRY_SECRET_SLACK_URL`.
+Example: `secret: slack_webhook` ⇒ `CRONFOUNDRY_SECRET_SLACK_WEBHOOK`.
+
+The LLM API key itself comes from whatever env var `--llm-key-env` names
+(default `OPENAI_API_KEY`). The writeback push (if enabled) uses `GITHUB_TOKEN`.
+
+All known secret values are scrubbed from stderr (slog attrs, errors, and
+direct prints) before emission.
+
+## Destination templates
+
+A small, fixed set of variables is available in destination `text`/`content`/
+`title`/`body` fields:
+
+| Variable | Value |
+|---|---|
+| `{{ output }}` | Full published output (memory block stripped) |
+| `{{ output.truncated N }}` | Same, limited to N runes with an ellipsis |
+| `{{ run.id }}` | Run UUID |
+| `{{ run.date }}` | Run start date (`YYYY-MM-DD`, schedule's timezone) |
+| `{{ run.started_at }}` | ISO-8601 timestamp |
+| `{{ schedule.name }}` | Schedule name from the manifest |
+| `{{ skill.name }}` | Skill name from SKILL.md frontmatter |
+
+Unknown variables render as their literal form and emit a warning.
+
+## Architecture
+
+P1 is a single static binary driven by flags. Internal packages are pure
+libraries — no global state, no hidden I/O:
+
+```
+cronfoundry/
+├── cmd/runner/                    # CLI entry (cobra, slog, redacting stderr)
+└── internal/
+    ├── config/                    # cronfoundry.yaml + SKILL.md parsers
+    │                              # {{ include }} preprocessor, validation
+    ├── secrets/                   # env-based secret resolver
+    ├── memory/                    # <memory>...</memory> block parser
+    ├── template/                  # safe variable-set template renderer
+    ├── redact/                    # scrub known values from logs
+    ├── llm/                       # Provider interface + adapters:
+    │                              #   openai, anthropic, azure-foundry
+    │                              #   (all streaming, usage-aware)
+    ├── publish/                   # Publisher interface + parallel dispatcher
+    │                              # github-issue, slack, discord, teams
+    ├── writeback/                 # go-git commit + optional push
+    └── runner/                    # orchestration:
+                                   #   load → LLM → memory parse → publish → writeback
+```
+
+A run's status is one of `succeeded`, `partial_failure` (publish or writeback
+failure), or `failed` (load/LLM error). Per-destination failures are isolated
+— one broken webhook does not prevent other destinations from publishing.
 
 ## Design & spec
 
-- Technical design: `docs/superpowers/specs/2026-04-19-cronfoundry-design.md`
-- Product requirements: `docs/superpowers/specs/2026-04-19-cronfoundry-prd.md`
-- Implementation plans: `docs/superpowers/plans/`
+- Technical design: [`docs/superpowers/specs/2026-04-19-cronfoundry-design.md`](docs/superpowers/specs/2026-04-19-cronfoundry-design.md)
+- Product requirements: [`docs/superpowers/specs/2026-04-19-cronfoundry-prd.md`](docs/superpowers/specs/2026-04-19-cronfoundry-prd.md)
+- Implementation plans: [`docs/superpowers/plans/`](docs/superpowers/plans/)
+
+## Roadmap
+
+- **P1** (this release) — Core runner CLI. ✅
+- **P2** — Postgres + API + scheduler + Azure Key Vault. Skills run on cron,
+  not just one-shot.
+- **P3** — React web UI with GitHub OAuth, read-only dashboard + secret CRUD.
+- **P4** — Azure Bicep deployment, GHCR image publishing, CI/CD.
+
+## License
+
+TBD.
