@@ -4,3 +4,6 @@ cronfoundry-runner.exe
 coverage.out
 .env
 .env.local
+
+# Claude Code local state
+.claude/
