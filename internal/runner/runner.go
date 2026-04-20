@@ -5,6 +5,7 @@ package runner
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -197,7 +198,16 @@ func (r *Runner) Run(ctx context.Context, in RunInput) (RunResult, error) {
 			writebackOK = false
 		} else {
 			result.WritebackSHA = sha
-			if !in.SkipPush && in.GitHubToken != "" {
+			switch {
+			case in.SkipPush:
+				// explicit opt-out; no log
+			case in.GitHubToken == "":
+				// Writeback succeeded locally but we have no credentials
+				// to push. Warn the user so they don't silently accrue
+				// local-only commits when they expected remote updates.
+				slog.Warn("writeback committed locally but not pushed (no GitHub token)",
+					"commit", sha, "path", sch.Writeback.Path)
+			default:
 				if err := writeback.New().Push(in.RepoRoot, "origin", in.GitHubUsername, in.GitHubToken); err != nil {
 					writebackOK = false
 				}

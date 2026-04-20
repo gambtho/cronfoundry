@@ -88,7 +88,11 @@ func (p *githubIssuePub) Publish(ctx context.Context, dest config.Destination, o
 		body, _ = template.Render(d.Body, tctx)
 	}
 	if len(body) > issueBodyMaxBytes {
-		body = body[:issueBodyMaxBytes-64] + "\n\n... [truncated, full output in run log]"
+		// Cut at a byte boundary then strip any trailing invalid UTF-8
+		// fragment so a multibyte rune straddling the cut point doesn't
+		// render as a replacement character (U+FFFD) on GitHub.
+		truncated := strings.ToValidUTF8(body[:issueBodyMaxBytes-64], "")
+		body = truncated + "\n\n... [truncated, full output in run log]"
 	}
 
 	req := &github.IssueRequest{

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/rand/v2"
 	"net/http"
 	"time"
 )
@@ -38,6 +39,12 @@ func postJSON(ctx context.Context, c *http.Client, typ, url string, payload any)
 	var lastErr error
 	delays := []time.Duration{0, 1 * time.Second, 4 * time.Second}
 	for _, d := range delays {
+		if d > 0 {
+			// Add ±25% jitter so simultaneous runs don't retry in lockstep
+			// (small thundering-herd mitigation on downstream webhooks).
+			jitter := time.Duration(rand.Int64N(int64(d)/2)) - d/4
+			d += jitter
+		}
 		if d > 0 {
 			select {
 			case <-ctx.Done():

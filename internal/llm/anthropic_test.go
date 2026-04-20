@@ -2,7 +2,9 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -52,4 +54,33 @@ func TestAnthropic_Chat_StreamsAndReportsUsage(t *testing.T) {
 	assert.Equal(t, []string{"Hi", " there"}, chunks)
 	assert.Equal(t, 5, usage.InputTokens)
 	assert.Equal(t, 2, usage.OutputTokens)
+}
+
+// TestAnthropic_Chat_NoSystem verifies that when the caller supplies no system
+// message, the adapter omits the System field rather than sending an empty
+// TextBlockParam (which the API may warn on or reject).
+func TestAnthropic_Chat_NoSystem(t *testing.T) {
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(raw, &gotBody)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, anthropicStreamFixture)
+	}))
+	defer srv.Close()
+
+	p := NewAnthropic(srv.URL)
+	_, err := p.Chat(context.Background(),
+		[]Message{{Role: RoleUser, Content: "hello"}},
+		CallOptions{Model: "claude-4.7", MaxTokens: 200, APIKey: "ak-test"},
+		func(c StreamChunk) {})
+
+	require.NoError(t, err)
+	// When System is nil the SDK's omitempty tags should drop the field
+	// entirely. We accept either "absent" or "JSON null"; what we must not
+	// see is an empty text block { "system": [{"text":""}] }.
+	if sysVal, ok := gotBody["system"]; ok {
+		assert.Nil(t, sysVal, "system should be absent or null, not an empty block: %v", sysVal)
+	}
 }
