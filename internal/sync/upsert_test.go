@@ -20,7 +20,7 @@ import (
 
 // startPG brings up a throwaway Postgres, runs migrations, and seeds an org
 // plus a repo_connection. Returns (pool, orgID, repoID, cleanup).
-// (P2d will extract this to a shared internal/testdb helper.)
+
 func startPG(t *testing.T) (*pgxpool.Pool, pgtype.UUID, pgtype.UUID, func()) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
