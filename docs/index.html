@@ -179,6 +179,93 @@ status:  succeeded</pre>
       </div>
     </section>
 
+    <!-- COMPARISON -->
+    <section class="mx-auto max-w-6xl px-6 py-20">
+      <h2 class="text-center text-3xl font-bold text-white mb-4">Find the right tool</h2>
+      <p class="text-center text-gray-400 mb-12 max-w-xl mx-auto">Different tools, different jobs. An honest breakdown.</p>
+      <div class="overflow-x-auto rounded-xl border border-white/10">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="border-b border-white/10 bg-gray-900">
+              <th class="px-4 py-3 text-left text-gray-400 font-medium"></th>
+              <th class="px-4 py-3 text-left text-white font-semibold">CronFoundry</th>
+              <th class="px-4 py-3 text-left text-gray-400 font-medium">gh&#8209;aw</th>
+              <th class="px-4 py-3 text-left text-gray-400 font-medium">Claude Routines</th>
+              <th class="px-4 py-3 text-left text-gray-400 font-medium">n8n / Zapier</th>
+              <th class="px-4 py-3 text-left text-gray-400 font-medium">cron + scripts</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-white/5 bg-gray-950">
+            <tr>
+              <td class="px-4 py-3 text-gray-400 font-medium">Config lives in</td>
+              <td class="px-4 py-3 text-white">Git (YAML)</td>
+              <td class="px-4 py-3 text-gray-400">Git (Markdown)</td>
+              <td class="px-4 py-3 text-gray-400">Vendor UI</td>
+              <td class="px-4 py-3 text-gray-400">Vendor UI</td>
+              <td class="px-4 py-3 text-gray-400">Shell scripts</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 text-gray-400 font-medium">Runs on</td>
+              <td class="px-4 py-3 text-white">Self-hosted Azure</td>
+              <td class="px-4 py-3 text-gray-400">GitHub Actions</td>
+              <td class="px-4 py-3 text-gray-400">Vendor cloud</td>
+              <td class="px-4 py-3 text-gray-400">Vendor cloud</td>
+              <td class="px-4 py-3 text-gray-400">Your infra</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 text-gray-400 font-medium">Output destinations</td>
+              <td class="px-4 py-3 text-white">Slack, Discord, Teams, GitHub</td>
+              <td class="px-4 py-3 text-gray-400">GitHub only</td>
+              <td class="px-4 py-3 text-gray-400">Email, notifications</td>
+              <td class="px-4 py-3 text-gray-400">Many</td>
+              <td class="px-4 py-3 text-gray-400">Whatever you code</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 text-gray-400 font-medium">LLM providers</td>
+              <td class="px-4 py-3 text-white">OpenAI, Anthropic, Azure AI</td>
+              <td class="px-4 py-3 text-gray-400">Copilot, Claude, Codex</td>
+              <td class="px-4 py-3 text-gray-400">Anthropic only</td>
+              <td class="px-4 py-3 text-gray-400">Via plugins</td>
+              <td class="px-4 py-3 text-gray-400">Whatever you integrate</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 text-gray-400 font-medium">Secrets</td>
+              <td class="px-4 py-3 text-white">Azure Key Vault</td>
+              <td class="px-4 py-3 text-gray-400">GH Actions secrets</td>
+              <td class="px-4 py-3 text-gray-400">Vendor-managed</td>
+              <td class="px-4 py-3 text-gray-400">Vendor-managed</td>
+              <td class="px-4 py-3 text-gray-400">Your choice</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 text-gray-400 font-medium">Self-hostable</td>
+              <td class="px-4 py-3 text-accent font-semibold">&#x2713;</td>
+              <td class="px-4 py-3 text-gray-500">&#x2717;</td>
+              <td class="px-4 py-3 text-gray-500">&#x2717;</td>
+              <td class="px-4 py-3 text-gray-400">&#x2713; (complex)</td>
+              <td class="px-4 py-3 text-accent font-semibold">&#x2713;</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 text-gray-400 font-medium">Open source</td>
+              <td class="px-4 py-3 text-accent font-semibold">&#x2713;</td>
+              <td class="px-4 py-3 text-accent font-semibold">&#x2713;</td>
+              <td class="px-4 py-3 text-gray-500">&#x2717;</td>
+              <td class="px-4 py-3 text-gray-400">&#x2713; (community ed.)</td>
+              <td class="px-4 py-3 text-gray-400">N/A</td>
+            </tr>
+            <tr>
+              <td class="px-4 py-3 text-gray-400 font-medium">Best for</td>
+              <td class="px-4 py-3 text-white">Team-visible scheduled outputs</td>
+              <td class="px-4 py-3 text-gray-400">Repo automation</td>
+              <td class="px-4 py-3 text-gray-400">Personal schedules</td>
+              <td class="px-4 py-3 text-gray-400">General automation</td>
+              <td class="px-4 py-3 text-gray-400">Full DIY control</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="text-center text-xs text-gray-500 mt-4">gh-aw and CronFoundry are complementary &mdash; gh-aw improves your repo automatically; CronFoundry runs skills and tells your team.</p>
+    </section>
+
     <!-- remaining sections added in later tasks -->
 
   </main>
