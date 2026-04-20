@@ -9,14 +9,19 @@ import (
 
 const prefix = "CRONFOUNDRY_SECRET_"
 
+// Resolver looks up skill secrets from an environment snapshot.
 type Resolver struct {
 	env map[string]string
 }
 
+// New returns a Resolver backed by the given environment map, typically the
+// process environment parsed into key/value form.
 func New(env map[string]string) *Resolver {
 	return &Resolver{env: env}
 }
 
+// Get returns the value of the named secret, or an error naming the missing
+// environment variable the caller must export.
 func (r *Resolver) Get(name string) (string, error) {
 	key := prefix + strings.ToUpper(name)
 	v, ok := r.env[key]

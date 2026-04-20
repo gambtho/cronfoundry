@@ -2,16 +2,25 @@
 package redact
 
 import (
-	"sort"
+	"slices"
 	"strings"
 )
 
 const placeholder = "[REDACTED]"
 
+// Redactor replaces known secret values with a fixed placeholder.
+//
+// Callers must funnel any string through Redact before it reaches a log sink;
+// the redactor cannot intercept logs it never sees. Typical wiring is to
+// construct one Redactor per run from secrets.Resolver.AllValues() and use it
+// as the single log-formatting choke point.
 type Redactor struct {
 	values []string
 }
 
+// New returns a Redactor that scrubs the given secret values. Empty strings
+// are ignored. Values are sorted longest-first so that overlapping secrets
+// redact to their most specific match.
 func New(secrets []string) *Redactor {
 	filtered := make([]string, 0, len(secrets))
 	for _, s := range secrets {
@@ -19,12 +28,13 @@ func New(secrets []string) *Redactor {
 			filtered = append(filtered, s)
 		}
 	}
-	sort.Slice(filtered, func(i, j int) bool {
-		return len(filtered[i]) > len(filtered[j])
+	slices.SortFunc(filtered, func(a, b string) int {
+		return len(b) - len(a)
 	})
 	return &Redactor{values: filtered}
 }
 
+// Redact returns s with every known secret value replaced by "[REDACTED]".
 func (r *Redactor) Redact(s string) string {
 	for _, v := range r.values {
 		s = strings.ReplaceAll(s, v, placeholder)
