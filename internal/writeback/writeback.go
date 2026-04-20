@@ -4,6 +4,7 @@
 package writeback
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -122,7 +123,9 @@ func (w *Writer) PushToURL(repoRoot, remoteURL string) error {
 	if err != nil {
 		return fmt.Errorf("writeback: open repo: %w", err)
 	}
-	_ = repo.DeleteRemote("origin")
+	if err := repo.DeleteRemote("origin"); err != nil && !errors.Is(err, git.ErrRemoteNotFound) {
+		return fmt.Errorf("writeback: delete existing remote: %w", err)
+	}
 	if _, err := repo.CreateRemote(&gogitconfig.RemoteConfig{
 		Name: "origin",
 		URLs: []string{remoteURL},

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -48,7 +50,15 @@ func (h writebackPushHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "repo_root required", http.StatusBadRequest)
 		return
 	}
-	if _, err := os.Stat(body.RepoRoot); err != nil {
+	// Validate that RepoRoot is within the OS temp directory to prevent path
+	// traversal from a compromised runner subprocess.
+	tmpDir := os.TempDir()
+	absRoot, err := filepath.Abs(body.RepoRoot)
+	if err != nil || !strings.HasPrefix(absRoot+string(filepath.Separator), tmpDir+string(filepath.Separator)) {
+		http.Error(w, "repo_root outside allowed prefix", http.StatusBadRequest)
+		return
+	}
+	if _, err := os.Stat(absRoot); err != nil {
 		http.Error(w, "repo_root not readable: "+err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -73,7 +83,7 @@ func (h writebackPushHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	pushURL := fmt.Sprintf("https://x-access-token:%s@github.com/%s/%s.git", tok, cfg.Owner, cfg.RepoName)
 
 	writer := writeback.New()
-	if err := writer.PushToURL(body.RepoRoot, pushURL); err != nil {
+	if err := writer.PushToURL(absRoot, pushURL); err != nil {
 		http.Error(w, "push: "+err.Error(), http.StatusBadGateway)
 		return
 	}

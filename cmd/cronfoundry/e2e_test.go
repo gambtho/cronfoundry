@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -45,9 +46,15 @@ func TestE2E_FullScheduleFire(t *testing.T) {
 	headSHA := gitHeadSHA(t, fixtureDir)
 
 	// Fake Discord webhook — records received payloads.
-	var discordPayload []byte
+	var (
+		discordMu      sync.Mutex
+		discordPayload []byte
+	)
 	discordSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		discordPayload, _ = io.ReadAll(r.Body)
+		b, _ := io.ReadAll(r.Body)
+		discordMu.Lock()
+		discordPayload = b
+		discordMu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer discordSrv.Close()
@@ -163,9 +170,12 @@ func TestE2E_FullScheduleFire(t *testing.T) {
 		"run failed; serve logs:\n%s", serveLogs.String())
 
 	// Step 10: assert Discord received a payload.
-	assert.NotEmpty(t, discordPayload, "Discord webhook was never called")
+	discordMu.Lock()
+	payload := discordPayload
+	discordMu.Unlock()
+	assert.NotEmpty(t, payload, "Discord webhook was never called")
 	var discordBody map[string]any
-	require.NoError(t, json.Unmarshal(discordPayload, &discordBody))
+	require.NoError(t, json.Unmarshal(payload, &discordBody))
 	assert.NotEmpty(t, discordBody["content"], "Discord payload missing 'content'")
 }
 
@@ -289,12 +299,8 @@ func buildBinary(t *testing.T) string {
 
 func moduleRoot(t *testing.T) string {
 	t.Helper()
-	out, err := exec.Command("go", "env", "GOMODCACHE").Output()
-	require.NoError(t, err)
-	// Walk up from this file to find go.mod.
 	dir, err := filepath.Abs(".")
 	require.NoError(t, err)
-	_ = out
 	for {
 		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
 			return dir

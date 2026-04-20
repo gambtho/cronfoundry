@@ -213,14 +213,16 @@ func runRunnerHTTP(ctx context.Context, runIDFlag string) error {
 	}
 	if result.WritebackSHA != "" {
 		sha := result.WritebackSHA
-		body.WritebackCommitSha = &sha
 		// Push the commit via the server endpoint so the App private key stays
 		// in the serve process and never enters this subprocess.
 		if err := client.PostWritebackPush(ctx, runID, sha, cloneDir); err != nil {
-			slog.Warn("writeback push failed", "err", err)
+			slog.Error("writeback push failed; commit not pushed to remote",
+				"run_id", runID, "sha", sha, "err", err)
 			if body.Status == "succeeded" {
 				body.Status = "partial_failure"
 			}
+		} else {
+			body.WritebackCommitSha = &sha
 		}
 	}
 	if err := client.PostFinalize(ctx, runID, body); err != nil {
@@ -231,9 +233,7 @@ func runRunnerHTTP(ctx context.Context, runIDFlag string) error {
 		return fmt.Errorf("runner: %w", runErr)
 	}
 	return nil
-}
-
-// redactCloneURL strips the userinfo component (which holds the installation
+}// redactCloneURL strips the userinfo component (which holds the installation
 // token) from an otherwise-opaque clone URL, so the URL is safe to embed in
 // error messages and event payloads. A URL we can't parse collapses to a
 // constant rather than being returned verbatim, since a parse failure is

@@ -78,7 +78,13 @@ func runAdminListRuns(ctx context.Context, limit int, scheduleName string, out i
 		}
 		rows = make([]dbgen.ListRunsForOrgRow, 0, len(sRows))
 		for _, r := range sRows {
-			rows = append(rows, dbgen.ListRunsForOrgRow(r))
+			rows = append(rows, dbgen.ListRunsForOrgRow{
+				ID: r.ID, Status: r.Status, FireReason: r.FireReason,
+				Actor: r.Actor, StartedAt: r.StartedAt, FinishedAt: r.FinishedAt,
+				DurationMs: r.DurationMs, ErrorKind: r.ErrorKind, ErrorMsg: r.ErrorMsg,
+				CreatedAt: r.CreatedAt, ScheduleName: r.ScheduleName,
+				SkillPath: r.SkillPath, Owner: r.Owner, RepoName: r.RepoName,
+			})
 		}
 	}
 	if len(rows) == 0 {

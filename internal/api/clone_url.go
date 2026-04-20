@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -60,7 +61,9 @@ func (h cloneURLHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	_, err = h.deps.Installations.Token(r.Context(), row.GithubAppInstallID)
 	if err != nil {
-		http.Error(w, "mint install token: "+err.Error(), http.StatusBadGateway)
+		slog.Error("clone_url: mint install token failed",
+			"repo_id", repoID, "install_id", row.GithubAppInstallID, "err", err)
+		http.Error(w, "could not authenticate with GitHub", http.StatusBadGateway)
 		return
 	}
 
