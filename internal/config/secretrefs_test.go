@@ -43,3 +43,10 @@ func TestCollectSecretRefs_EmptyInputs(t *testing.T) {
 	assert.Empty(t, CollectSecretRefs(nil, nil, nil))
 	assert.Empty(t, CollectSecretRefs(json.RawMessage(``), json.RawMessage(``), nil))
 }
+
+func TestCollectSecretRefs_UnterminatedStringEndsGracefully(t *testing.T) {
+	// Malformed JSON with no closing quote — scan should return without panic.
+	dests := json.RawMessage(`{"secret":"no-closing-quote`)
+	got := CollectSecretRefs(dests, nil, nil)
+	assert.Empty(t, got)
+}
