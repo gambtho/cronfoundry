@@ -9,10 +9,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/gambtho/cronfoundry/internal/cloud"
 	"github.com/gambtho/cronfoundry/internal/githubtest"
+	"github.com/gambtho/cronfoundry/internal/secretstore"
 )
 
 // TestServe_BootsAndHealthz verifies the full serve boot flow:
@@ -105,4 +108,22 @@ func TestServe_MissingGitHubAppID(t *testing.T) {
 	err := runServe(context.Background(), "127.0.0.1:0", 30*time.Second)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), envGitHubAppID)
+}
+
+func TestBuildJobDispatcher_Local(t *testing.T) {
+	t.Setenv("AZURE_CAE_RESOURCE_GROUP", "")
+	t.Setenv("AZURE_CAE_JOB_NAME", "")
+	t.Setenv("AZURE_SUBSCRIPTION_ID", "")
+	d, err := buildJobDispatcher()
+	require.NoError(t, err)
+	_, ok := d.(*cloud.SubprocessDispatcher)
+	require.True(t, ok, "expected SubprocessDispatcher when Azure env vars are unset")
+}
+
+func TestBuildSecretStore_Local(t *testing.T) {
+	t.Setenv("AZURE_KEYVAULT_URL", "")
+	store, err := buildSecretStore(nil, pgtype.UUID{}, nil)
+	require.NoError(t, err)
+	_, ok := store.(*secretstore.EnvelopePostgresStore)
+	require.True(t, ok, "expected EnvelopePostgresStore when AZURE_KEYVAULT_URL is unset")
 }
