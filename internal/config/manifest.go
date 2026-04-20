@@ -1,4 +1,5 @@
-// Package config parses CronFoundry manifest and skill files.
+// Package config parses CronFoundry manifest and skill files and resolves
+// single-level `{{ include "..." }}` directives inside skill bodies.
 package config
 
 import (
