@@ -105,9 +105,9 @@ go build -o /tmp/cronfoundry ./cmd/cronfoundry
 export CRONFOUNDRY_DATABASE_URL='postgres://cronfoundry:cronfoundry@localhost:5433/cronfoundry?sslmode=disable'
 export CRONFOUNDRY_GITHUB_APP_ID='<the App ID from step 1.8>'
 export CRONFOUNDRY_GITHUB_APP_PEM='/absolute/path/to/your-app-private-key.pem'
-export CRONFOUNDRY_SECRET_DISCORD_WEBHOOK='https://discord.com/api/webhooks/...'
-# (note: this is an env var name P1 uses; P2's secret store reads from Postgres)
 ```
+
+P2 stores secrets (Discord webhook, OpenAI key, etc.) in an encrypted Postgres table, not in environment variables. You'll add them below via `cronfoundry admin set-secret`.
 
 ### 7. Initialize the database
 
@@ -207,7 +207,7 @@ Leave `serve` running. Within 60 seconds (cron boundary), the scheduler should:
 
 **Discord:** you should see a message from `CronFoundry` in the webhook's channel.
 
-**GitHub:** `git pull` on your `cronfoundry-smoke` repo should show a new commit from `cronfoundry[bot]` appending to `memory.md`.
+**GitHub:** no new commit appears on the remote. The runner currently sets `SkipPush: true` and the writeback commit is created only in the runner's ephemeral clone directory (which is deleted after the run). P2d wires a dedicated push endpoint so the `cronfoundry[bot]` commit lands on `main`. See "Known gaps" below.
 
 **Database:**
 ```bash
@@ -215,7 +215,7 @@ docker exec cronfoundry-smoke psql -U cronfoundry -d cronfoundry -c \
   "SELECT id, status, tokens_in, tokens_out, duration_ms, writeback_commit_sha FROM run ORDER BY created_at DESC LIMIT 1;"
 ```
 
-Expected: `status='succeeded'`, token counts > 0, `writeback_commit_sha` populated.
+Expected: `status='succeeded'`, token counts > 0, `writeback_commit_sha` populated (the SHA is real — the commit was created — it just wasn't pushed).
 
 **Runs listing (future P2d command):** today you'd query Postgres directly. P2d will add `admin list-runs` and `admin show-run <id>`.
 
