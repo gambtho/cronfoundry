@@ -334,7 +334,7 @@ func (c *apiClient) PostFinalize(ctx context.Context, runID string, body finaliz
 // do issues a JSON-over-HTTP request with bearer auth and decodes the
 // response body into decodeInto (skipped if nil). Non-2xx responses become
 // errors carrying the response body for debuggability.
-func (c *apiClient) do(ctx context.Context, method, path string, body, decodeInto interface{}) error {
+func (c *apiClient) do(ctx context.Context, method, path string, body, decodeInto any) error {
 	var reqBody io.Reader
 	if body != nil {
 		buf, err := json.Marshal(body)
