@@ -127,3 +127,80 @@ skills:
 	// Just require that the field name appears in the error.
 	assert.Contains(t, err.Error(), "overlap-policy")
 }
+
+func TestManifest_Validate(t *testing.T) {
+	cases := []struct {
+		name    string
+		yaml    string
+		wantErr string
+	}{
+		{
+			name:    "missing version",
+			yaml:    "skills: []",
+			wantErr: "version",
+		},
+		{
+			name:    "unsupported version",
+			yaml:    "version: 2\nskills: []",
+			wantErr: "version 2 not supported",
+		},
+		{
+			name:    "duplicate skill path",
+			yaml:    "version: 1\nskills:\n  - path: a\n    schedules: []\n  - path: a\n    schedules: []",
+			wantErr: "duplicate skill path \"a\"",
+		},
+		{
+			name:    "duplicate schedule name within skill",
+			yaml:    "version: 1\nskills:\n  - path: a\n    schedules:\n      - { name: x, cron: \"* * * * *\", provider: openai, model: m }\n      - { name: x, cron: \"* * * * *\", provider: openai, model: m }",
+			wantErr: "duplicate schedule name \"x\"",
+		},
+		{
+			name:    "schedule missing provider",
+			yaml:    "version: 1\nskills:\n  - path: a\n    schedules:\n      - { name: x, cron: \"* * * * *\", model: m }",
+			wantErr: "provider",
+		},
+		{
+			name:    "schedule missing model",
+			yaml:    "version: 1\nskills:\n  - path: a\n    schedules:\n      - { name: x, cron: \"* * * * *\", provider: openai }",
+			wantErr: "model",
+		},
+		{
+			name:    "invalid overlap policy",
+			yaml:    "version: 1\nskills:\n  - path: a\n    schedules:\n      - { name: x, cron: \"* * * * *\", provider: openai, model: m, overlap_policy: weird }",
+			wantErr: "overlap_policy",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m, err := ParseManifest([]byte(tc.yaml))
+			if err != nil {
+				assert.Contains(t, err.Error(), tc.wantErr)
+				return
+			}
+			err = m.Validate()
+			require.Error(t, err, "expected validation error")
+			assert.Contains(t, err.Error(), tc.wantErr)
+		})
+	}
+}
+
+func TestManifest_FindSchedule(t *testing.T) {
+	m := &Manifest{
+		Version: 1,
+		Skills: []SkillEntry{
+			{Path: "skills/a", Schedules: []Schedule{{Name: "s1", Cron: "* * * * *", Provider: "openai", Model: "m"}}},
+		},
+	}
+	require.NoError(t, m.Validate())
+
+	skill, sch, err := m.FindSchedule("skills/a", "s1")
+	require.NoError(t, err)
+	assert.Equal(t, "skills/a", skill.Path)
+	assert.Equal(t, "s1", sch.Name)
+
+	_, _, err = m.FindSchedule("skills/a", "missing")
+	assert.ErrorContains(t, err, "schedule \"missing\"")
+
+	_, _, err = m.FindSchedule("skills/missing", "s1")
+	assert.ErrorContains(t, err, "skill \"skills/missing\"")
+}
