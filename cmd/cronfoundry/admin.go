@@ -19,5 +19,6 @@ func newAdminCmd() *cobra.Command {
 	cmd.AddCommand(newAdminListConnectionsCmd())
 	cmd.AddCommand(newAdminListSchedulesCmd())
 	cmd.AddCommand(newAdminTriggerSyncCmd())
+	cmd.AddCommand(newAdminListRunsCmd())
 	return cmd
 }
