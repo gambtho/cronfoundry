@@ -106,6 +106,8 @@ Expected: build error — package doesn't exist yet.
 
 - [ ] **Step 3: Implement `internal/testdb/testdb.go`**
 
+Two helpers: `BootPG` (pool + teardown, for most callers) and `BootPGWithDSN` (raw DSN + teardown, for callers that want to open their own pool — e.g., CLI tests in `cmd/cronfoundry/` that exercise `pgxpool.New` from inside the code under test).
+
 ```go
 // Package testdb provides shared test helpers for booting a throwaway
 // Postgres container and running migrations.
@@ -136,6 +138,22 @@ import (
 // cached locally the first call pulls it (~15 s).
 func BootPG(t *testing.T) (*pgxpool.Pool, func()) {
 	t.Helper()
+	dsn, teardown := BootPGWithDSN(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	pool, err := pgxpool.New(ctx, dsn)
+	require.NoError(t, err)
+	return pool, func() {
+		pool.Close()
+		teardown()
+	}
+}
+
+// BootPGWithDSN is like BootPG but returns the DSN instead of a pool.
+// Intended for callers that want to open their own pool (e.g., CLI tests
+// that exercise `pgxpool.New` from inside the code under test).
+func BootPGWithDSN(t *testing.T) (string, func()) {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
@@ -155,13 +173,25 @@ func BootPG(t *testing.T) (*pgxpool.Pool, func()) {
 	require.NoError(t, err)
 	require.NoError(t, db.Migrate(ctx, dsn))
 
+	return dsn, func() { _ = container.Terminate(context.Background()) }
+}
+```
+
+Extend the Step 1 test file with a `TestBootPGWithDSN` case that asserts the returned DSN is parseable + connectable:
+
+```go
+func TestBootPGWithDSN_ReturnsWorkingDSN(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	dsn, cleanup := BootPGWithDSN(t)
+	defer cleanup()
+
+	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, dsn)
 	require.NoError(t, err)
-
-	return pool, func() {
-		pool.Close()
-		_ = container.Terminate(context.Background())
-	}
+	defer pool.Close()
+	assert.NoError(t, pool.Ping(ctx))
 }
 ```
 
@@ -238,61 +268,17 @@ Expected: all pass.
 
 - [ ] **Step 5: Same replacement in `cmd/cronfoundry/admin_init_test.go`**
 
-That file defines `bootPostgres` which is used by multiple test files in the same package. Replace its implementation with a thin wrapper that returns just the DSN (since that's what the admin tests want):
+That file defines `bootPostgres` which is used by multiple test files in the same package and returns a raw DSN (not a pool) because the admin tests exercise `pgxpool.New` from inside the code under test. Replace its implementation to delegate to `testdb.BootPGWithDSN` (added in Task 1):
 
 ```go
-func bootPostgres(t *testing.T) (dsn string, cleanup func()) {
-	t.Helper()
-	pool, teardown := testdb.BootPG(t)
-	// Extract the DSN from the pool's config.
-	dsn = pool.Config().ConnString()
-	// The tests in this package want raw DSNs, not pools. Close the pool
-	// immediately so the caller can open its own.
-	pool.Close()
-	return dsn, teardown
-}
-```
+import "github.com/gambtho/cronfoundry/internal/testdb"
 
-Wait — this won't work cleanly because BootPG opens a pool and the admin tests want a fresh DSN. Instead, add a second exported function to testdb:
-
-**Amendment to Task 1:** also export `BootPGWithDSN(t) (dsn string, cleanup func())` that does everything BootPG does except returning the pool. Implementation:
-
-```go
-// BootPGWithDSN is like BootPG but returns the DSN instead of a pool.
-// Intended for callers that want to open their own pool (e.g., CLI tests
-// that exercise pool-open code paths).
-func BootPGWithDSN(t *testing.T) (string, func()) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
-	container, err := postgres.Run(ctx,
-		"postgres:16-alpine",
-		postgres.WithDatabase("cf"),
-		postgres.WithUsername("cf"),
-		postgres.WithPassword("cf"),
-		testcontainers.WithWaitStrategy(
-			wait.ForLog("database system is ready to accept connections").
-				WithOccurrence(2).
-				WithStartupTimeout(60*time.Second)),
-	)
-	require.NoError(t, err)
-	dsn, err := container.ConnectionString(ctx, "sslmode=disable")
-	require.NoError(t, err)
-	require.NoError(t, db.Migrate(ctx, dsn))
-	return dsn, func() { _ = container.Terminate(context.Background()) }
-}
-```
-
-Go back to Task 1, add this function + a test for it. Then use it here:
-
-```go
 func bootPostgres(t *testing.T) (dsn string, cleanup func()) {
 	return testdb.BootPGWithDSN(t)
 }
 ```
 
-Actually simpler: just leave `bootPostgres` in-place but make it delegate to `testdb.BootPGWithDSN`. Keeps the existing call-site aliases working.
+Call sites across the package (`admin_init_test.go`, `admin_setsecret_test.go`, `admin_connectrepo_test.go`, `serve_test.go`, etc.) stay unchanged — they already call `bootPostgres(t)`.
 
 - [ ] **Step 6: Run the full test suite**
 
