@@ -43,15 +43,3 @@ func RegisterRoutes(mux *http.ServeMux, deps Deps) {
 	mux.HandleFunc("GET /oauth/logout", oh.logout)
 }
 
-// oauthHandlers placeholder — full implementation in oauth.go (Task 4).
-type oauthHandlers struct{ deps Deps }
-
-func (h oauthHandlers) login(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "not implemented", http.StatusNotImplemented)
-}
-func (h oauthHandlers) callback(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "not implemented", http.StatusNotImplemented)
-}
-func (h oauthHandlers) logout(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "not implemented", http.StatusNotImplemented)
-}
