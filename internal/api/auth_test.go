@@ -131,9 +131,11 @@ func TestNewServer_RoutesRegistered(t *testing.T) {
 	srv.Handler.ServeHTTP(rr3, req)
 	assert.Equal(t, http.StatusForbidden, rr3.Code)
 
-	// Manual trigger endpoint is unauthenticated — it returns 501 directly.
+	// Manual trigger endpoint is unauthenticated — no 401 is produced. With a
+	// bad-format UUID the handler rejects with 400 (not 401), confirming the
+	// route is reachable without a bearer token.
 	rr4 := httptest.NewRecorder()
 	srv.Handler.ServeHTTP(rr4, httptest.NewRequest(
 		"POST", "/internal/schedules/anything/run-now", nil))
-	assert.Equal(t, http.StatusNotImplemented, rr4.Code)
+	assert.Equal(t, http.StatusBadRequest, rr4.Code)
 }

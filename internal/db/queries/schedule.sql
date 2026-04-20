@@ -56,3 +56,15 @@ UPDATE schedule
 SET next_fire_at = $2,
     updated_at   = now()
 WHERE id = $1;
+
+-- name: GetScheduleForTrigger :one
+-- Used by the manual trigger endpoint to assemble a new run row.
+-- Returns the schedule plus the skill's current_sha so the INSERT can be
+-- atomic (rather than two round trips).
+SELECT s.id       AS schedule_id,
+       s.org_id,
+       s.skill_id,
+       sk.current_sha AS skill_sha
+FROM schedule s
+JOIN skill sk ON sk.id = s.skill_id
+WHERE s.id = $1;

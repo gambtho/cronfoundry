@@ -33,6 +33,38 @@ func (q *Queries) DisableMissingSchedules(ctx context.Context, arg DisableMissin
 	return err
 }
 
+const getScheduleForTrigger = `-- name: GetScheduleForTrigger :one
+SELECT s.id       AS schedule_id,
+       s.org_id,
+       s.skill_id,
+       sk.current_sha AS skill_sha
+FROM schedule s
+JOIN skill sk ON sk.id = s.skill_id
+WHERE s.id = $1
+`
+
+type GetScheduleForTriggerRow struct {
+	ScheduleID pgtype.UUID
+	OrgID      pgtype.UUID
+	SkillID    pgtype.UUID
+	SkillSha   string
+}
+
+// Used by the manual trigger endpoint to assemble a new run row.
+// Returns the schedule plus the skill's current_sha so the INSERT can be
+// atomic (rather than two round trips).
+func (q *Queries) GetScheduleForTrigger(ctx context.Context, id pgtype.UUID) (GetScheduleForTriggerRow, error) {
+	row := q.db.QueryRow(ctx, getScheduleForTrigger, id)
+	var i GetScheduleForTriggerRow
+	err := row.Scan(
+		&i.ScheduleID,
+		&i.OrgID,
+		&i.SkillID,
+		&i.SkillSha,
+	)
+	return i, err
+}
+
 const listDueSchedules = `-- name: ListDueSchedules :many
 SELECT id, org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec, enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment, destinations_json, writeback_json, env_json, next_fire_at, created_at, updated_at
 FROM schedule
