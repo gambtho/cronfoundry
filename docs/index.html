@@ -43,8 +43,107 @@
   </nav>
 
   <main>
-    <!-- sections added in subsequent tasks -->
+
+    <!-- HERO -->
+    <section class="mx-auto max-w-6xl px-6 pt-24 pb-20 text-center">
+      <div class="inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent/10 px-4 py-1.5 text-xs font-medium text-accent mb-8">
+        P1 complete · P2 in progress
+      </div>
+      <h1 class="text-5xl sm:text-6xl font-bold tracking-tight text-white leading-tight mb-6">
+        Scheduled LLM skills.<br />
+        In git. For your whole team.
+      </h1>
+      <p class="max-w-2xl mx-auto text-xl text-gray-400 mb-10">
+        CronFoundry runs AI skills on a cron, publishes results to Slack, GitHub, Discord, or Teams,
+        and commits learnings back to your repo.
+        <span class="text-gray-300">Self-hosted. GitOps-native. BYOK.</span>
+      </p>
+      <div class="flex flex-wrap items-center justify-center gap-4 mb-16">
+        <a href="#quickstart" class="rounded-lg bg-brand px-6 py-3 text-sm font-semibold text-white hover:bg-indigo-500 transition-colors">
+          Try it in 5 minutes &rarr;
+        </a>
+        <a href="https://github.com/gambtho/cronfoundry" class="rounded-lg border border-white/20 px-6 py-3 text-sm font-semibold text-gray-300 hover:border-white/40 hover:text-white transition-colors">
+          View on GitHub
+        </a>
+      </div>
+
+      <!-- Terminal animation -->
+      <div class="mx-auto max-w-3xl rounded-xl border border-white/10 bg-gray-900 text-left overflow-hidden shadow-2xl">
+        <div class="flex items-center gap-2 px-4 py-3 border-b border-white/10">
+          <span class="w-3 h-3 rounded-full bg-red-500/70"></span>
+          <span class="w-3 h-3 rounded-full bg-yellow-500/70"></span>
+          <span class="w-3 h-3 rounded-full bg-green-500/70"></span>
+          <span class="ml-2 text-xs text-gray-500 font-mono">cronfoundry-runner</span>
+        </div>
+        <div class="p-6 font-mono text-sm min-h-48">
+          <pre id="term-output" class="text-gray-300 whitespace-pre-wrap"></pre>
+          <span id="term-cursor" class="inline-block w-2 h-4 bg-gray-400 animate-pulse align-middle"></span>
+        </div>
+      </div>
+    </section>
+
+    <!-- remaining sections added in later tasks -->
+
   </main>
 
+<script>
+  const TERM_LINES = [
+    { text: '$ cronfoundry-runner run \\', delay: 40 },
+    { text: '    --repo ./my-skills \\', delay: 30 },
+    { text: '    --skill-path skills/weekly-digest \\', delay: 30 },
+    { text: '    --schedule-name monday-morning', delay: 30 },
+    { text: '', delay: 0 },
+    { text: 'Loading skill: skills/weekly-digest/SKILL.md', delay: 20, cls: 'text-gray-500' },
+    { text: 'Provider: openai  Model: gpt-4o-mini', delay: 20, cls: 'text-gray-500' },
+    { text: 'Streaming completion...', delay: 20, cls: 'text-gray-500' },
+    { text: '', delay: 0 },
+    { text: '## Weekly Digest \u2014 2026-04-21', delay: 15, cls: 'text-white' },
+    { text: 'This week the team shipped the scheduler (P2a),', delay: 15, cls: 'text-white' },
+    { text: 'merged 7 PRs, and closed 3 issues...', delay: 15, cls: 'text-white' },
+    { text: '', delay: 0 },
+    { text: '\u2713 Published \u2192 GitHub issue #142', delay: 20, cls: 'text-green-400' },
+    { text: '\u2713 Published \u2192 #eng-digest (Slack)', delay: 20, cls: 'text-green-400' },
+    { text: '\u2713 Writeback committed as cronfoundry[bot]', delay: 20, cls: 'text-green-400' },
+    { text: '', delay: 0 },
+    { text: '{"status":"succeeded","tokens":1243,"cost_usd":0.0009}', delay: 10, cls: 'text-gray-500' },
+  ];
+
+  function runTerminal() {
+    const out = document.getElementById('term-output');
+    out.textContent = '';
+    let lineIdx = 0, charIdx = 0, currentSpan = null;
+
+    function tick() {
+      if (lineIdx >= TERM_LINES.length) {
+        setTimeout(runTerminal, 3000);
+        return;
+      }
+      const line = TERM_LINES[lineIdx];
+      if (line.text === '') {
+        out.appendChild(document.createTextNode('\n'));
+        lineIdx++; charIdx = 0; currentSpan = null;
+        setTimeout(tick, 150);
+        return;
+      }
+      if (charIdx === 0) {
+        currentSpan = document.createElement('span');
+        currentSpan.className = line.cls || 'text-gray-300';
+        out.appendChild(currentSpan);
+      }
+      if (charIdx < line.text.length) {
+        currentSpan.textContent += line.text[charIdx];
+        charIdx++;
+        setTimeout(tick, line.delay);
+      } else {
+        out.appendChild(document.createTextNode('\n'));
+        lineIdx++; charIdx = 0; currentSpan = null;
+        setTimeout(tick, line.delay === 0 ? 0 : 80);
+      }
+    }
+    tick();
+  }
+
+  document.addEventListener('DOMContentLoaded', runTerminal);
+</script>
 </body>
 </html>
