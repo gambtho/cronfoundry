@@ -48,7 +48,10 @@ func (c *realARMJobsClient) BeginStartExecution(ctx context.Context, resourceGro
 func toARMTemplate(spec JobExecutionTemplate) armappcontainers.JobExecutionTemplate {
 	envVars := make([]*armappcontainers.EnvironmentVar, 0, len(spec.Env))
 	for _, kv := range spec.Env {
-		k, v, _ := strings.Cut(kv, "=")
+		k, v, ok := strings.Cut(kv, "=")
+		if !ok {
+			continue
+		}
 		name := k
 		value := v
 		envVars = append(envVars, &armappcontainers.EnvironmentVar{
