@@ -64,9 +64,11 @@ func (p *anthropicProvider) Chat(ctx context.Context, messages []Message, opts C
 		evt := stream.Current()
 		switch v := evt.AsAny().(type) {
 		case anthropic.MessageStartEvent:
-			usage.InputTokens = int(v.Message.Usage.InputTokens)
+			if v.Message.Usage.InputTokens > 0 {
+				usage.InputTokens = int(v.Message.Usage.InputTokens)
+			}
 		case anthropic.ContentBlockDeltaEvent:
-			if td, ok := v.Delta.AsAny().(anthropic.TextDelta); ok {
+			if td, ok := v.Delta.AsAny().(anthropic.TextDelta); ok && td.Text != "" {
 				onChunk(StreamChunk{Delta: td.Text})
 			}
 		case anthropic.MessageDeltaEvent:
