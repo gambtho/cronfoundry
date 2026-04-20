@@ -40,3 +40,19 @@ JOIN skill sk ON sk.id = s.skill_id
 JOIN repo_connection rc ON rc.id = sk.repo_id
 WHERE s.org_id = $1
 ORDER BY rc.owner, rc.name, sk.path, s.name;
+
+-- name: ListDueSchedules :many
+-- Returns schedules ready to fire: enabled AND next_fire_at <= now.
+-- Ordered by next_fire_at so we dispatch oldest-due first.
+SELECT *
+FROM schedule
+WHERE enabled = true
+  AND next_fire_at IS NOT NULL
+  AND next_fire_at <= now()
+ORDER BY next_fire_at ASC;
+
+-- name: UpdateScheduleNextFireAt :exec
+UPDATE schedule
+SET next_fire_at = $2,
+    updated_at   = now()
+WHERE id = $1;

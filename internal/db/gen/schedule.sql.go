@@ -33,6 +33,58 @@ func (q *Queries) DisableMissingSchedules(ctx context.Context, arg DisableMissin
 	return err
 }
 
+const listDueSchedules = `-- name: ListDueSchedules :many
+SELECT id, org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec, enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment, destinations_json, writeback_json, env_json, next_fire_at, created_at, updated_at
+FROM schedule
+WHERE enabled = true
+  AND next_fire_at IS NOT NULL
+  AND next_fire_at <= now()
+ORDER BY next_fire_at ASC
+`
+
+// Returns schedules ready to fire: enabled AND next_fire_at <= now.
+// Ordered by next_fire_at so we dispatch oldest-due first.
+func (q *Queries) ListDueSchedules(ctx context.Context) ([]Schedule, error) {
+	rows, err := q.db.Query(ctx, listDueSchedules)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Schedule
+	for rows.Next() {
+		var i Schedule
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.SkillID,
+			&i.Name,
+			&i.Cron,
+			&i.Timezone,
+			&i.OverlapPolicy,
+			&i.TimeoutSec,
+			&i.Enabled,
+			&i.Provider,
+			&i.Model,
+			&i.LlmSecretRef,
+			&i.LlmEndpoint,
+			&i.LlmDeployment,
+			&i.DestinationsJson,
+			&i.WritebackJson,
+			&i.EnvJson,
+			&i.NextFireAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSchedulesByOrg = `-- name: ListSchedulesByOrg :many
 SELECT s.id, s.org_id, s.skill_id, s.name, s.cron, s.timezone, s.overlap_policy, s.timeout_sec, s.enabled, s.provider, s.model, s.llm_secret_ref, s.llm_endpoint, s.llm_deployment, s.destinations_json, s.writeback_json, s.env_json, s.next_fire_at, s.created_at, s.updated_at, sk.path AS skill_path, sk.name AS skill_name, rc.owner, rc.name AS repo_name
 FROM schedule s
@@ -112,6 +164,23 @@ func (q *Queries) ListSchedulesByOrg(ctx context.Context, orgID pgtype.UUID) ([]
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateScheduleNextFireAt = `-- name: UpdateScheduleNextFireAt :exec
+UPDATE schedule
+SET next_fire_at = $2,
+    updated_at   = now()
+WHERE id = $1
+`
+
+type UpdateScheduleNextFireAtParams struct {
+	ID         pgtype.UUID
+	NextFireAt pgtype.Timestamptz
+}
+
+func (q *Queries) UpdateScheduleNextFireAt(ctx context.Context, arg UpdateScheduleNextFireAtParams) error {
+	_, err := q.db.Exec(ctx, updateScheduleNextFireAt, arg.ID, arg.NextFireAt)
+	return err
 }
 
 const upsertSchedule = `-- name: UpsertSchedule :one
