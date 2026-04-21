@@ -8,6 +8,13 @@ ON CONFLICT (repo_id, path) DO UPDATE
       updated_at       = now()
 RETURNING *;
 
+-- name: ListSkillsByOrg :many
+SELECT sk.*, rc.owner, rc.name AS repo_name
+FROM skill sk
+JOIN repo_connection rc ON rc.id = sk.repo_id
+WHERE sk.org_id = $1
+ORDER BY rc.owner, rc.name, sk.path;
+
 -- name: ListSkillsByRepo :many
 SELECT *
 FROM skill

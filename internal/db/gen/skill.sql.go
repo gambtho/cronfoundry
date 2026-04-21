@@ -47,6 +47,58 @@ func (q *Queries) GetRunRepoID(ctx context.Context, id pgtype.UUID) (pgtype.UUID
 	return repo_id, err
 }
 
+const listSkillsByOrg = `-- name: ListSkillsByOrg :many
+SELECT sk.id, sk.org_id, sk.repo_id, sk.path, sk.name, sk.current_sha, sk.frontmatter_json, sk.updated_at, rc.owner, rc.name AS repo_name
+FROM skill sk
+JOIN repo_connection rc ON rc.id = sk.repo_id
+WHERE sk.org_id = $1
+ORDER BY rc.owner, rc.name, sk.path
+`
+
+type ListSkillsByOrgRow struct {
+	ID              pgtype.UUID
+	OrgID           pgtype.UUID
+	RepoID          pgtype.UUID
+	Path            string
+	Name            string
+	CurrentSha      string
+	FrontmatterJson []byte
+	UpdatedAt       pgtype.Timestamptz
+	Owner           string
+	RepoName        string
+}
+
+func (q *Queries) ListSkillsByOrg(ctx context.Context, orgID pgtype.UUID) ([]ListSkillsByOrgRow, error) {
+	rows, err := q.db.Query(ctx, listSkillsByOrg, orgID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSkillsByOrgRow
+	for rows.Next() {
+		var i ListSkillsByOrgRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrgID,
+			&i.RepoID,
+			&i.Path,
+			&i.Name,
+			&i.CurrentSha,
+			&i.FrontmatterJson,
+			&i.UpdatedAt,
+			&i.Owner,
+			&i.RepoName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSkillsByRepo = `-- name: ListSkillsByRepo :many
 SELECT id, org_id, repo_id, path, name, current_sha, frontmatter_json, updated_at
 FROM skill
