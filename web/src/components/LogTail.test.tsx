@@ -31,6 +31,8 @@ class MockEventSource {
   }
 }
 
+let originalScrollToDescriptor: PropertyDescriptor | undefined
+
 beforeEach(() => {
   MockEventSource.instances = []
   vi.stubGlobal('EventSource', MockEventSource)
@@ -41,12 +43,26 @@ beforeEach(() => {
     status: 200,
     json: async () => [],
   })))
+  // Capture jsdom's native scrollTo descriptor (if any) so the auto-scroll
+  // test can stub it without clobbering it for other tests.
+  originalScrollToDescriptor = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    'scrollTo',
+  )
 })
 
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
-  delete (HTMLElement.prototype as { scrollTo?: unknown }).scrollTo
+  if (originalScrollToDescriptor) {
+    Object.defineProperty(
+      HTMLElement.prototype,
+      'scrollTo',
+      originalScrollToDescriptor,
+    )
+  } else {
+    delete (HTMLElement.prototype as { scrollTo?: unknown }).scrollTo
+  }
 })
 
 describe('LogTail — streaming mode', () => {

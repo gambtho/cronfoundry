@@ -58,7 +58,7 @@ Row layout: `HH:MM:SS  <level>  <event_type>  <short_payload>`. Click a row to e
 
 **Auto-scroll behavior:** sticky-to-bottom by default; pauses when the user scrolls up (detected via `scrollTop + clientHeight < scrollHeight - threshold`); resumes when the user scrolls back within the threshold. Standard terminal-log pattern.
 
-**Reconnect:** `EventSource` retries transient drops automatically; we cap retries at 5 with exponential backoff (1s, 2s, 4s, 8s, 16s) and then show a "connection lost — reload to retry" inline message. No silent infinite reconnect.
+**Reconnect:** `EventSource` retries transient drops automatically using the browser's native reconnection logic (the component does not manage backoff itself). The component counts consecutive `onerror` events; after 5 it closes the stream and shows a "connection lost — reload to retry" inline message. No silent infinite reconnect.
 
 ### Runs page integration
 
@@ -103,7 +103,7 @@ Row layout: `HH:MM:SS  <level>  <event_type>  <short_payload>`. Click a row to e
 
 ### LogTail — streaming mode
 
-```
+```text
 Runs.tsx (user opens detail drawer)
   → <LogTail runId=X status=running />
     → new EventSource("/api/runs/X/events/stream")
@@ -116,7 +116,7 @@ Runs.tsx (user opens detail drawer)
 
 ### LogTail — static mode
 
-```
+```text
 Runs.tsx (user opens detail drawer for finished run)
   → <LogTail runId=X status=succeeded />
     → fetch("/api/runs/X/events")
@@ -125,7 +125,7 @@ Runs.tsx (user opens detail drawer for finished run)
 
 ## Error handling
 
-- **SSE connection drop (transient):** `EventSource` auto-reconnects; we cap at 5 attempts with exponential backoff, then show inline "connection lost — reload to retry." No silent retry loop.
+- **SSE connection drop (transient):** `EventSource` auto-reconnects via the browser's native logic; the component counts consecutive errors and after 5 closes the stream and shows inline "connection lost — reload to retry." No silent retry loop.
 - **Missing events endpoint response (static mode, network error):** empty panel with "no events recorded" placeholder. Not a crash.
 - **Run finishes mid-stream:** `useEffect` on `status` prop closes the stream when status becomes terminal. No orphan connections.
 - **Unmount during stream:** cleanup closes `EventSource` in the effect's teardown.

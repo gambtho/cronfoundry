@@ -167,10 +167,12 @@ func TestServe_APIMe_WithSession(t *testing.T) {
 	go func() { errCh <- runServe(ctx, addr, 30*time.Second) }()
 
 	deadline := time.Now().Add(5 * time.Second)
+	ready := false
 	for time.Now().Before(deadline) {
 		resp, err := http.Get("http://" + addr + "/healthz")
 		if err == nil && resp.StatusCode == 200 {
 			_ = resp.Body.Close()
+			ready = true
 			break
 		}
 		if resp != nil {
@@ -178,6 +180,7 @@ func TestServe_APIMe_WithSession(t *testing.T) {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+	require.True(t, ready, "healthz never returned 200 within deadline")
 
 	masterBytes, err := secretstore.ParseMasterKey(masterKey)
 	require.NoError(t, err)

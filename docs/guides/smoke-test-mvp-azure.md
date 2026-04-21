@@ -73,34 +73,31 @@ az containerapp show \
 Go back to the GitHub App settings and replace `<your-api-hostname>` in
 Homepage URL, Callback URL, and Webhook URL with this FQDN. Save.
 
-## 4. First-boot config (admin CLI)
+## 4. First-boot config (web UI)
 
-All of the following run from a local shell with the master key exported
-(see README § Quick start; the Bicep deploy prints it once at the end).
+Do the repo + secrets setup through the web UI so each action emits the
+`repo.connect` and `secret.create` audit events the verification step in §8
+checks for. CLI-based setup (`./cronfoundry admin connect-repo` etc.) bypasses
+those handlers and would yield no audit rows.
 
-```bash
-export CRONFOUNDRY_MASTER_KEY='<from deploy output>'
-export CRONFOUNDRY_DATABASE_URL='<from deploy output>'
+1. Open `https://<fqdn>/`. Log in via GitHub — the `auth.login` audit row lands.
+2. **Repos → Connect repo.** Paste `<owner>/<skill-repo>` and the installation
+   ID from the GitHub App's installation page. Emits `repo.connect`.
+3. **Secrets → Add.** Create three:
+   - `llm_key` → your OpenAI / Anthropic / Azure AI Foundry key
+   - `slack_webhook` → the Slack Incoming Webhook URL
+   - `github_webhook_secret` → the long random string from §2 step 4
 
-# Connect the skill repo. Replace with your install ID and coords.
-./cronfoundry admin connect-repo <owner>/<skill-repo> \
-  --installation-id <from GitHub App installation page>
+   Each creation emits a `secret.create` audit row.
+4. Set the same webhook secret as an env var on the API Container App (the
+   webhook endpoint reads it from `CRONFOUNDRY_GITHUB_WEBHOOK_SECRET`):
 
-# Set three secrets.
-echo -n '<openai/anthropic/azure key>'  | ./cronfoundry admin set-secret llm_key
-echo -n '<slack webhook URL>'           | ./cronfoundry admin set-secret slack_webhook
-echo -n '<github webhook secret>'       | ./cronfoundry admin set-secret github_webhook_secret
-```
-
-Also set the webhook secret as an env var on the API Container App (the
-webhook endpoint reads it from `CRONFOUNDRY_GITHUB_WEBHOOK_SECRET`):
-
-```bash
-az containerapp update \
-  --resource-group rg-cronfoundry-p7smoke \
-  --name api \
-  --set-env-vars CRONFOUNDRY_GITHUB_WEBHOOK_SECRET=<same value>
-```
+   ```bash
+   az containerapp update \
+     --resource-group rg-cronfoundry-p7smoke \
+     --name api \
+     --set-env-vars CRONFOUNDRY_GITHUB_WEBHOOK_SECRET=<same value>
+   ```
 
 ## 5. Land a skill
 
@@ -153,12 +150,10 @@ Commit and push. The push webhook re-syncs the schedule within seconds.
 
 ## 6. Observe the first fire
 
-1. Open `https://<fqdn>/`. Log in via GitHub. (You should already be
-   allowlisted from the bootstrap admin list.)
-2. Dashboard shows the new `every-5` schedule.
-3. Wait up to 5 minutes for the first natural fire — or click **Run now**.
-4. Go to **Runs**, click the newest row.
-5. Confirm the **log panel streams** with row levels `info/warn/error` and
+1. You're already logged in from §4. Dashboard shows the new `every-5` schedule.
+2. Wait up to 5 minutes for the first natural fire — or click **Run now**.
+3. Go to **Runs**, click the newest row.
+4. Confirm the **log panel streams** with row levels `info/warn/error` and
    event types (`llm.start`, `llm.chunk.batched`, `publish.slack.ok`,
    `publish.github-issue.ok`, `writeback.commit.ok`). Status transitions to
    `succeeded`.

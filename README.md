@@ -215,7 +215,7 @@ cronfoundry/
     ├── sync/                     # GitHub repo → skill/schedule sync
     ├── template/                 # destination-template renderer
     ├── testdb/                   # testcontainers Postgres boot helper
-    ├── token/                    # GitHub installation token cache
+    ├── token/                    # per-run bearer JWT signer/verifier
     ├── webapi/                   # /api handlers for the React UI
     └── writeback/                # go-git commit + push
 ```

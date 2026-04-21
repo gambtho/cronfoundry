@@ -57,41 +57,41 @@ func runAdminShowRun(ctx context.Context, runIDStr string, out io.Writer) error 
 		return fmt.Errorf("load run: %w", err)
 	}
 
-	_, _ = fmt.Fprintf(out,"Run ID:         %s\n", uuid.UUID(run.ID.Bytes))
-	_, _ = fmt.Fprintf(out,"Status:         %s\n", run.Status)
-	_, _ = fmt.Fprintf(out,"Fire reason:    %s\n", run.FireReason)
-	_, _ = fmt.Fprintf(out,"Schedule:       %s/%s/%s\n", run.Owner, run.RepoName, run.ScheduleName)
-	_, _ = fmt.Fprintf(out,"Skill:          %s @ %s\n", run.SkillPath, run.SkillSha)
-	_, _ = fmt.Fprintf(out,"Cron:           %s\n", run.Cron)
+	_, _ = fmt.Fprintf(out, "Run ID:         %s\n", uuid.UUID(run.ID.Bytes))
+	_, _ = fmt.Fprintf(out, "Status:         %s\n", run.Status)
+	_, _ = fmt.Fprintf(out, "Fire reason:    %s\n", run.FireReason)
+	_, _ = fmt.Fprintf(out, "Schedule:       %s/%s/%s\n", run.Owner, run.RepoName, run.ScheduleName)
+	_, _ = fmt.Fprintf(out, "Skill:          %s @ %s\n", run.SkillPath, run.SkillSha)
+	_, _ = fmt.Fprintf(out, "Cron:           %s\n", run.Cron)
 	if run.Actor != nil {
-		_, _ = fmt.Fprintf(out,"Actor:          %s\n", *run.Actor)
+		_, _ = fmt.Fprintf(out, "Actor:          %s\n", *run.Actor)
 	}
 	if run.StartedAt.Valid {
-		_, _ = fmt.Fprintf(out,"Started:        %s\n", run.StartedAt.Time.Format(time.RFC3339))
+		_, _ = fmt.Fprintf(out, "Started:        %s\n", run.StartedAt.Time.Format(time.RFC3339))
 	}
 	if run.FinishedAt.Valid {
-		_, _ = fmt.Fprintf(out,"Finished:       %s\n", run.FinishedAt.Time.Format(time.RFC3339))
+		_, _ = fmt.Fprintf(out, "Finished:       %s\n", run.FinishedAt.Time.Format(time.RFC3339))
 	}
 	if run.DurationMs != nil {
-		_, _ = fmt.Fprintf(out,"Duration:       %dms\n", *run.DurationMs)
+		_, _ = fmt.Fprintf(out, "Duration:       %dms\n", *run.DurationMs)
 	}
 	if run.TokensIn != nil {
-		_, _ = fmt.Fprintf(out,"Tokens in:      %d\n", *run.TokensIn)
+		_, _ = fmt.Fprintf(out, "Tokens in:      %d\n", *run.TokensIn)
 	}
 	if run.TokensOut != nil {
-		_, _ = fmt.Fprintf(out,"Tokens out:     %d\n", *run.TokensOut)
+		_, _ = fmt.Fprintf(out, "Tokens out:     %d\n", *run.TokensOut)
 	}
 	if run.CostCents != nil {
-		_, _ = fmt.Fprintf(out,"Cost (cents):   %d\n", *run.CostCents)
+		_, _ = fmt.Fprintf(out, "Cost (cents):   %d\n", *run.CostCents)
 	}
 	if run.WritebackCommitSha != nil {
-		_, _ = fmt.Fprintf(out,"Writeback SHA:  %s\n", *run.WritebackCommitSha)
+		_, _ = fmt.Fprintf(out, "Writeback SHA:  %s\n", *run.WritebackCommitSha)
 	}
 	if run.ErrorKind != nil && *run.ErrorKind != "" {
-		_, _ = fmt.Fprintf(out,"Error kind:     %s\n", *run.ErrorKind)
+		_, _ = fmt.Fprintf(out, "Error kind:     %s\n", *run.ErrorKind)
 	}
 	if run.ErrorMsg != nil && *run.ErrorMsg != "" {
-		_, _ = fmt.Fprintf(out,"Error message:  %s\n", *run.ErrorMsg)
+		_, _ = fmt.Fprintf(out, "Error message:  %s\n", *run.ErrorMsg)
 	}
 
 	events, err := q.ListRunEvents(ctx, run.ID)
@@ -99,17 +99,17 @@ func runAdminShowRun(ctx context.Context, runIDStr string, out io.Writer) error 
 		return fmt.Errorf("list events: %w", err)
 	}
 	if len(events) == 0 {
-		_, _ = fmt.Fprintln(out,"\n(no events recorded)")
+		_, _ = fmt.Fprintln(out, "\n(no events recorded)")
 		return nil
 	}
-	_, _ = fmt.Fprintln(out,"\nEvents:")
+	_, _ = fmt.Fprintln(out, "\nEvents:")
 	start := 0
 	if len(events) > 20 {
 		start = len(events) - 20
-		_, _ = fmt.Fprintf(out,"  ... (%d earlier events omitted)\n", start)
+		_, _ = fmt.Fprintf(out, "  ... (%d earlier events omitted)\n", start)
 	}
 	for _, ev := range events[start:] {
-		_, _ = fmt.Fprintf(out,"  [%s] %-5s %s: %s\n",
+		_, _ = fmt.Fprintf(out, "  [%s] %-5s %s: %s\n",
 			ev.Ts.Time.Format("15:04:05"),
 			ev.Level,
 			ev.EventType,
