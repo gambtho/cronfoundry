@@ -4,7 +4,7 @@
   "parameters": {
     "env": { "value": "prod" },
     "location": { "value": "eastus" },
-    "imageTag": { "value": "latest" },
+    "imageTag": { "value": "v0.1.0" },
     "githubAppId": { "value": "YOUR_GITHUB_APP_ID" },
     "githubAppOAuthClientId": { "value": "YOUR_OAUTH_CLIENT_ID" },
     "githubAppOAuthClientSecret": { "value": "YOUR_OAUTH_CLIENT_SECRET" },
