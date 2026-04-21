@@ -70,7 +70,7 @@ func TestSecrets_ScopedToClaim(t *testing.T) {
 	req2.Header.Set("Authorization", "Bearer "+tok)
 	resp2, err := ts.Client().Do(req2)
 	require.NoError(t, err)
-	defer resp2.Body.Close()
+	defer func() { _ = resp2.Body.Close() }()
 	assert.Equal(t, http.StatusForbidden, resp2.StatusCode)
 }
 

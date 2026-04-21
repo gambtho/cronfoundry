@@ -287,7 +287,7 @@ func TestRunContext_IncludesSecretManifest(t *testing.T) {
 		// Also assert raw JSON key is present and snake_case.
 		resp2, err := ts.Client().Do(mustNewReq(t, "GET", ts.URL+"/internal/runs/"+runID.String()+"/context", tok))
 		require.NoError(t, err)
-		defer resp2.Body.Close()
+		defer func() { _ = resp2.Body.Close() }()
 		var raw map[string]any
 		require.NoError(t, json.NewDecoder(resp2.Body).Decode(&raw))
 		_, ok := raw["secret_manifest"]
@@ -326,7 +326,7 @@ func TestRunContext_IncludesSecretManifest(t *testing.T) {
 		var raw map[string]json.RawMessage
 		resp2, err := ts.Client().Do(mustNewReq(t, "GET", ts.URL+"/internal/runs/"+runID.String()+"/context", tok))
 		require.NoError(t, err)
-		defer resp2.Body.Close()
+		defer func() { _ = resp2.Body.Close() }()
 		require.NoError(t, json.NewDecoder(resp2.Body).Decode(&raw))
 		assert.Equal(t, "[]", string(raw["secret_manifest"]))
 	})

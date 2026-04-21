@@ -45,12 +45,12 @@ func runAdminInit(ctx context.Context, orgName string) error {
 		if err != nil {
 			return fmt.Errorf("generate master key: %w", err)
 		}
-		fmt.Fprintln(os.Stdout, "CRONFOUNDRY_MASTER_KEY is not set. Generated one for you:")
-		fmt.Fprintln(os.Stdout)
-		fmt.Fprintf(os.Stdout, "  %s=%s\n", envMasterKey, key)
-		fmt.Fprintln(os.Stdout)
-		fmt.Fprintln(os.Stdout, "Add this to your environment (do not lose it — it cannot be recovered)")
-		fmt.Fprintln(os.Stdout, "and re-run `cronfoundry admin init`.")
+		_, _ = fmt.Fprintln(os.Stdout, "CRONFOUNDRY_MASTER_KEY is not set. Generated one for you:")
+		_, _ = fmt.Fprintln(os.Stdout)
+		_, _ = fmt.Fprintf(os.Stdout, "  %s=%s\n", envMasterKey, key)
+		_, _ = fmt.Fprintln(os.Stdout)
+		_, _ = fmt.Fprintln(os.Stdout, "Add this to your environment (do not lose it — it cannot be recovered)")
+		_, _ = fmt.Fprintln(os.Stdout, "and re-run `cronfoundry admin init`.")
 		return nil
 	}
 
@@ -62,7 +62,7 @@ func runAdminInit(ctx context.Context, orgName string) error {
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
-	fmt.Fprintln(os.Stdout, "Running migrations...")
+	_, _ = fmt.Fprintln(os.Stdout, "Running migrations...")
 	if err := db.Migrate(ctx, dsn); err != nil {
 		return fmt.Errorf("migrate: %w", err)
 	}
@@ -76,7 +76,7 @@ func runAdminInit(ctx context.Context, orgName string) error {
 	q := dbgen.New(pool)
 	existing, err := q.GetFirstOrganization(ctx)
 	if err == nil {
-		fmt.Fprintf(os.Stdout, "Organization already seeded (id=%s, name=%q). Ready.\n", existing.ID.String(), existing.Name)
+		_, _ = fmt.Fprintf(os.Stdout, "Organization already seeded (id=%s, name=%q). Ready.\n", existing.ID.String(), existing.Name)
 		return nil
 	}
 	if !errors.Is(err, pgx.ErrNoRows) {
@@ -87,6 +87,6 @@ func runAdminInit(ctx context.Context, orgName string) error {
 	if err != nil {
 		return fmt.Errorf("seed organization: %w", err)
 	}
-	fmt.Fprintf(os.Stdout, "Seeded organization id=%s name=%q. Ready.\n", row.ID.String(), row.Name)
+	_, _ = fmt.Fprintf(os.Stdout, "Seeded organization id=%s name=%q. Ready.\n", row.ID.String(), row.Name)
 	return nil
 }

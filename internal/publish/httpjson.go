@@ -63,7 +63,7 @@ func postJSON(ctx context.Context, c *http.Client, typ, url string, payload any)
 			lastErr = err
 			continue
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			return Result{Type: typ, OK: true, Detail: fmt.Sprintf("http %d", resp.StatusCode)}
 		}

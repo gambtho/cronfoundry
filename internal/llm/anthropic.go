@@ -57,7 +57,7 @@ func (p *anthropicProvider) Chat(ctx context.Context, messages []Message, opts C
 	}
 
 	stream := client.Messages.NewStreaming(ctx, params)
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 
 	var usage Usage
 	for stream.Next() {

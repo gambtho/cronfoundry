@@ -142,7 +142,7 @@ func main() {
 	root.AddCommand(runCmd)
 
 	if err := root.Execute(); err != nil {
-		fmt.Fprintln(stderr, "error:", err)
+		_, _ = fmt.Fprintln(stderr, "error:", err)
 		os.Exit(1)
 	}
 }

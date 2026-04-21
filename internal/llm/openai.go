@@ -47,7 +47,7 @@ func (p *openAIProvider) Chat(ctx context.Context, messages []Message, opts Call
 	}
 
 	stream := client.Chat.Completions.NewStreaming(ctx, params)
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 
 	var usage Usage
 	for stream.Next() {
