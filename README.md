@@ -5,11 +5,13 @@ OpenAI / Anthropic / Azure AI Foundry on a schedule, publishes the output to
 GitHub issues, Slack, Discord, or Teams, and commits learnings back to the
 skill repo.
 
-**Status:** `P6 — MVP gap-close`. Service layer (P2), auth (P3a), Azure
-deployment (P4), operator web UI (P5), and the MVP gap-close phases (P6a–P6d:
-push-webhook resync, secret-manifest logging, audit log, persistent user
-table) are all landed. See [`docs/superpowers/plans/`](docs/superpowers/plans/)
-for the per-phase implementation plans.
+**Status:** `MVP shipped — deployable to Azure`. Includes always-on scheduler,
+GitHub App sync, `/internal` HTTP API, subprocess + Container Apps Jobs runner
+dispatch, React operator UI with live-tail logs, push-webhook resync, audit
+log, persistent user table, and a one-command Bicep deploy. See
+[`docs/superpowers/specs/2026-04-19-cronfoundry-design.md`](docs/superpowers/specs/2026-04-19-cronfoundry-design.md)
+for the design and [`docs/guides/smoke-test-mvp-azure.md`](docs/guides/smoke-test-mvp-azure.md)
+for the Azure runbook.
 
 ## Requirements
 
@@ -190,27 +192,32 @@ Unknown variables render as their literal form and emit a warning.
 
 ## Architecture
 
-P1 is a single static binary driven by flags. Internal packages are pure
-libraries — no global state, no hidden I/O:
-
 ```
 cronfoundry/
-├── cmd/runner/                    # CLI entry (cobra, slog, redacting stderr)
+├── cmd/
+│   ├── cronfoundry/              # server + admin CLI (cobra)
+│   └── runner/                   # one-shot per-fire runner
 └── internal/
-    ├── config/                    # cronfoundry.yaml + SKILL.md parsers
-    │                              # {{ include }} preprocessor, validation
-    ├── secrets/                   # env-based secret resolver
-    ├── memory/                    # <memory>...</memory> block parser
-    ├── template/                  # safe variable-set template renderer
-    ├── redact/                    # scrub known values from logs
-    ├── llm/                       # Provider interface + adapters:
-    │                              #   openai, anthropic, azure-foundry
-    │                              #   (all streaming, usage-aware)
-    ├── publish/                   # Publisher interface + parallel dispatcher
-    │                              # github-issue, slack, discord, teams
-    ├── writeback/                 # go-git commit + optional push
-    └── runner/                    # orchestration:
-                                   #   load → LLM → memory parse → publish → writeback
+    ├── api/                      # /internal HTTP endpoints (runner-facing)
+    ├── cloud/                    # Azure Container Apps Jobs dispatcher
+    ├── config/                   # cronfoundry.yaml + SKILL.md parsers
+    ├── db/                       # pgx + goose migrations + sqlc queries
+    ├── github/                   # App JWT, install tokens, clone/commit
+    ├── githubtest/               # test fixtures for github/
+    ├── llm/                      # OpenAI / Anthropic / Azure Foundry
+    ├── memory/                   # <memory>...</memory> parser
+    ├── publish/                  # github-issue / slack / discord / teams
+    ├── redact/                   # secret-value scrubber for logs
+    ├── runner/                   # orchestration (load → LLM → publish)
+    ├── scheduler/                # cron tick loop + overlap + sweep
+    ├── secrets/                  # env-based secret resolver (runner-local)
+    ├── secretstore/              # Azure Key Vault wrapper (server-side)
+    ├── sync/                     # GitHub repo → skill/schedule sync
+    ├── template/                 # destination-template renderer
+    ├── testdb/                   # testcontainers Postgres boot helper
+    ├── token/                    # per-run bearer JWT signer/verifier
+    ├── webapi/                   # /api handlers for the React UI
+    └── writeback/                # go-git commit + push
 ```
 
 A run's status is one of `succeeded`, `partial_failure` (publish or writeback
@@ -225,27 +232,28 @@ failure), or `failed` (load/LLM error). Per-destination failures are isolated
 
 ## Roadmap
 
-- **P1** — Core runner CLI. ✅
-- **P2** — Postgres + API + scheduler + Azure Key Vault. Skills run on cron,
-  not just one-shot. ✅
-- **P3** — React web UI with GitHub OAuth, read-only dashboard + secret CRUD. ✅
-- **P4** — Azure Bicep deployment, GHCR image publishing, CI/CD. ✅
-- **P5** — Operator web UI: dashboard, runs, repos, secrets. ✅
-- **P6** — MVP gap-close: GitHub push-webhook resync, run-scoped secret-manifest
-  logging, audit log on all mutations, persistent `app_user` table with DB-backed
-  allowlist. ✅
+- **MVP** (this release) — Core runner, scheduler, GitHub sync, Key Vault,
+  React UI with live-tail logs, push webhook, audit log, user management,
+  Azure Bicep deploy. ✅
+- **Deferred** — see the "Deferred" section of the
+  [design spec](docs/superpowers/specs/2026-04-19-cronfoundry-design.md) for
+  the ordered backlog (MCP tool support, Copilot Enterprise provider,
+  auto-pause on consecutive failures, etc.).
 
-### New in P6 (this release)
+### Operator endpoints
 
 - `POST /webhook/github` — GitHub App push webhook; requires
   `CRONFOUNDRY_GITHUB_WEBHOOK_SECRET` (see [`docs/webhook-setup.md`](docs/webhook-setup.md))
 - `GET /api/audit` — admin-only audit log of every mutating API call
-- `GET/POST/PATCH/DELETE /api/users` — admin user management backed by the new
+- `GET/POST/PATCH/DELETE /api/users` — admin user management backed by the
   `app_user` table; env vars `CRONFOUNDRY_ADMIN_LOGINS` /
-  `CRONFOUNDRY_VIEWER_LOGINS` seed the table on first startup, then UI edits win
+  `CRONFOUNDRY_VIEWER_LOGINS` seed the table on first startup, then UI edits
+  win
 - Per-run `manifest.set`, `secret.fetched`, and `secret.denied` events emitted
   on the run timeline so operators can see exactly which KV entries each run
   touched
+- `GET /api/runs/{id}/events/stream` — SSE stream consumed by the `LogTail`
+  component in the Runs detail drawer for in-flight runs
 
 ## License
 

@@ -103,7 +103,7 @@ func TestCloneURL_MintsURL(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+tok)
 	resp, err := ts.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var body map[string]string
@@ -140,7 +140,7 @@ func TestCloneURL_MissingRepo(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+tok)
 	resp, err := ts.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	// The scope check (run.repo_id != URL repo_id) returns 403 before we
 	// get to the 404 "repo not found" path. This is stricter — non-existent
 	// and wrong-owner repo IDs are indistinguishable to a caller.
@@ -172,7 +172,7 @@ func TestCloneURL_BadRepoID(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+tok)
 	resp, err := ts.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
@@ -227,6 +227,6 @@ func TestCloneURL_RejectsCrossRunRepoAccess(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+tok)
 	resp, err := ts.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 }

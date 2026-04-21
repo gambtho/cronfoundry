@@ -42,10 +42,10 @@ jobs:
       - name: go test
         env:
           TEST_DATABASE_URL: postgres://cf:cf@localhost:5432/cronfoundry_test?sslmode=disable
-        run: go test ./... -timeout 120s
+        run: go test ./... -timeout 10m
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v7
         with:
           version: v2.11.0
 

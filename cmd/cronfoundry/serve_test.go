@@ -60,22 +60,11 @@ func TestServe_BootsAndHealthz(t *testing.T) {
 	errCh := make(chan error, 1)
 	go func() { errCh <- runServe(ctx, addr, 30*time.Second) }()
 
-	// Poll /healthz until up, or 5s deadline.
-	deadline := time.Now().Add(5 * time.Second)
-	var resp *http.Response
-	var healthErr error
-	for time.Now().Before(deadline) {
-		resp, healthErr = http.Get("http://" + addr + "/healthz")
-		if healthErr == nil && resp.StatusCode == 200 {
-			break
-		}
-		if resp != nil {
-			resp.Body.Close()
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	require.NotNil(t, resp, "healthz never responded; err=%v", healthErr)
-	defer resp.Body.Close()
+	waitForHealthz(t, addr, 5*time.Second)
+
+	resp, err := http.Get("http://" + addr + "/healthz")
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, 200, resp.StatusCode)
 	body, _ := io.ReadAll(resp.Body)
 	assert.Equal(t, "ok", string(body))
@@ -166,18 +155,7 @@ func TestServe_APIMe_WithSession(t *testing.T) {
 	errCh := make(chan error, 1)
 	go func() { errCh <- runServe(ctx, addr, 30*time.Second) }()
 
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		resp, err := http.Get("http://" + addr + "/healthz")
-		if err == nil && resp.StatusCode == 200 {
-			resp.Body.Close()
-			break
-		}
-		if resp != nil {
-			resp.Body.Close()
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
+	waitForHealthz(t, addr, 5*time.Second)
 
 	masterBytes, err := secretstore.ParseMasterKey(masterKey)
 	require.NoError(t, err)
@@ -192,7 +170,7 @@ func TestServe_APIMe_WithSession(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: "cf_session", Value: cookie})
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, 200, resp.StatusCode)
 
 	var got map[string]string
@@ -233,4 +211,23 @@ func TestServe_MissingAdminLogins(t *testing.T) {
 	err := runServe(context.Background(), "127.0.0.1:0", 30*time.Second)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), envAdminLogins)
+}
+
+// waitForHealthz polls /healthz at addr until it returns HTTP 200 or the
+// timeout elapses. Fails the test on timeout.
+func waitForHealthz(t testing.TB, addr string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		resp, err := http.Get("http://" + addr + "/healthz")
+		if err == nil && resp.StatusCode == 200 {
+			_ = resp.Body.Close()
+			return
+		}
+		if resp != nil {
+			_ = resp.Body.Close()
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	require.FailNowf(t, "healthz never returned 200", "addr=%s timeout=%v", addr, timeout)
 }

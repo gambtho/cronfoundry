@@ -102,7 +102,7 @@ func TestInstallationCache_RefetchesOnExpiry(t *testing.T) {
 func TestInstallationCache_PropagatesHTTPError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnauthorized)
-		fmt.Fprint(w, `{"message":"bad creds"}`)
+		_, _ = fmt.Fprint(w, `{"message":"bad creds"}`)
 	}))
 	defer srv.Close()
 

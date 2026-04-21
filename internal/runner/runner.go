@@ -36,6 +36,11 @@ type RunInput struct {
 	SkillPath    string // from manifest
 	ScheduleName string
 
+	// RunID is the server-assigned UUID for scheduler-dispatched runs. Empty
+	// for standalone CLI invocations — the runner then fabricates a local id
+	// and omits the run id from writeback commit messages.
+	RunID string
+
 	Secrets *secrets.Resolver
 
 	LLMAPIKey     string
@@ -165,9 +170,13 @@ func (r *Runner) Run(ctx context.Context, in RunInput) (RunResult, error) {
 		return result, nil
 	}
 
+	runID := in.RunID
+	if runID == "" {
+		runID = fmt.Sprintf("local-%d", result.StartedAt.UnixNano())
+	}
 	tctx := template.Context{
 		Output:    published,
-		RunID:     fmt.Sprintf("local-%d", result.StartedAt.UnixNano()),
+		RunID:     runID,
 		RunDate:   result.StartedAt.Format("2006-01-02"),
 		StartedAt: result.StartedAt,
 		Schedule:  template.Meta{Name: sch.Name},
@@ -186,11 +195,15 @@ func (r *Runner) Run(ctx context.Context, in RunInput) (RunResult, error) {
 
 	writebackOK := true
 	if sch.Writeback != nil && sch.Writeback.Enabled && hasMemory {
+		msg := fmt.Sprintf("chore(cronfoundry): update %s", sch.Writeback.Path)
+		if in.RunID != "" {
+			msg = fmt.Sprintf("chore(cronfoundry): update %s from run %s", sch.Writeback.Path, in.RunID)
+		}
 		sha, err := writeback.New().Commit(in.RepoRoot, writeback.Options{
 			Path:        sch.Writeback.Path,
 			Mode:        sch.Writeback.Mode,
 			Content:     memBlock,
-			Message:     fmt.Sprintf("chore(cronfoundry): update %s", sch.Writeback.Path),
+			Message:     msg,
 			AuthorName:  "cronfoundry[bot]",
 			AuthorEmail: "cronfoundry[bot]@users.noreply.github.com",
 		})

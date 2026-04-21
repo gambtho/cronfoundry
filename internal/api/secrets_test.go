@@ -58,7 +58,7 @@ func TestSecrets_ScopedToClaim(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+tok)
 	resp, err := ts.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var body map[string]string
@@ -70,7 +70,7 @@ func TestSecrets_ScopedToClaim(t *testing.T) {
 	req2.Header.Set("Authorization", "Bearer "+tok)
 	resp2, err := ts.Client().Do(req2)
 	require.NoError(t, err)
-	defer resp2.Body.Close()
+	defer func() { _ = resp2.Body.Close() }()
 	assert.Equal(t, http.StatusForbidden, resp2.StatusCode)
 }
 
@@ -106,7 +106,7 @@ func TestSecrets_MultipleNames(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+tok)
 	resp, err := ts.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var body map[string]string
@@ -141,7 +141,7 @@ func TestSecrets_MissingNamesParam(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+tok)
 	resp, err := ts.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
@@ -177,7 +177,7 @@ func TestSecrets_LogsFetchedEvents(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+tok)
 	resp, err := ts.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	ctx := context.Background()
@@ -236,7 +236,7 @@ func TestSecrets_LogsDeniedEvent(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+tok)
 	resp, err := ts.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusForbidden, resp.StatusCode)
 
 	ctx := context.Background()

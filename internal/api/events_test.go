@@ -52,7 +52,7 @@ func TestEvents_PersistsBatch(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := ts.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	assert.Equal(t, http.StatusNoContent, resp.StatusCode)
 
 	var count int
@@ -92,7 +92,7 @@ func TestEvents_RejectsMismatchedRunID(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+tok)
 	resp, err := ts.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 }
 
@@ -123,7 +123,7 @@ func TestEvents_RejectsBadLevel(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+tok)
 	resp, err := ts.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
@@ -155,7 +155,7 @@ func TestEvents_DefaultsLevelToInfo(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+tok)
 	resp, err := ts.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 
 	var level string

@@ -168,7 +168,7 @@ func (h oauthHandlers) exchangeCode(ctx context.Context, code string) (string, e
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("github token endpoint returned %d", resp.StatusCode)
 	}
@@ -200,7 +200,7 @@ func (h oauthHandlers) fetchLogin(ctx context.Context, accessToken string) (stri
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("github user endpoint returned %d", resp.StatusCode)
 	}

@@ -20,10 +20,9 @@ import (
 )
 
 const (
-	envGitHubAppID     = "CRONFOUNDRY_GITHUB_APP_ID"
-	envGitHubAppPEM    = "CRONFOUNDRY_GITHUB_APP_PEM"
-	envGitHubBaseURL   = "CRONFOUNDRY_GITHUB_BASE_URL"
-	envGitHubCloneBase = "CRONFOUNDRY_GITHUB_CLONE_BASE"
+	envGitHubAppID   = "CRONFOUNDRY_GITHUB_APP_ID"
+	envGitHubAppPEM  = "CRONFOUNDRY_GITHUB_APP_PEM"
+	envGitHubBaseURL = "CRONFOUNDRY_GITHUB_BASE_URL"
 )
 
 func newAdminTriggerSyncCmd() *cobra.Command {
@@ -110,6 +109,6 @@ func runAdminTriggerSync(ctx context.Context, repo string, out io.Writer) error 
 	if err := poller.SyncOne(ctx, connID); err != nil {
 		return fmt.Errorf("sync: %w", err)
 	}
-	fmt.Fprintf(out, "Synced %s/%s\n", owner, name)
+	_, _ = fmt.Fprintf(out, "Synced %s/%s\n", owner, name)
 	return nil
 }

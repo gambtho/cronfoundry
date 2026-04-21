@@ -178,6 +178,7 @@ func runRunnerHTTP(ctx context.Context, runIDFlag string) error {
 		ManifestPath:  "cronfoundry.yaml",
 		SkillPath:     runCtx.SkillPath,
 		ScheduleName:  runCtx.ScheduleName,
+		RunID:         runID,
 		Secrets:       resolver,
 		LLMAPIKey:     llmAPIKey,
 		LLMEndpoint:   llmEndpoint,

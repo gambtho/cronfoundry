@@ -53,7 +53,7 @@ func TestFinalize_PersistsSuccess(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+tok)
 	resp, err := ts.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 
 	// Verify DB state.
@@ -108,7 +108,7 @@ func TestFinalize_PersistsFailure(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+tok)
 	resp, err := ts.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 
 	var status string
@@ -147,7 +147,7 @@ func TestFinalize_RejectsInvalidStatus(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+tok)
 	resp, err := ts.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
@@ -182,7 +182,7 @@ func TestFinalize_RejectsNegativeAccounting(t *testing.T) {
 			req.Header.Set("Authorization", "Bearer "+tok)
 			resp, err := ts.Client().Do(req)
 			require.NoError(t, err)
-			defer resp.Body.Close()
+			defer func() { _ = resp.Body.Close() }()
 			assert.Equal(t, http.StatusBadRequest, resp.StatusCode,
 				"negative %s must be rejected", field)
 		})
@@ -224,7 +224,7 @@ func TestFinalize_RejectsAlreadyTerminal(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+tok)
 	resp, err := ts.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	assert.Equal(t, http.StatusConflict, resp.StatusCode)
 
 	// The original status must be unchanged.
@@ -265,6 +265,6 @@ func TestFinalize_RejectsMismatchedRunID(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+tok)
 	resp, err := ts.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 }

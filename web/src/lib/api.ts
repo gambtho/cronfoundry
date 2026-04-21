@@ -51,6 +51,7 @@ export const api = {
     },
     get: (id: string) => apiFetch<RunDetail>(`/api/runs/${id}`),
     events: (id: string) => apiFetch<RunEvent[]>(`/api/runs/${id}/events`),
+    eventsStreamURL: (id: string) => `/api/runs/${id}/events/stream`,
   },
 
   secrets: {

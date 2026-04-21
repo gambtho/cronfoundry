@@ -80,7 +80,7 @@ func (p *azureFoundryProvider) Chat(ctx context.Context, messages []Message, opt
 	}
 
 	stream := client.Chat.Completions.NewStreaming(ctx, params)
-	defer stream.Close()
+	defer func() { _ = stream.Close() }()
 
 	var usage Usage
 	for stream.Next() {

@@ -68,14 +68,14 @@ func (h *eventsHandler) stream(w http.ResponseWriter, r *http.Request) {
 			}
 			for _, ev := range events {
 				data, _ := json.Marshal(ev)
-				fmt.Fprintf(w, "data: %s\n\n", data)
+				_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
 				lastEventID = ev.ID
 			}
 			flusher.Flush()
 
 			run, err := h.deps.Queries.GetRun(r.Context(), pgID)
 			if err != nil || terminal[run.Status] {
-				fmt.Fprintf(w, "event: done\ndata: {}\n\n")
+				_, _ = fmt.Fprintf(w, "event: done\ndata: {}\n\n")
 				flusher.Flush()
 				return
 			}
