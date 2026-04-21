@@ -1,19 +1,26 @@
 package webapi_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
+	"github.com/gambtho/cronfoundry/internal/testdb"
 	"github.com/gambtho/cronfoundry/internal/webapi"
 )
 
 // newTestDeps builds a Deps with a stub GitHub server replacing the real API.
+// This helper is for tests that DO NOT require a DB (login redirect, CSRF
+// mismatch, logout). Tests that exercise the full OAuth callback must use
+// newTestDepsWithDB so resolveRole + UpsertUserOnLogin have a real DB.
 func newTestDeps(t *testing.T, githubBase string) webapi.Deps {
 	t.Helper()
 	return webapi.Deps{
@@ -23,6 +30,22 @@ func newTestDeps(t *testing.T, githubBase string) webapi.Deps {
 		AdminLogins:       []string{"octocat"},
 		ViewerLogins:      []string{"viewer1"},
 		GitHubAPIBase:     githubBase,
+	}
+}
+
+// newTestDepsWithDB builds a Deps wired to a real Postgres pool. Callers are
+// responsible for seeding an organization + any app_user rows before the
+// request under test is issued.
+func newTestDepsWithDB(t *testing.T, pool *pgxpool.Pool, githubBase string) webapi.Deps {
+	t.Helper()
+	return webapi.Deps{
+		MasterKey:         testKey(),
+		OAuthClientID:     "test-client-id",
+		OAuthClientSecret: "test-client-secret",
+		AdminLogins:       []string{},
+		ViewerLogins:      []string{},
+		GitHubAPIBase:     githubBase,
+		Queries:           dbgen.New(pool),
 	}
 }
 
@@ -67,11 +90,29 @@ func TestOAuth_Login_RedirectsToGitHub(t *testing.T) {
 }
 
 func TestOAuth_Callback_SetsSessionCookie(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, cleanup := testdb.BootPG(t)
+	defer cleanup()
+	seedOrg(t, pool)
+
+	ctx := context.Background()
+	q := dbgen.New(pool)
+	org, err := q.GetFirstOrganization(ctx)
+	require.NoError(t, err)
+	_, err = q.CreateUser(ctx, dbgen.CreateUserParams{
+		OrgID:       org.ID,
+		GithubLogin: "octocat",
+		Role:        "admin",
+	})
+	require.NoError(t, err)
+
 	stub := stubGitHub(t, "octocat")
 	defer stub.Close()
 
 	mux := http.NewServeMux()
-	webapi.RegisterRoutes(mux, newTestDeps(t, stub.URL))
+	webapi.RegisterRoutes(mux, newTestDepsWithDB(t, pool, stub.URL))
 
 	// Get state from /oauth/login.
 	loginReq := httptest.NewRequest("GET", "/oauth/login", nil)
@@ -128,11 +169,21 @@ func TestOAuth_Callback_RejectsCSRFMismatch(t *testing.T) {
 }
 
 func TestOAuth_Callback_RejectsUnallowedLogin(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, cleanup := testdb.BootPG(t)
+	defer cleanup()
+	seedOrg(t, pool)
+
+	// Deliberately do NOT seed a user row — GetUserRole returns ErrNoRows,
+	// resolveRole collapses to "", callback returns 403.
+
 	stub := stubGitHub(t, "notallowed")
 	defer stub.Close()
 
 	mux := http.NewServeMux()
-	webapi.RegisterRoutes(mux, newTestDeps(t, stub.URL))
+	webapi.RegisterRoutes(mux, newTestDepsWithDB(t, pool, stub.URL))
 
 	loginReq := httptest.NewRequest("GET", "/oauth/login", nil)
 	loginRR := httptest.NewRecorder()

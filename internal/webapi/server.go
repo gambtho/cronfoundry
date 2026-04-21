@@ -1,7 +1,10 @@
 package webapi
 
 import (
+	"context"
 	"net/http"
+
+	"github.com/jackc/pgx/v5/pgtype"
 
 	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
 	"github.com/gambtho/cronfoundry/internal/secretstore"
@@ -30,19 +33,24 @@ type Deps struct {
 	Syncer RepoSyncer
 }
 
-// resolveRole returns "admin", "viewer", or "" (not allowed).
-func (d Deps) resolveRole(login string) string {
-	for _, l := range d.AdminLogins {
-		if l == login {
-			return "admin"
-		}
+// resolveRole returns "admin", "viewer", or "" (not allowed). Queries the
+// app_user table keyed by (org_id, github_login). Any error (including
+// pgx.ErrNoRows) collapses to "" so OAuth callers see a uniform "not
+// allowed" response without information leakage. Env-var allowlists are
+// no longer consulted at runtime — they seed the table once on first
+// startup (see cmd/cronfoundry/serve.go bootstrap block).
+func (d Deps) resolveRole(ctx context.Context, orgID pgtype.UUID, login string) string {
+	if d.Queries == nil {
+		return ""
 	}
-	for _, l := range d.ViewerLogins {
-		if l == login {
-			return "viewer"
-		}
+	role, err := d.Queries.GetUserRole(ctx, dbgen.GetUserRoleParams{
+		OrgID:       orgID,
+		GithubLogin: login,
+	})
+	if err != nil {
+		return ""
 	}
-	return ""
+	return role
 }
 
 // RegisterRoutes registers /oauth/*, /api/*, and /* (SPA catch-all) on mux.

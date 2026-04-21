@@ -13,6 +13,10 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
+
+	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
 )
 
 const (
@@ -82,11 +86,39 @@ func (h oauthHandlers) callback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "user fetch failed", http.StatusBadGateway)
 		return
 	}
-	role := h.deps.resolveRole(login)
+
+	// Load the single-tenant organization so we can look up this user's row.
+	var orgID pgtype.UUID
+	if h.deps.Queries != nil {
+		org, err := h.deps.Queries.GetFirstOrganization(r.Context())
+		if err != nil {
+			slog.Error("oauth: load org failed", "err", err)
+			http.Error(w, "org load failed", http.StatusInternalServerError)
+			return
+		}
+		orgID = org.ID
+	}
+
+	role := h.deps.resolveRole(r.Context(), orgID, login)
 	if role == "" {
 		http.Error(w, "access denied", http.StatusForbidden)
 		return
 	}
+
+	// Refresh last_login_at. The upsert preserves the existing role on
+	// conflict — a user's role is stable across logins; admins change it
+	// via /api/users or the env-var bootstrap on first startup.
+	if h.deps.Queries != nil {
+		if _, err := h.deps.Queries.UpsertUserOnLogin(r.Context(), dbgen.UpsertUserOnLoginParams{
+			OrgID:       orgID,
+			GithubLogin: login,
+			Role:        role,
+		}); err != nil {
+			// Don't fail the login — the user's role was already resolved.
+			slog.Warn("oauth: upsert user on login failed", "err", err)
+		}
+	}
+
 	session, err := SignSession(SessionClaims{Login: login, Role: role}, h.deps.MasterKey, 24*time.Hour)
 	if err != nil {
 		http.Error(w, "session creation failed", http.StatusInternalServerError)
