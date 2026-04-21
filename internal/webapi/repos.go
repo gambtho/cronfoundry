@@ -7,6 +7,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/gambtho/cronfoundry/internal/audit"
 	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
 )
 
@@ -64,6 +65,18 @@ func (h *reposHandler) connect(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "failed to connect repo", "internal")
 		return
 	}
+	repoID := uuid.UUID(repo.ID.Bytes)
+	auditLog(r.Context(), h.deps.Queries, mustClaims(r).Login, audit.Entry{
+		OrgID:      org.ID,
+		Action:     "repo.connect",
+		TargetKind: "repo",
+		TargetID:   &repoID,
+		Detail: map[string]any{
+			"owner":      repo.Owner,
+			"name":       repo.Name,
+			"install_id": repo.GithubAppInstallID,
+		},
+	})
 	writeJSON(w, http.StatusCreated, repo)
 }
 
@@ -90,5 +103,12 @@ func (h *reposHandler) disconnect(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "repo not found", "not_found")
 		return
 	}
+	idCopy := id
+	auditLog(r.Context(), h.deps.Queries, mustClaims(r).Login, audit.Entry{
+		OrgID:      org.ID,
+		Action:     "repo.disconnect",
+		TargetKind: "repo",
+		TargetID:   &idCopy,
+	})
 	w.WriteHeader(http.StatusNoContent)
 }

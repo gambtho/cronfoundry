@@ -3,7 +3,24 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { RunStatusBadge } from '../components/RunStatusBadge'
-import type { RunSummary } from '../lib/types'
+import type { RunSummary, RunEvent } from '../lib/types'
+
+function eventColorClass(ev: RunEvent): string {
+  if (ev.event_type === 'secret.denied') return 'text-yellow-400 font-semibold'
+  if (ev.event_type === 'secret.fetched') return 'text-emerald-500'
+  if (ev.event_type === 'manifest.set') return 'text-sky-400'
+  if (ev.level === 'error') return 'text-red-400'
+  return ''
+}
+
+// eventName narrows the unknown payload_json to surface a "name" field when
+// the payload is a plain object that has one. Returns null otherwise.
+function eventName(payload: unknown): string | null {
+  if (typeof payload !== 'object' || payload === null) return null
+  if (!('name' in payload)) return null
+  const v = (payload as { name: unknown }).name
+  return typeof v === 'string' ? v : null
+}
 
 export default function Runs() {
   const [selected, setSelected] = useState<RunSummary | null>(null)
@@ -102,9 +119,14 @@ function RunDetail({ runId, onClose }: { runId: string; onClose: () => void }) {
             <span className="text-gray-600">
               {new Date(ev.ts).toLocaleTimeString()}{' '}
             </span>
-            <span className={ev.level === 'error' ? 'text-red-400' : ''}>
+            <span className={eventColorClass(ev)}>
               {ev.event_type}
             </span>
+            {ev.event_type === 'secret.denied' && eventName(ev.payload_json) && (
+              <span className="text-gray-500 ml-2">
+                name={eventName(ev.payload_json)}
+              </span>
+            )}
           </div>
         ))}
       </div>

@@ -8,6 +8,15 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AppUser struct {
+	ID          pgtype.UUID
+	OrgID       pgtype.UUID
+	GithubLogin string
+	Role        string
+	CreatedAt   pgtype.Timestamptz
+	LastLoginAt pgtype.Timestamptz
+}
+
 type AuditLog struct {
 	ID         int64
 	OrgID      pgtype.UUID

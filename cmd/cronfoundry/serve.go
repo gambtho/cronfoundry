@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -12,8 +13,9 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
 
 	"github.com/gambtho/cronfoundry/internal/api"
@@ -24,6 +26,7 @@ import (
 	"github.com/gambtho/cronfoundry/internal/scheduler"
 	"github.com/gambtho/cronfoundry/internal/secretstore"
 	secretstoreazure "github.com/gambtho/cronfoundry/internal/secretstore/azure"
+	"github.com/gambtho/cronfoundry/internal/sync"
 	"github.com/gambtho/cronfoundry/internal/token"
 	"github.com/gambtho/cronfoundry/internal/webapi"
 )
@@ -33,6 +36,7 @@ const (
 	envOAuthClientSecret = "CRONFOUNDRY_GITHUB_OAUTH_CLIENT_SECRET"
 	envAdminLogins       = "CRONFOUNDRY_ADMIN_LOGINS"
 	envViewerLogins      = "CRONFOUNDRY_VIEWER_LOGINS"
+	envWebhookSecret     = "CRONFOUNDRY_GITHUB_WEBHOOK_SECRET"
 )
 
 func newServeCmd() *cobra.Command {
@@ -105,6 +109,56 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 		return fmt.Errorf("load organization (run `cronfoundry admin init`?): %w", err)
 	}
 
+	// Bootstrap: seed the app_user table from env vars on first startup only.
+	// Once any user exists (from a prior bootstrap or a UI-driven admin add),
+	// the env vars become inert — UI edits win. CreateUser itself is
+	// ON CONFLICT DO NOTHING, so running this again is harmless, but the
+	// count gate documents the write-once intent.
+	if count, err := q.CountUsers(ctx, org.ID); err != nil {
+		return fmt.Errorf("count users: %w", err)
+	} else if count == 0 && (len(adminLogins) > 0 || len(viewerLogins) > 0) {
+		adminsSeeded := 0
+		viewersSeeded := 0
+		seedOne := func(login, role string) bool {
+			if _, err := q.CreateUser(ctx, dbgen.CreateUserParams{
+				OrgID:       org.ID,
+				GithubLogin: login,
+				Role:        role,
+			}); err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					// DO-NOTHING conflict — not an error, just already exists.
+					return true
+				}
+				slog.Error("serve: bootstrap user failed", "login", login, "role", role, "err", err)
+				return false
+			}
+			return true
+		}
+		for _, login := range adminLogins {
+			if seedOne(login, "admin") {
+				adminsSeeded++
+			}
+		}
+		for _, login := range viewerLogins {
+			if seedOne(login, "viewer") {
+				viewersSeeded++
+			}
+		}
+		slog.Info("serve: bootstrapped app_user from env",
+			"admins_requested", len(adminLogins),
+			"admins_seeded", adminsSeeded,
+			"viewers_requested", len(viewerLogins),
+			"viewers_seeded", viewersSeeded)
+		// If admins were requested but none landed, the service would come
+		// up with no admins and resolveRole would reject every login —
+		// indistinguishable at the UI from a complete outage. Fail fast so
+		// the operator sees the underlying DB error instead of a mysterious
+		// "access denied" page.
+		if len(adminLogins) > 0 && adminsSeeded == 0 {
+			return fmt.Errorf("bootstrap: all %d admin seeds failed — refusing to start with zero admins", len(adminLogins))
+		}
+	}
+
 	// --- Construct collaborators ---
 	store, err := buildSecretStore(pool, org.ID, master)
 	if err != nil {
@@ -120,6 +174,13 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 		installsCfg.BaseURL = ghBaseURL
 	}
 	installs := github.NewInstallationCache(installsCfg)
+
+	poller := sync.NewPoller(sync.PollerConfig{
+		Pool:          pool,
+		OrgID:         org.ID,
+		Installations: installs,
+		GitHubBaseURL: ghBaseURL,
+	})
 
 	// --- Initial orphan sweep ---
 	if n, err := scheduler.SweepOrphans(ctx, scheduler.Deps{Pool: pool}); err != nil {
@@ -148,6 +209,8 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 		Queries:           q,
 		Secrets:           store,
 		APIBaseURL:        "http://" + addr,
+		WebhookSecret:     []byte(os.Getenv(envWebhookSecret)),
+		Syncer:            poller,
 	})
 	srv := &http.Server{
 		Addr:              addr,

@@ -177,6 +177,103 @@ func TestRunNow_RejectsNonLoopback(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, rr.Code)
 }
 
+// TestTrigger_WritesAuditRow confirms that a successful run-now call emits
+// exactly one audit_log row with the expected action/actor/target and a
+// detail payload containing the new run_id. This endpoint is the single
+// source of truth for schedule.run_now audits (the webapi handler no
+// longer writes its own row — it forwards here).
+func TestTrigger_WritesAuditRow(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, cleanup := testdb.BootPG(t)
+	defer cleanup()
+
+	schedID, orgID := seedSchedule(t, pool)
+
+	srv := NewServer("127.0.0.1:0", Deps{Pool: pool})
+	ts := httptest.NewServer(srv.Handler)
+	defer ts.Close()
+
+	body := map[string]string{"actor": "alice"}
+	buf, _ := json.Marshal(body)
+	resp, err := ts.Client().Post(
+		ts.URL+"/internal/schedules/"+uuidString(schedID)+"/run-now",
+		"application/json", bytes.NewReader(buf))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var out struct {
+		RunID string `json:"run_id"`
+	}
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&out))
+	require.NotEmpty(t, out.RunID)
+
+	// Assert exactly one matching audit row exists with the expected
+	// columns and that detail_json carries the new run_id.
+	var (
+		count      int
+		actor      *string
+		targetKind *string
+		targetID   pgtype.UUID
+		detailJSON []byte
+	)
+	require.NoError(t, pool.QueryRow(context.Background(),
+		`SELECT COUNT(*) FROM audit_log
+		 WHERE org_id = $1 AND action = 'schedule.run_now'`, orgID).Scan(&count))
+	assert.Equal(t, 1, count, "exactly one schedule.run_now audit row expected")
+
+	require.NoError(t, pool.QueryRow(context.Background(),
+		`SELECT actor, target_kind, target_id, detail_json
+		 FROM audit_log
+		 WHERE org_id = $1 AND action = 'schedule.run_now'`, orgID).
+		Scan(&actor, &targetKind, &targetID, &detailJSON))
+
+	require.NotNil(t, actor)
+	assert.Equal(t, "alice", *actor)
+	require.NotNil(t, targetKind)
+	assert.Equal(t, "schedule", *targetKind)
+	assert.Equal(t, uuidString(schedID), uuidString(targetID))
+
+	var detail map[string]any
+	require.NoError(t, json.Unmarshal(detailJSON, &detail))
+	assert.Equal(t, out.RunID, detail["run_id"])
+}
+
+// TestTrigger_AuditFallsBackToSystemActor confirms that when the body
+// omits actor (or provides an empty string), the audit row records the
+// actor as "system" rather than NULL. Covers the CLI-invoked path where
+// a human login is not available.
+func TestTrigger_AuditFallsBackToSystemActor(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, cleanup := testdb.BootPG(t)
+	defer cleanup()
+
+	schedID, orgID := seedSchedule(t, pool)
+
+	srv := NewServer("127.0.0.1:0", Deps{Pool: pool})
+	ts := httptest.NewServer(srv.Handler)
+	defer ts.Close()
+
+	// Empty body: Actor omitted.
+	resp, err := ts.Client().Post(
+		ts.URL+"/internal/schedules/"+uuidString(schedID)+"/run-now",
+		"application/json", bytes.NewReader([]byte(`{}`)))
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var actor *string
+	require.NoError(t, pool.QueryRow(context.Background(),
+		`SELECT actor FROM audit_log
+		 WHERE org_id = $1 AND action = 'schedule.run_now'`, orgID).Scan(&actor))
+	require.NotNil(t, actor)
+	assert.Equal(t, "system", *actor)
+}
+
 // uuidString converts a pgtype.UUID back to its canonical string form.
 func uuidString(u pgtype.UUID) string {
 	b, _ := u.Value() // returns (driver.Value, error); here the Value is a string

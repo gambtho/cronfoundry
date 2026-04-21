@@ -3,13 +3,21 @@ package webapi
 import (
 	"bytes"
 	"encoding/json"
+	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/gambtho/cronfoundry/internal/audit"
 	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
 )
+
+// runNowClient is a bounded HTTP client for the loopback proxy hop from the
+// webapi runNow handler to the internal /run-now endpoint. A timeout keeps a
+// hung or slow internal handler from pinning a goroutine.
+var runNowClient = &http.Client{Timeout: 30 * time.Second}
 
 type schedulesHandler struct{ deps Deps }
 
@@ -55,6 +63,17 @@ func (h *schedulesHandler) setEnabled(w http.ResponseWriter, r *http.Request, en
 		writeErr(w, http.StatusInternalServerError, "failed to update schedule", "internal")
 		return
 	}
+	idCopy := id // Copy to a local so we can safely take its address for the pointer field.
+	action := "schedule.pause"
+	if enabled {
+		action = "schedule.resume"
+	}
+	auditLog(r.Context(), h.deps.Queries, mustClaims(r).Login, audit.Entry{
+		OrgID:      org.ID,
+		Action:     action,
+		TargetKind: "schedule",
+		TargetID:   &idCopy,
+	})
 	writeJSON(w, http.StatusOK, sched)
 }
 
@@ -69,7 +88,10 @@ func (h *schedulesHandler) runNow(w http.ResponseWriter, r *http.Request) {
 
 	apiBase := h.deps.APIBaseURL
 	if apiBase == "" {
-		apiBase = "http://127.0.0.1:8080"
+		slog.Error("runNow: APIBaseURL not configured — refusing to dial a hardcoded fallback",
+			"actor", actor, "schedule_id", idStr)
+		writeErr(w, http.StatusServiceUnavailable, "api base url not configured", "config")
+		return
 	}
 	url := apiBase + "/internal/schedules/" + idStr + "/run-now"
 
@@ -81,8 +103,9 @@ func (h *schedulesHandler) runNow(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := runNowClient.Do(req)
 	if err != nil {
+		slog.Error("runNow: trigger call failed", "err", err, "schedule_id", idStr)
 		writeErr(w, http.StatusBadGateway, "trigger call failed", "gateway")
 		return
 	}
@@ -91,5 +114,8 @@ func (h *schedulesHandler) runNow(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, resp.StatusCode, "trigger failed", "trigger_error")
 		return
 	}
+	// Audit is emitted by the internal /run-now endpoint (a single source of
+	// truth for schedule.run_now across UI, CLI, and direct internal calls).
+	// See internal/api/trigger.go.
 	w.WriteHeader(http.StatusAccepted)
 }

@@ -88,3 +88,20 @@ export interface Me {
   login: string
   role: 'admin' | 'viewer'
 }
+
+export interface AuditEntry {
+  id: number
+  ts: string
+  actor?: string
+  action: string
+  target_kind?: string
+  target_id?: string
+  detail: unknown
+}
+
+export interface UserDTO {
+  login: string
+  role: 'admin' | 'viewer'
+  created_at: string
+  last_login_at?: string
+}

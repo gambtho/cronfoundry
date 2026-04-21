@@ -1,7 +1,12 @@
 package webapi
 
 import (
+	"context"
+	"errors"
 	"net/http"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
 	"github.com/gambtho/cronfoundry/internal/secretstore"
@@ -22,21 +27,36 @@ type Deps struct {
 	Secrets secretstore.SecretStore
 	// APIBaseURL is the base URL for the internal API (used by run-now).
 	APIBaseURL string
+	// WebhookSecret is the shared HMAC secret registered with the GitHub App.
+	// When empty, POST /webhook/github responds 503 Service Unavailable.
+	WebhookSecret []byte
+	// Syncer triggers a one-off repo sync. Injected from cmd/cronfoundry/serve.go
+	// as a thin wrapper around sync.Poller.SyncOne.
+	Syncer RepoSyncer
 }
 
-// resolveRole returns "admin", "viewer", or "" (not allowed).
-func (d Deps) resolveRole(login string) string {
-	for _, l := range d.AdminLogins {
-		if l == login {
-			return "admin"
-		}
+// resolveRole returns ("admin"|"viewer", nil) for allowed logins, ("", nil)
+// for a missing row (not allowed), or ("", err) for infrastructure errors.
+// Separating the two negative cases lets callers map "missing row" to 403
+// and "infra error" to 500 — a transient DB blip must NOT silently lock
+// legitimate admins out with a misleading "access denied". Env-var
+// allowlists are no longer consulted at runtime — they seed the table
+// once on first startup (see cmd/cronfoundry/serve.go bootstrap block).
+func (d Deps) resolveRole(ctx context.Context, orgID pgtype.UUID, login string) (string, error) {
+	if d.Queries == nil {
+		return "", nil
 	}
-	for _, l := range d.ViewerLogins {
-		if l == login {
-			return "viewer"
+	role, err := d.Queries.GetUserRole(ctx, dbgen.GetUserRoleParams{
+		OrgID:       orgID,
+		GithubLogin: login,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
 		}
+		return "", err
 	}
-	return ""
+	return role, nil
 }
 
 // RegisterRoutes registers /oauth/*, /api/*, and /* (SPA catch-all) on mux.
@@ -89,7 +109,21 @@ func RegisterRoutes(mux *http.ServeMux, deps Deps) {
 	mux.Handle("PUT /api/secrets/{name}/rotate", adminOnly(http.HandlerFunc(sech.rotate)))
 	mux.Handle("DELETE /api/secrets/{name}", adminOnly(http.HandlerFunc(sech.delete)))
 
+	// Audit log (admin-only, read-only)
+	ah := &auditHandler{deps: deps}
+	mux.Handle("GET /api/audit", adminOnly(http.HandlerFunc(ah.list)))
+
+	// Users (admin-only)
+	uh := &usersHandler{deps: deps}
+	mux.Handle("GET /api/users", adminOnly(http.HandlerFunc(uh.list)))
+	mux.Handle("POST /api/users", adminOnly(http.HandlerFunc(uh.create)))
+	mux.Handle("PATCH /api/users/{login}", adminOnly(http.HandlerFunc(uh.updateRole)))
+	mux.Handle("DELETE /api/users/{login}", adminOnly(http.HandlerFunc(uh.delete)))
+
+	// Webhooks (unauthenticated; HMAC-verified)
+	wh := &webhookHandler{deps: deps, secret: deps.WebhookSecret, syncer: deps.Syncer}
+	mux.Handle("POST /webhook/github", wh)
+
 	// SPA catch-all — must be last
 	mux.Handle("/", staticHandler())
 }
-

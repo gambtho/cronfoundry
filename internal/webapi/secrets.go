@@ -2,7 +2,10 @@ package webapi
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
+
+	"github.com/gambtho/cronfoundry/internal/audit"
 )
 
 type secretsHandler struct{ deps Deps }
@@ -56,11 +59,16 @@ func (h *secretsHandler) create(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "failed to create secret", "internal")
 		return
 	}
+	h.auditSecretMutation(r, "secret.create", req.Name)
 	writeJSON(w, http.StatusCreated, map[string]string{"name": req.Name})
 }
 
 func (h *secretsHandler) rotate(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
+	if name == "" {
+		writeErr(w, http.StatusBadRequest, "name is required", "bad_request")
+		return
+	}
 	var req struct {
 		Value string `json:"value"`
 	}
@@ -72,14 +80,39 @@ func (h *secretsHandler) rotate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "failed to rotate secret", "internal")
 		return
 	}
+	h.auditSecretMutation(r, "secret.rotate", name)
 	writeJSON(w, http.StatusOK, map[string]string{"name": name})
 }
 
 func (h *secretsHandler) delete(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
+	if name == "" {
+		writeErr(w, http.StatusBadRequest, "name is required", "bad_request")
+		return
+	}
 	if err := h.deps.Secrets.Delete(r.Context(), name); err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to delete secret", "internal")
 		return
 	}
+	h.auditSecretMutation(r, "secret.delete", name)
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// auditSecretMutation records a secret.* audit row. The mutation itself has
+// already succeeded by the time this is called, so a failure to load the org
+// must not roll the mutation back — we log and continue. A silent skip (the
+// prior behavior) hid audit gaps; the slog.Warn here makes them visible.
+func (h *secretsHandler) auditSecretMutation(r *http.Request, action, name string) {
+	org, err := h.deps.Queries.GetFirstOrganization(r.Context())
+	if err != nil {
+		slog.Warn("audit: secret mutation not logged — org load failed",
+			"action", action, "name", name, "err", err)
+		return
+	}
+	auditLog(r.Context(), h.deps.Queries, mustClaims(r).Login, audit.Entry{
+		OrgID:      org.ID,
+		Action:     action,
+		TargetKind: "secret",
+		Detail:     map[string]any{"name": name},
+	})
 }
