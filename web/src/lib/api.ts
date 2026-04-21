@@ -1,6 +1,6 @@
 // web/src/lib/api.ts
 import type {
-  RepoConnection, Skill, Schedule, RunSummary, RunDetail, RunEvent, SecretMeta, Me
+  RepoConnection, Skill, Schedule, RunSummary, RunDetail, RunEvent, SecretMeta, Me, AuditEntry
 } from './types'
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
@@ -68,5 +68,15 @@ export const api = {
         body: JSON.stringify({ value }),
       }),
     delete: (name: string) => apiFetch<void>(`/api/secrets/${name}`, { method: 'DELETE' }),
+  },
+
+  audit: {
+    list: (params?: { limit?: number; offset?: number }) => {
+      const qs = new URLSearchParams()
+      if (params?.limit) qs.set('limit', String(params.limit))
+      if (params?.offset) qs.set('offset', String(params.offset))
+      const q = qs.toString()
+      return apiFetch<AuditEntry[]>(q ? `/api/audit?${q}` : '/api/audit')
+    },
   },
 }
