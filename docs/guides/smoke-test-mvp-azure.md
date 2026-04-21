@@ -25,7 +25,7 @@ for the audit-verification and push-webhook steps.
   1. A **skill repo** containing `cronfoundry.yaml` + one `SKILL.md`. You can
      copy `testdata/` from this repo into a new private repo to get going.
   2. A **reports repo** where the `github-issue` destination will file.
-- Local clone of this repo for the admin CLI.
+- Local clone of this repo (needed for the Bicep deploy in §3).
 
 ## 2. Register the GitHub App
 

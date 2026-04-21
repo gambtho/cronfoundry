@@ -36,7 +36,10 @@ export default function LogTail({ runId, status }: Props) {
       }
     }
     const es = new EventSource(api.runs.eventsStreamURL(runId))
-    es.onopen = () => { retryRef.current = 0 }
+    es.onopen = () => {
+      retryRef.current = 0
+      setLost(false)
+    }
     es.onmessage = ev => {
       try {
         const parsed = JSON.parse(ev.data) as RunEvent
@@ -138,7 +141,11 @@ function LogRow({ ev }: { ev: RunEvent }) {
         </span>
       )}
       {expanded && (
-        <pre className="mt-1 whitespace-pre-wrap break-all text-gray-500">
+        <pre
+          onClick={e => e.stopPropagation()}
+          onKeyDown={e => e.stopPropagation()}
+          className="mt-1 whitespace-pre-wrap break-all text-gray-500"
+        >
           {JSON.stringify(ev.payload_json, null, 2)}
         </pre>
       )}
