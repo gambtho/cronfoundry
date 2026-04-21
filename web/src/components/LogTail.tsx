@@ -23,6 +23,9 @@ export default function LogTail({ runId, status }: Props) {
   const [lost, setLost] = useState(false)
 
   useEffect(() => {
+    setEvents([])
+    setLost(false)
+    retryRef.current = 0
     if (TERMINAL.has(status)) {
       let cancelled = false
       api.runs.events(runId).then(rows => {
@@ -32,8 +35,8 @@ export default function LogTail({ runId, status }: Props) {
         cancelled = true
       }
     }
-    retryRef.current = 0
     const es = new EventSource(api.runs.eventsStreamURL(runId))
+    es.onopen = () => { retryRef.current = 0 }
     es.onmessage = ev => {
       try {
         const parsed = JSON.parse(ev.data) as RunEvent
@@ -113,6 +116,15 @@ function LogRow({ ev }: { ev: RunEvent }) {
   return (
     <div
       onClick={() => setExpanded(v => !v)}
+      onKeyDown={e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          if (e.key === ' ') e.preventDefault()
+          setExpanded(v => !v)
+        }
+      }}
+      role="button"
+      tabIndex={0}
+      aria-expanded={expanded}
       className="cursor-pointer border-b border-gray-800/50 py-0.5 hover:bg-gray-800/30"
     >
       <span className="text-gray-600">{new Date(ev.ts).toLocaleTimeString()} </span>
