@@ -54,13 +54,13 @@ func runAdminListSchedules(ctx context.Context, out io.Writer) error {
 	}
 
 	if len(rows) == 0 {
-		fmt.Fprintln(out, "(no schedules discovered yet)")
+		_, _ = fmt.Fprintln(out, "(no schedules discovered yet)")
 		return nil
 	}
 	tw := tabwriter.NewWriter(out, 2, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "REPO\tSKILL\tSCHEDULE\tCRON\tPROVIDER\tENABLED")
+	_, _ = fmt.Fprintln(tw, "REPO\tSKILL\tSCHEDULE\tCRON\tPROVIDER\tENABLED")
 	for _, r := range rows {
-		fmt.Fprintf(tw, "%s/%s\t%s\t%s\t%s\t%s\t%t\n",
+		_, _ = fmt.Fprintf(tw, "%s/%s\t%s\t%s\t%s\t%s\t%t\n",
 			r.Owner, r.RepoName, r.SkillPath, r.Name, r.Cron, r.Provider, r.Enabled)
 	}
 	return tw.Flush()

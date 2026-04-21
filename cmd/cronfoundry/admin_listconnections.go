@@ -54,11 +54,11 @@ func runAdminListConnections(ctx context.Context, out io.Writer) error {
 	}
 
 	if len(rows) == 0 {
-		fmt.Fprintln(out, "(no connected repos)")
+		_, _ = fmt.Fprintln(out, "(no connected repos)")
 		return nil
 	}
 	tw := tabwriter.NewWriter(out, 2, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "REPO\tBRANCH\tINSTALL\tINTERVAL\tLAST SYNC\tSTATE")
+	_, _ = fmt.Fprintln(tw, "REPO\tBRANCH\tINSTALL\tINTERVAL\tLAST SYNC\tSTATE")
 	for _, r := range rows {
 		sync := "never"
 		if r.LastSyncedAt.Valid {
@@ -68,7 +68,7 @@ func runAdminListConnections(ctx context.Context, out io.Writer) error {
 		if r.LastSyncError != nil && *r.LastSyncError != "" {
 			state = "ERROR"
 		}
-		fmt.Fprintf(tw, "%s/%s\t%s\t%d\t%ds\t%s\t%s\n",
+		_, _ = fmt.Fprintf(tw, "%s/%s\t%s\t%d\t%ds\t%s\t%s\n",
 			r.Owner, r.Name, r.DefaultBranch, r.GithubAppInstallID, r.SyncIntervalSec, sync, state)
 	}
 	return tw.Flush()

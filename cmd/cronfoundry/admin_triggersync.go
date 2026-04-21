@@ -20,10 +20,9 @@ import (
 )
 
 const (
-	envGitHubAppID     = "CRONFOUNDRY_GITHUB_APP_ID"
-	envGitHubAppPEM    = "CRONFOUNDRY_GITHUB_APP_PEM"
-	envGitHubBaseURL   = "CRONFOUNDRY_GITHUB_BASE_URL"
-	envGitHubCloneBase = "CRONFOUNDRY_GITHUB_CLONE_BASE"
+	envGitHubAppID   = "CRONFOUNDRY_GITHUB_APP_ID"
+	envGitHubAppPEM  = "CRONFOUNDRY_GITHUB_APP_PEM"
+	envGitHubBaseURL = "CRONFOUNDRY_GITHUB_BASE_URL"
 )
 
 func newAdminTriggerSyncCmd() *cobra.Command {

@@ -100,14 +100,14 @@ func runAdminListRuns(ctx context.Context, limit int, scheduleName string, out i
 	}
 
 	if len(display) == 0 {
-		fmt.Fprintln(out, "(no runs yet)")
+		_, _ = fmt.Fprintln(out, "(no runs yet)")
 		return nil
 	}
 
 	tw := tabwriter.NewWriter(out, 2, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "RUN ID\tSCHEDULE\tSKILL\tSTATUS\tSTARTED\tDURATION")
+	_, _ = fmt.Fprintln(tw, "RUN ID\tSCHEDULE\tSKILL\tSTATUS\tSTARTED\tDURATION")
 	for _, r := range display {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
 			r.id, r.scheduleName, r.skillPath, r.status, r.started, r.duration)
 	}
 	return tw.Flush()
