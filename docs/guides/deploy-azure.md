@@ -105,7 +105,7 @@ az containerapp job update \
 azd down
 ```
 
-## Enabling the Web UI (after P5 ships)
+## Enabling the Web UI
 
 Once the React UI is deployed, open ingress to the public:
 
