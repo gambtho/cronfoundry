@@ -3,7 +3,15 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { RunStatusBadge } from '../components/RunStatusBadge'
-import type { RunSummary } from '../lib/types'
+import type { RunSummary, RunEvent } from '../lib/types'
+
+function eventColorClass(ev: RunEvent): string {
+  if (ev.event_type === 'secret.denied') return 'text-yellow-400 font-semibold'
+  if (ev.event_type === 'secret.fetched') return 'text-emerald-500'
+  if (ev.event_type === 'manifest.set') return 'text-sky-400'
+  if (ev.level === 'error') return 'text-red-400'
+  return ''
+}
 
 export default function Runs() {
   const [selected, setSelected] = useState<RunSummary | null>(null)
@@ -102,9 +110,14 @@ function RunDetail({ runId, onClose }: { runId: string; onClose: () => void }) {
             <span className="text-gray-600">
               {new Date(ev.ts).toLocaleTimeString()}{' '}
             </span>
-            <span className={ev.level === 'error' ? 'text-red-400' : ''}>
+            <span className={eventColorClass(ev)}>
               {ev.event_type}
             </span>
+            {ev.event_type === 'secret.denied' && (ev.payload_json as any)?.name && (
+              <span className="text-gray-500 ml-2">
+                name={(ev.payload_json as any).name}
+              </span>
+            )}
           </div>
         ))}
       </div>
