@@ -58,6 +58,8 @@ cd deploy && docker compose logs -f cronfoundry
 
 See [`docs/guides/smoke-test-p2.md`](docs/guides/smoke-test-p2.md) for the full walkthrough with GitHub App registration.
 
+After deploying and connecting a GitHub App, set up the push webhook — see [`docs/webhook-setup.md`](docs/webhook-setup.md) for step-by-step instructions.
+
 ## Quick start (standalone runner)
 
 A tiny end-to-end run with the bundled smoke fixture:
