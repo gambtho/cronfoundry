@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/gambtho/cronfoundry/internal/config"
 	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
 )
 
@@ -34,6 +35,9 @@ type RunContext struct {
 	Writeback       json.RawMessage `json:"writeback,omitempty"`
 	Env             json.RawMessage `json:"env"`
 	FrontmatterJSON json.RawMessage `json:"frontmatter"`
+	// SecretManifest lists the names of secrets this run is allowed to fetch;
+	// derived from destinations/env/llm_secret_ref.
+	SecretManifest []string `json:"secret_manifest"`
 }
 
 // ServeHTTP implements the GET /internal/runs/{id}/context endpoint.
@@ -86,6 +90,7 @@ func (h runContextHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Env:             row.EnvJson,
 		FrontmatterJSON: row.FrontmatterJson,
 	}
+	out.SecretManifest = config.CollectSecretRefs(row.DestinationsJson, row.EnvJson, row.LlmSecretRef)
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(out); err != nil {
 		// Body already partially written; nothing to recover. The API's

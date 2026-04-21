@@ -212,6 +212,134 @@ func TestRunContext_MissingRun(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
 }
 
+// seedRunWithSecrets creates a full chain (organization → repo_connection →
+// skill → schedule → run) with parameterized destinations_json, env_json, and
+// llm_secret_ref so tests can assert on the derived secret manifest. Returns
+// the run's UUID and the signed-token hash bound to the run row.
+func seedRunWithSecrets(t *testing.T, pool *pgxpool.Pool, destinations, env string, llmRef *string) (uuid.UUID, pgtype.UUID) {
+	t.Helper()
+	ctx := context.Background()
+
+	var orgPG pgtype.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO organization (name) VALUES ('o') RETURNING id`).Scan(&orgPG))
+	var repoID pgtype.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO repo_connection (org_id, github_app_install_id, owner, name, default_branch)
+		 VALUES ($1, 42, 'acme', 'widgets', 'main') RETURNING id`, orgPG).Scan(&repoID))
+	var skillID pgtype.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO skill (org_id, repo_id, path, name, current_sha, frontmatter_json)
+		 VALUES ($1, $2, 'skills/a', 'a', 'sha-1', '{"name":"a"}'::jsonb) RETURNING id`,
+		orgPG, repoID).Scan(&skillID))
+	var schedID pgtype.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO schedule (org_id, skill_id, name, cron, provider, model, destinations_json, env_json, llm_secret_ref)
+		 VALUES ($1, $2, 's', '* * * * *', 'openai', 'gpt-4o-mini', $3::jsonb, $4::jsonb, $5) RETURNING id`,
+		orgPG, skillID, destinations, env, llmRef).Scan(&schedID))
+
+	var runPG pgtype.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO run (org_id, schedule_id, skill_sha, status, fire_reason, runner_token_hash)
+		 VALUES ($1, $2, 'sha-1', 'pending', 'manual', 'hash-placeholder') RETURNING id`,
+		orgPG, schedID).Scan(&runPG))
+
+	return uuid.UUID(runPG.Bytes), orgPG
+}
+
+func TestRunContext_IncludesSecretManifest(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, cleanup := testdb.BootPG(t)
+	defer cleanup()
+
+	t.Run("populates manifest from destinations, env, and llm_secret_ref", func(t *testing.T) {
+		dests := `[{"slack": {"secret": "slack_url"}}, {"github-issue": {"repo": "o/r"}}]`
+		env := `{"TOKEN": {"secret": "api_tok"}, "LOOKBACK": {"literal": "7"}}`
+		llmRef := "openai_key"
+		runID, orgID := seedRunWithSecrets(t, pool, dests, env, &llmRef)
+
+		signer := token.New(randomMaster(t))
+		tok, hash, err := signer.Sign(token.RunClaims{
+			RunID:     runID,
+			OrgID:     uuid.UUID(orgID.Bytes),
+			ExpiresAt: time.Now().Add(time.Minute),
+		})
+		require.NoError(t, err)
+		bindRunHash(t, pool, runID, hash)
+
+		srv := NewServer("127.0.0.1:0", Deps{Pool: pool, Signer: signer})
+		ts := httptest.NewServer(srv.Handler)
+		defer ts.Close()
+
+		req, _ := http.NewRequest("GET", ts.URL+"/internal/runs/"+runID.String()+"/context", nil)
+		req.Header.Set("Authorization", "Bearer "+tok)
+		resp, err := ts.Client().Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		var body RunContext
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+		assert.Equal(t, []string{"api_tok", "openai_key", "slack_url"}, body.SecretManifest)
+
+		// Also assert raw JSON key is present and snake_case.
+		resp2, err := ts.Client().Do(mustNewReq(t, "GET", ts.URL+"/internal/runs/"+runID.String()+"/context", tok))
+		require.NoError(t, err)
+		defer resp2.Body.Close()
+		var raw map[string]any
+		require.NoError(t, json.NewDecoder(resp2.Body).Decode(&raw))
+		_, ok := raw["secret_manifest"]
+		assert.True(t, ok, "response JSON must include secret_manifest key")
+	})
+
+	t.Run("returns non-nil empty slice when schedule has no secrets", func(t *testing.T) {
+		runID, orgID := seedRunWithSecrets(t, pool, `[]`, `{}`, nil)
+
+		signer := token.New(randomMaster(t))
+		tok, hash, err := signer.Sign(token.RunClaims{
+			RunID:     runID,
+			OrgID:     uuid.UUID(orgID.Bytes),
+			ExpiresAt: time.Now().Add(time.Minute),
+		})
+		require.NoError(t, err)
+		bindRunHash(t, pool, runID, hash)
+
+		srv := NewServer("127.0.0.1:0", Deps{Pool: pool, Signer: signer})
+		ts := httptest.NewServer(srv.Handler)
+		defer ts.Close()
+
+		req, _ := http.NewRequest("GET", ts.URL+"/internal/runs/"+runID.String()+"/context", nil)
+		req.Header.Set("Authorization", "Bearer "+tok)
+		resp, err := ts.Client().Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+
+		var body RunContext
+		require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+		assert.Empty(t, body.SecretManifest)
+
+		// Confirm the JSON encodes as [] rather than null so clients can
+		// iterate without a nil-check.
+		var raw map[string]json.RawMessage
+		resp2, err := ts.Client().Do(mustNewReq(t, "GET", ts.URL+"/internal/runs/"+runID.String()+"/context", tok))
+		require.NoError(t, err)
+		defer resp2.Body.Close()
+		require.NoError(t, json.NewDecoder(resp2.Body).Decode(&raw))
+		assert.Equal(t, "[]", string(raw["secret_manifest"]))
+	})
+}
+
+func mustNewReq(t *testing.T, method, url, bearer string) *http.Request {
+	t.Helper()
+	req, err := http.NewRequest(method, url, nil)
+	require.NoError(t, err)
+	req.Header.Set("Authorization", "Bearer "+bearer)
+	return req
+}
+
 func TestRunContext_BadURLID(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
