@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, cleanup } from '@testing-library/react'
+import { render, cleanup, act } from '@testing-library/react'
 import LogTail from './LogTail'
 
 class MockEventSource {
@@ -46,6 +46,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()
+  delete (HTMLElement.prototype as { scrollTo?: unknown }).scrollTo
 })
 
 describe('LogTail — streaming mode', () => {
@@ -111,11 +112,15 @@ describe('LogTail — reconnect cap', () => {
     )
     const es = MockEventSource.instances[0]
 
-    for (let i = 0; i < 4; i++) es.emitError()
+    act(() => {
+      for (let i = 0; i < 4; i++) es.emitError()
+    })
     expect(queryByText(/connection lost/i)).toBeNull()
     expect(es.closed).toBe(false)
 
-    es.emitError() // 5th
+    act(() => {
+      es.emitError() // 5th
+    })
     await findByText(/connection lost/i)
     expect(es.closed).toBe(true)
   })
@@ -132,13 +137,15 @@ describe('LogTail — auto-scroll', () => {
 
     render(<LogTail runId="abc" status="running" />)
     const es = MockEventSource.instances[0]
-    es.emit({
-      id: 10,
-      run_id: 'abc',
-      ts: new Date().toISOString(),
-      level: 'info',
-      event_type: 'llm.chunk',
-      payload_json: {},
+    act(() => {
+      es.emit({
+        id: 10,
+        run_id: 'abc',
+        ts: new Date().toISOString(),
+        level: 'info',
+        event_type: 'llm.chunk',
+        payload_json: {},
+      })
     })
     // One frame later React has flushed and the effect has run
     return Promise.resolve().then(() => {
