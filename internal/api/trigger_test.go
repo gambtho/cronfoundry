@@ -57,7 +57,7 @@ func TestRunNow_CreatesPendingRun(t *testing.T) {
 		ts.URL+"/internal/schedules/"+uuidString(schedID)+"/run-now",
 		"application/json", bytes.NewReader(buf))
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var out struct {
@@ -98,7 +98,7 @@ func TestRunNow_MissingSchedule(t *testing.T) {
 		ts.URL+"/internal/schedules/00000000-0000-0000-0000-000000000000/run-now",
 		"application/json", bytes.NewReader([]byte(`{}`)))
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
 
@@ -117,7 +117,7 @@ func TestRunNow_BadScheduleID(t *testing.T) {
 		ts.URL+"/internal/schedules/not-a-uuid/run-now",
 		"application/json", bytes.NewReader([]byte(`{}`)))
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
@@ -139,7 +139,7 @@ func TestRunNow_NoActor(t *testing.T) {
 		ts.URL+"/internal/schedules/"+uuidString(schedID)+"/run-now",
 		"application/json", bytes.NewReader([]byte(`{}`)))
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var actor *string
@@ -201,7 +201,7 @@ func TestTrigger_WritesAuditRow(t *testing.T) {
 		ts.URL+"/internal/schedules/"+uuidString(schedID)+"/run-now",
 		"application/json", bytes.NewReader(buf))
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var out struct {
@@ -263,7 +263,7 @@ func TestTrigger_AuditFallsBackToSystemActor(t *testing.T) {
 		ts.URL+"/internal/schedules/"+uuidString(schedID)+"/run-now",
 		"application/json", bytes.NewReader([]byte(`{}`)))
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var actor *string

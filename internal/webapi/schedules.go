@@ -109,7 +109,7 @@ func (h *schedulesHandler) runNow(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadGateway, "trigger call failed", "gateway")
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 400 {
 		writeErr(w, resp.StatusCode, "trigger failed", "trigger_error")
 		return

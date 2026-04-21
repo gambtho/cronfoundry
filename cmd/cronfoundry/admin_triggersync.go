@@ -109,6 +109,6 @@ func runAdminTriggerSync(ctx context.Context, repo string, out io.Writer) error 
 	if err := poller.SyncOne(ctx, connID); err != nil {
 		return fmt.Errorf("sync: %w", err)
 	}
-	fmt.Fprintf(out, "Synced %s/%s\n", owner, name)
+	_, _ = fmt.Fprintf(out, "Synced %s/%s\n", owner, name)
 	return nil
 }

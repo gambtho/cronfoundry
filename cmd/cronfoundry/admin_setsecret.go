@@ -83,7 +83,7 @@ func runAdminSetSecret(ctx context.Context, name string, in io.Reader, out io.Wr
 	if err := store.Put(ctx, name, value); err != nil {
 		return fmt.Errorf("put secret: %w", err)
 	}
-	fmt.Fprintf(out, "Stored secret %q\n", name)
+	_, _ = fmt.Fprintf(out, "Stored secret %q\n", name)
 	return nil
 }
 

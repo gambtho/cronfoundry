@@ -70,12 +70,12 @@ func TestServe_BootsAndHealthz(t *testing.T) {
 			break
 		}
 		if resp != nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 	require.NotNil(t, resp, "healthz never responded; err=%v", healthErr)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, 200, resp.StatusCode)
 	body, _ := io.ReadAll(resp.Body)
 	assert.Equal(t, "ok", string(body))
@@ -170,11 +170,11 @@ func TestServe_APIMe_WithSession(t *testing.T) {
 	for time.Now().Before(deadline) {
 		resp, err := http.Get("http://" + addr + "/healthz")
 		if err == nil && resp.StatusCode == 200 {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			break
 		}
 		if resp != nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -192,7 +192,7 @@ func TestServe_APIMe_WithSession(t *testing.T) {
 	req.AddCookie(&http.Cookie{Name: "cf_session", Value: cookie})
 	resp, err := http.DefaultClient.Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, 200, resp.StatusCode)
 
 	var got map[string]string

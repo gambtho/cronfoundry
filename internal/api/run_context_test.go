@@ -129,7 +129,7 @@ func TestRunContext_ReturnsContext(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+tok)
 	resp, err := ts.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	var body map[string]any
@@ -176,7 +176,7 @@ func TestRunContext_RejectsMismatchedRunID(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+tok)
 	resp, err := ts.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 }
 
@@ -204,7 +204,7 @@ func TestRunContext_MissingRun(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+tok)
 	resp, err := ts.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	// The bearer middleware's hash check rejects tokens pointing at
 	// nonexistent runs before the handler ever runs. Previously the
 	// handler returned 404; now the middleware returns 401 which is
@@ -277,7 +277,7 @@ func TestRunContext_IncludesSecretManifest(t *testing.T) {
 		req.Header.Set("Authorization", "Bearer "+tok)
 		resp, err := ts.Client().Do(req)
 		require.NoError(t, err)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 
 		var body RunContext
@@ -314,7 +314,7 @@ func TestRunContext_IncludesSecretManifest(t *testing.T) {
 		req.Header.Set("Authorization", "Bearer "+tok)
 		resp, err := ts.Client().Do(req)
 		require.NoError(t, err)
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 
 		var body RunContext
@@ -368,6 +368,6 @@ func TestRunContext_BadURLID(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+tok)
 	resp, err := ts.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
