@@ -5,10 +5,11 @@ OpenAI / Anthropic / Azure AI Foundry on a schedule, publishes the output to
 GitHub issues, Slack, Discord, or Teams, and commits learnings back to the
 skill repo.
 
-**Status:** `P2 — service layer complete`. Includes always-on scheduler, GitHub
-App sync, `/internal` HTTP API, subprocess runner dispatch, and docker-compose
-dev harness. Web UI and Azure deployment are in later phases (P3–P4). See
-[`docs/superpowers/plans/`](docs/superpowers/plans/) for the roadmap.
+**Status:** `P6 — MVP gap-close`. Service layer (P2), auth (P3a), Azure
+deployment (P4), operator web UI (P5), and the MVP gap-close phases (P6a–P6d:
+push-webhook resync, secret-manifest logging, audit log, persistent user
+table) are all landed. See [`docs/superpowers/plans/`](docs/superpowers/plans/)
+for the per-phase implementation plans.
 
 ## Requirements
 
@@ -224,11 +225,27 @@ failure), or `failed` (load/LLM error). Per-destination failures are isolated
 
 ## Roadmap
 
-- **P1** (this release) — Core runner CLI. ✅
+- **P1** — Core runner CLI. ✅
 - **P2** — Postgres + API + scheduler + Azure Key Vault. Skills run on cron,
-  not just one-shot.
-- **P3** — React web UI with GitHub OAuth, read-only dashboard + secret CRUD.
-- **P4** — Azure Bicep deployment, GHCR image publishing, CI/CD.
+  not just one-shot. ✅
+- **P3** — React web UI with GitHub OAuth, read-only dashboard + secret CRUD. ✅
+- **P4** — Azure Bicep deployment, GHCR image publishing, CI/CD. ✅
+- **P5** — Operator web UI: dashboard, runs, repos, secrets. ✅
+- **P6** — MVP gap-close: GitHub push-webhook resync, run-scoped secret-manifest
+  logging, audit log on all mutations, persistent `app_user` table with DB-backed
+  allowlist. ✅
+
+### New in P6 (this release)
+
+- `POST /webhook/github` — GitHub App push webhook; requires
+  `CRONFOUNDRY_GITHUB_WEBHOOK_SECRET` (see [`docs/webhook-setup.md`](docs/webhook-setup.md))
+- `GET /api/audit` — admin-only audit log of every mutating API call
+- `GET/POST/PATCH/DELETE /api/users` — admin user management backed by the new
+  `app_user` table; env vars `CRONFOUNDRY_ADMIN_LOGINS` /
+  `CRONFOUNDRY_VIEWER_LOGINS` seed the table on first startup, then UI edits win
+- Per-run `manifest.set`, `secret.fetched`, and `secret.denied` events emitted
+  on the run timeline so operators can see exactly which KV entries each run
+  touched
 
 ## License
 
