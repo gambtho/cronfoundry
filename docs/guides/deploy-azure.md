@@ -12,7 +12,7 @@
 
 1. Go to https://github.com/settings/apps/new
 2. Set name: `cronfoundry-<yourname>`
-3. Homepage URL: `https://github.com/gambtho/cronfoundry`
+3. Homepage URL: your fork or self-hosted URL (e.g. `https://github.com/yourname/cronfoundry`)
 4. Callback URL: `https://<your-serve-fqdn>/oauth/callback` (update after deploy)
 5. Webhook URL: `https://<your-serve-fqdn>/webhooks/github` (update after deploy)
 6. Permissions:
@@ -35,8 +35,9 @@ cp deploy/params.example.json deploy/params.json
 # Using azd (recommended):
 azd up
 
-# Or directly with Azure CLI:
+# Or directly with Azure CLI (--name main ensures you can reference outputs later):
 az deployment sub create \
+  --name main \
   --location eastus \
   --template-file deploy/main.bicep \
   --parameters deploy/params.json
@@ -57,7 +58,10 @@ az keyvault secret set \
 
 ## 5. Initialize the database
 
-CronFoundry auto-runs migrations on startup. Seed the first organization:
+CronFoundry auto-runs migrations on startup. Seed the first organization.
+
+> **Note:** Replace `cf-serve-prod` and `rg-cronfoundry-prod` with the actual names derived from
+> your `prefix` and `env` params (defaults: prefix=`cf`, env=`prod`).
 
 ```bash
 az containerapp exec \
@@ -92,6 +96,10 @@ az containerapp job update \
 ## Teardown
 
 > **WARNING:** `azd down` deletes the entire resource group including the Postgres database. Back up first.
+>
+> **Key Vault note:** If `enablePurgeProtection` was set to `true` in params, the soft-deleted vault
+> cannot be purged for `softDeleteRetentionDays` (default 7). Re-deploying with the same `prefix`/`env`
+> will fail with a vault name conflict until the retention window expires.
 
 ```bash
 azd down

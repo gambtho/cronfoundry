@@ -45,12 +45,12 @@ az containerapp exec \
   --name cf-serve-prod \
   --resource-group rg-cronfoundry-prod \
   --command "/cronfoundry admin list-schedules"
-# Note a schedule ID
+# Note a repo reference (owner/name) from the listed schedules
 
 az containerapp exec \
   --name cf-serve-prod \
   --resource-group rg-cronfoundry-prod \
-  --command "/cronfoundry admin trigger-sync"
+  --command "/cronfoundry admin trigger-sync <owner/name>"
 ```
 
 Then confirm a runner Job execution started:
@@ -63,6 +63,11 @@ az containerapp job execution list \
 ```
 
 ## 5. Key Vault access logged
+
+> **Prerequisite:** Key Vault diagnostic settings must be enabled to route audit logs to the Log
+> Analytics workspace. Enable via the Azure Portal (Key Vault → Diagnostic settings → Add setting →
+> select `AuditEvent` → send to your Log Analytics workspace) or add a
+> `Microsoft.Insights/diagnosticSettings` resource to `deploy/modules/keyVault.bicep`.
 
 In Log Analytics:
 

@@ -22,12 +22,15 @@ ContainerAppConsoleLogs_CL
 
 ```kql
 ContainerAppConsoleLogs_CL
+| where TimeGenerated > ago(15m)
 | where Log_s contains "scheduler: tick"
-| summarize lastTick=max(TimeGenerated)
+| summarize lastTick = max(TimeGenerated)
+| extend lastTick = coalesce(lastTick, datetime(1970-01-01))
 | where now() - lastTick > 5m
 ```
 
-**Threshold:** No tick in 5 minutes
+**Threshold:** Number of results >= 1 (using a fallback ensures a row is returned even when the scheduler is fully silent)
+**Evaluation frequency:** <= 5 minutes
 **Action:** PagerDuty (high priority — scheduler is down)
 
 ## 3. Runner OOM

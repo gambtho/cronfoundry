@@ -7,7 +7,9 @@
     "imageTag": { "value": "latest" },
     "githubAppId": { "value": "YOUR_GITHUB_APP_ID" },
     "githubAppOAuthClientId": { "value": "YOUR_OAUTH_CLIENT_ID" },
-    "postgresAdminPassword": { "value": "REPLACE_WITH_STRONG_PASSWORD" },
+    "githubAppOAuthClientSecret": { "value": "YOUR_OAUTH_CLIENT_SECRET" },
+    "postgresAdminPassword": { "value": "REPLACE_WITH_STRONG_PASSWORD_NO_SPECIAL_URL_CHARS" },
+    "masterKey": { "value": "RUN_cronfoundry_admin_init_TO_GENERATE" },
     "adminLogins": { "value": "your-github-login" },
     "viewerLogins": { "value": "" },
     "ingressExternal": { "value": false }

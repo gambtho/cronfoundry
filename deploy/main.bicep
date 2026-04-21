@@ -1,5 +1,5 @@
 // Subscription-scoped deployment.
-// Deploy: az deployment sub create -l eastus -f deploy/main.bicep -p deploy/params.json
+// Deploy: az deployment sub create --name main -l eastus -f deploy/main.bicep -p deploy/params.json
 // Or:     azd up
 targetScope = 'subscription'
 
@@ -10,7 +10,11 @@ param githubAppId string
 @secure()
 param githubAppOAuthClientId string
 @secure()
+param githubAppOAuthClientSecret string
+@secure()
 param postgresAdminPassword string
+@secure()
+param masterKey string
 param adminLogins string
 param viewerLogins string = ''
 param ingressExternal bool = false
@@ -59,10 +63,8 @@ module pg 'modules/postgres.bicep' = {
     location: location
     serverName: '${prefix}-pg-${env}'
     adminPassword: postgresAdminPassword
-    // Subnet and private DNS zone IDs are empty for initial deploy without VNet.
-    // Add VNet integration in a follow-up by wiring a vnet module here.
-    subnetId: ''
-    privateDnsZoneId: ''
+    // subnetId/privateDnsZoneId are empty for the initial public-networking deploy.
+    // Add VNet integration by wiring a vnet module and passing real subnet/DNS IDs.
   }
 }
 
@@ -78,9 +80,12 @@ module cae 'modules/containerAppsEnv.bicep' = {
   }
 }
 
-var pgDsn = 'postgres://cfadmin:${postgresAdminPassword}@${pg.outputs.fqdn}/cronfoundry?sslmode=require'
+// DSN uses the admin username surfaced from the postgres module to avoid duplication.
+var pgDsn = 'postgres://${pg.outputs.adminUser}:${postgresAdminPassword}@${pg.outputs.fqdn}/cronfoundry?sslmode=require'
 var runnerJobName = '${prefix}-runner-${env}'
 
+// serve deploys first (runner depends on serve.outputs.fqdn); serve uses runnerJobName var
+// directly so it does not depend on runner's output — no circular dependency.
 module runner 'modules/runnerJob.bicep' = {
   scope: rg
   name: 'runnerJob'
@@ -91,7 +96,9 @@ module runner 'modules/runnerJob.bicep' = {
     imageTag: imageTag
     cfRunnerIdentityId: identities.outputs.cfRunnerId
     cfRunnerClientId: identities.outputs.cfRunnerClientId
-    apiBaseUrl: 'http://${prefix}-serve-${env}.internal.${cae.outputs.defaultDomain}'
+    apiBaseUrl: ingressExternal
+      ? 'https://${serve.outputs.fqdn}'
+      : 'http://${serve.outputs.fqdn}'
   }
 }
 
@@ -108,12 +115,14 @@ module serve 'modules/containerApp.bicep' = {
     databaseUrl: pgDsn
     githubAppId: githubAppId
     oauthClientId: githubAppOAuthClientId
+    oauthClientSecret: githubAppOAuthClientSecret
+    masterKey: masterKey
     adminLogins: adminLogins
     viewerLogins: viewerLogins
     kvUrl: kv.outputs.kvUrl
     azureSubscriptionId: subscription().subscriptionId
     azureResourceGroup: rgName
-    azureCaeJobName: runner.outputs.jobName
+    azureCaeJobName: runnerJobName
     ingressExternal: ingressExternal
   }
 }

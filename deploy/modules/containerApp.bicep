@@ -8,6 +8,11 @@ param ingressExternal bool = false
 param databaseUrl string
 param githubAppId string
 param oauthClientId string
+@secure()
+param oauthClientSecret string
+@secure()
+param masterKey string
+param githubAppPemSecretName string = 'github-app-pem'
 param adminLogins string
 param viewerLogins string = ''
 param kvUrl string
@@ -32,6 +37,15 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
         targetPort: 8080
         transport: 'http'
       }
+      secrets: [
+        { name: 'master-key', value: masterKey }
+        { name: 'oauth-client-secret', value: oauthClientSecret }
+        {
+          name: 'github-app-pem'
+          keyVaultUrl: '${kvUrl}secrets/${githubAppPemSecretName}'
+          identity: cfServeIdentityId
+        }
+      ]
     }
     template: {
       containers: [
@@ -44,9 +58,12 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             memory: '1Gi'
           }
           env: [
-            { name: 'DATABASE_URL', value: databaseUrl }
-            { name: 'GITHUB_APP_ID', value: githubAppId }
+            { name: 'CRONFOUNDRY_DATABASE_URL', value: databaseUrl }
+            { name: 'CRONFOUNDRY_GITHUB_APP_ID', value: githubAppId }
+            { name: 'CRONFOUNDRY_GITHUB_APP_PEM', secretRef: 'github-app-pem' }
             { name: 'CRONFOUNDRY_GITHUB_OAUTH_CLIENT_ID', value: oauthClientId }
+            { name: 'CRONFOUNDRY_GITHUB_OAUTH_CLIENT_SECRET', secretRef: 'oauth-client-secret' }
+            { name: 'CRONFOUNDRY_MASTER_KEY', secretRef: 'master-key' }
             { name: 'CRONFOUNDRY_ADMIN_LOGINS', value: adminLogins }
             { name: 'CRONFOUNDRY_VIEWER_LOGINS', value: viewerLogins }
             { name: 'AZURE_KEYVAULT_URL', value: kvUrl }
@@ -60,8 +77,10 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
         }
       ]
       scale: {
+        // maxReplicas is 1 until leader election / distributed locking is added to the scheduler.
+        // Two replicas without advisory locks can double-dispatch the same run_id.
         minReplicas: 1
-        maxReplicas: 2
+        maxReplicas: 1
       }
     }
   }

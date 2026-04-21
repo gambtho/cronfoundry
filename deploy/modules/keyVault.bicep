@@ -1,6 +1,9 @@
 param location string = resourceGroup().location
 param name string
 param cfServePrincipalId string
+@description('Enable purge protection. Irrevocable once true — prevents re-deploy with same vault name for softDeleteRetentionDays. Use true for prod only.')
+param enablePurgeProtection bool = false
+param softDeleteRetentionDays int = 7
 
 // Key Vault Secrets User built-in role
 var kvSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
@@ -16,8 +19,11 @@ resource kv 'Microsoft.KeyVault/vaults@2023-07-01' = {
     tenantId: subscription().tenantId
     enableRbacAuthorization: true
     enableSoftDelete: true
-    softDeleteRetentionInDays: 30
-    enablePurgeProtection: true
+    softDeleteRetentionInDays: softDeleteRetentionDays
+    enablePurgeProtection: enablePurgeProtection
+    // Public network access is intentional for MVP (Container Apps outbound IPs are dynamic).
+    // Harden by adding networkAcls with default-deny or setting publicNetworkAccess: 'Disabled'
+    // with a private endpoint once VNet integration is wired.
   }
 }
 
