@@ -31,6 +31,13 @@ class MockEventSource {
 beforeEach(() => {
   MockEventSource.instances = []
   vi.stubGlobal('EventSource', MockEventSource)
+  // Default fetch stub: returns empty event list so incidental api.runs.events()
+  // calls in non-static-mode tests don't produce unhandled rejections.
+  vi.stubGlobal('fetch', vi.fn(async () => ({
+    ok: true,
+    status: 200,
+    json: async () => [],
+  })))
 })
 
 afterEach(() => {
@@ -72,5 +79,24 @@ describe('LogTail — stream termination', () => {
     const es = MockEventSource.instances[0]
     es.emitDone()
     expect(es.closed).toBe(true)
+  })
+})
+
+describe('LogTail — static mode', () => {
+  it('fetches historical events when status is terminal on mount', async () => {
+    const fetchSpy = vi.fn(async () => [
+      { id: 1, run_id: 'abc', ts: new Date().toISOString(), level: 'info', event_type: 'llm.start', payload_json: {} },
+      { id: 2, run_id: 'abc', ts: new Date().toISOString(), level: 'info', event_type: 'publish.slack.ok', payload_json: {} },
+    ])
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      json: fetchSpy,
+    })))
+
+    const { findByText } = render(<LogTail runId="abc" status="succeeded" />)
+    await findByText('llm.start')
+    await findByText('publish.slack.ok')
+    expect(MockEventSource.instances).toHaveLength(0)
   })
 })

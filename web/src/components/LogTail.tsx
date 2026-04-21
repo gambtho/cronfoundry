@@ -17,7 +17,15 @@ export default function LogTail({ runId, status }: Props) {
   const [events, setEvents] = useState<RunEvent[]>([])
 
   useEffect(() => {
-    if (TERMINAL.has(status)) return
+    if (TERMINAL.has(status)) {
+      let cancelled = false
+      api.runs.events(runId).then(rows => {
+        if (!cancelled) setEvents(rows)
+      })
+      return () => {
+        cancelled = true
+      }
+    }
     const es = new EventSource(api.runs.eventsStreamURL(runId))
     es.onmessage = ev => {
       try {
