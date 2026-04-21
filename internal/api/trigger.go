@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/gambtho/cronfoundry/internal/audit"
 	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
 )
 
@@ -88,9 +90,30 @@ func (h runNowHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Record the manual trigger in audit_log. This endpoint is the single
+	// source of truth for schedule.run_now — the webapi handler at
+	// /api/schedules/{id}/run-now forwards here, so both UI and CLI paths
+	// produce exactly one audit row per trigger.
+	actor := "system"
+	if body.Actor != nil && *body.Actor != "" {
+		actor = *body.Actor
+	}
+	runID := uuid.UUID(run.ID.Bytes)
+	schedIDCopy := scheduleID
+	if err := audit.Log(r.Context(), q, audit.Entry{
+		OrgID:      sched.OrgID,
+		Actor:      actor,
+		Action:     "schedule.run_now",
+		TargetKind: "schedule",
+		TargetID:   &schedIDCopy,
+		Detail:     map[string]any{"run_id": runID.String()},
+	}); err != nil {
+		slog.Warn("audit: run_now log failed", "err", err)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{
-		"run_id": uuid.UUID(run.ID.Bytes).String(),
+		"run_id": runID.String(),
 	})
 }
 

@@ -103,15 +103,8 @@ func (h *schedulesHandler) runNow(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, resp.StatusCode, "trigger failed", "trigger_error")
 		return
 	}
-	if idParsed, err := uuid.Parse(idStr); err == nil {
-		if org, err := h.deps.Queries.GetFirstOrganization(r.Context()); err == nil {
-			auditLog(r.Context(), h.deps.Queries, actor, audit.Entry{
-				OrgID:      org.ID,
-				Action:     "schedule.run_now",
-				TargetKind: "schedule",
-				TargetID:   &idParsed,
-			})
-		}
-	}
+	// Audit is emitted by the internal /run-now endpoint (a single source of
+	// truth for schedule.run_now across UI, CLI, and direct internal calls).
+	// See internal/api/trigger.go.
 	w.WriteHeader(http.StatusAccepted)
 }
