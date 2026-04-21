@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: cf
+          POSTGRES_PASSWORD: cf
+          POSTGRES_DB: cronfoundry_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        env:
+          TEST_DATABASE_URL: postgres://cf:cf@localhost:5432/cronfoundry_test?sslmode=disable
+        run: go test ./... -timeout 120s
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v2.11.0
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build binaries
+        run: |
+          CGO_ENABLED=0 go build ./cmd/cronfoundry
+          CGO_ENABLED=0 go build ./cmd/runner
+
+      - name: Build Docker image (no push)
+        run: docker build -f deploy/Dockerfile -t cronfoundry:ci-check .

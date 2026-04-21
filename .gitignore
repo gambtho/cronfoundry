@@ -11,3 +11,4 @@ app.pem
 # Claude Code local state
 .claude/
 .worktrees/
+deploy/params.json

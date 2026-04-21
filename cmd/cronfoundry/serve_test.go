@@ -117,6 +117,7 @@ func TestServe_MissingGitHubAppID(t *testing.T) {
 }
 
 func TestBuildJobDispatcher_Local(t *testing.T) {
+	t.Setenv("DISPATCHER", "")
 	t.Setenv("AZURE_CAE_RESOURCE_GROUP", "")
 	t.Setenv("AZURE_CAE_JOB_NAME", "")
 	t.Setenv("AZURE_SUBSCRIPTION_ID", "")
@@ -127,6 +128,7 @@ func TestBuildJobDispatcher_Local(t *testing.T) {
 }
 
 func TestBuildSecretStore_Local(t *testing.T) {
+	t.Setenv("SECRET_STORE", "")
 	t.Setenv("AZURE_KEYVAULT_URL", "")
 	store, err := buildSecretStore(nil, pgtype.UUID{}, nil)
 	require.NoError(t, err)

@@ -3,10 +3,18 @@ package azure
 import (
 	"context"
 	"errors"
+	"fmt"
+	"regexp"
 	"sort"
 
 	"github.com/gambtho/cronfoundry/internal/secretstore"
 )
+
+// secretNameRe enforces Azure Key Vault secret name constraints: 1–127 alphanumeric/hyphen chars.
+var secretNameRe = regexp.MustCompile(`^[0-9a-zA-Z-]{1,127}$`)
+
+// ErrInvalidSecretName is returned when a secret name violates Azure Key Vault naming rules.
+var ErrInvalidSecretName = errors.New("azure keyvault: secret name must match ^[0-9a-zA-Z-]{1,127}$")
 
 // KeyVaultStore implements secretstore.SecretStore backed by Azure Key Vault.
 type KeyVaultStore struct {
@@ -36,6 +44,9 @@ func (s *KeyVaultStore) Get(ctx context.Context, name string) (string, error) {
 }
 
 func (s *KeyVaultStore) Put(ctx context.Context, name, value string) error {
+	if !secretNameRe.MatchString(name) {
+		return fmt.Errorf("%w: %q", ErrInvalidSecretName, name)
+	}
 	return s.client.SetSecret(ctx, name, value)
 }
 

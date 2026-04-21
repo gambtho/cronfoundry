@@ -31,18 +31,23 @@ func newAdminSetSecretCmd() *cobra.Command {
 }
 
 func runAdminSetSecret(ctx context.Context, name string, in io.Reader, out io.Writer) error {
-	encodedMaster := os.Getenv(envMasterKey)
-	if encodedMaster == "" {
-		return fmt.Errorf("%s is required; run `cronfoundry admin init` first", envMasterKey)
-	}
 	dsn := os.Getenv(envDatabaseURL)
 	if dsn == "" {
 		return fmt.Errorf("%s is required", envDatabaseURL)
 	}
 
-	master, err := secretstore.ParseMasterKey(encodedMaster)
-	if err != nil {
-		return fmt.Errorf("parse %s: %w", envMasterKey, err)
+	// master key is only needed for the local envelope store; skip it when Key Vault is configured.
+	var master []byte
+	if os.Getenv("AZURE_KEYVAULT_URL") == "" {
+		encodedMaster := os.Getenv(envMasterKey)
+		if encodedMaster == "" {
+			return fmt.Errorf("%s is required; run `cronfoundry admin init` first", envMasterKey)
+		}
+		var err error
+		master, err = secretstore.ParseMasterKey(encodedMaster)
+		if err != nil {
+			return fmt.Errorf("parse %s: %w", envMasterKey, err)
+		}
 	}
 
 	value, err := readOneLine(in)

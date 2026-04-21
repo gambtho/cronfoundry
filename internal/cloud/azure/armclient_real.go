@@ -26,7 +26,10 @@ func NewRealARMJobsClient(subscriptionID string, cred azcore.TokenCredential) (A
 // BeginStartExecution starts a Container Apps Job execution and polls until completion,
 // returning the execution name.
 func (c *realARMJobsClient) BeginStartExecution(ctx context.Context, resourceGroup, jobName string, spec JobExecutionTemplate) (string, error) {
-	template := toARMTemplate(spec)
+	template, err := toARMTemplate(spec)
+	if err != nil {
+		return "", err
+	}
 	poller, err := c.jobs.BeginStart(ctx, resourceGroup, jobName, &armappcontainers.JobsClientBeginStartOptions{
 		Template: &template,
 	})
@@ -44,12 +47,12 @@ func (c *realARMJobsClient) BeginStartExecution(ctx context.Context, resourceGro
 }
 
 // toARMTemplate converts our neutral JobExecutionTemplate into the ARM SDK type.
-func toARMTemplate(spec JobExecutionTemplate) armappcontainers.JobExecutionTemplate {
+func toARMTemplate(spec JobExecutionTemplate) (armappcontainers.JobExecutionTemplate, error) {
 	envVars := make([]*armappcontainers.EnvironmentVar, 0, len(spec.Env))
 	for _, kv := range spec.Env {
 		k, v, ok := strings.Cut(kv, "=")
 		if !ok {
-			continue
+			return armappcontainers.JobExecutionTemplate{}, fmt.Errorf("toARMTemplate: malformed env entry %q (missing '=')", kv)
 		}
 		name := k
 		value := v
@@ -72,5 +75,5 @@ func toARMTemplate(spec JobExecutionTemplate) armappcontainers.JobExecutionTempl
 
 	return armappcontainers.JobExecutionTemplate{
 		Containers: []*armappcontainers.JobExecutionContainer{container},
-	}
+	}, nil
 }
