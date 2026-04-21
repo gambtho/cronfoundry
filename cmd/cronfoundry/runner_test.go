@@ -76,7 +76,8 @@ func TestAPIClient_GetRunContext(t *testing.T) {
 			"repo":"acme/widgets",
 			"repo_id":"repo-77",
 			"provider":"openai",
-			"model":"gpt-4o-mini"
+			"model":"gpt-4o-mini",
+			"secret_manifest":["api_tok","openai_key","slack_url"]
 		}`)
 	}))
 	defer ts.Close()
@@ -89,6 +90,7 @@ func TestAPIClient_GetRunContext(t *testing.T) {
 	assert.Equal(t, "deadbeef", got.SkillSha)
 	assert.Equal(t, "repo-77", got.RepoID)
 	assert.Equal(t, "openai", got.Provider)
+	assert.Equal(t, []string{"api_tok", "openai_key", "slack_url"}, got.SecretManifest)
 }
 
 // TestAPIClient_GetSecrets_Scoped verifies names are URL-encoded and the
@@ -157,6 +159,36 @@ func TestAPIClient_PostEvents(t *testing.T) {
 	events, ok := body["events"].([]any)
 	require.True(t, ok)
 	require.Len(t, events, 1)
+}
+
+// TestAPIClient_PostEvents_ManifestSet verifies the shape of a
+// manifest.set event the runner posts at run start, declaring the
+// allowed secret names.
+func TestAPIClient_PostEvents_ManifestSet(t *testing.T) {
+	var body map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer ts.Close()
+
+	c := &apiClient{baseURL: ts.URL, token: "tok", http: ts.Client()}
+	err := c.PostEvents(context.Background(), "run-1", []event{{
+		Type:    "manifest.set",
+		Level:   "info",
+		Payload: map[string]any{"allowed": []string{"api_tok", "slack_url"}},
+	}})
+	require.NoError(t, err)
+
+	events, ok := body["events"].([]any)
+	require.True(t, ok)
+	require.Len(t, events, 1)
+	first := events[0].(map[string]any)
+	assert.Equal(t, "manifest.set", first["type"])
+	assert.Equal(t, "info", first["level"])
+	payload := first["payload"].(map[string]any)
+	allowed := payload["allowed"].([]any)
+	assert.Equal(t, []any{"api_tok", "slack_url"}, allowed)
 }
 
 // TestAPIClient_PostFinalize verifies the finalize body shape, including
@@ -228,4 +260,3 @@ func TestNewRunnerCmd_Hidden(t *testing.T) {
 	assert.Equal(t, "runner", cmd.Use)
 	assert.True(t, cmd.Hidden, "runner subcommand should be hidden from operator help")
 }
-

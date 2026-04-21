@@ -88,9 +88,23 @@ func runRunnerHTTP(ctx context.Context, runIDFlag string) error {
 		return failRun(ctx, client, runID, "context_fetch", err)
 	}
 
+	// Announce the run-scoped secret manifest. Best-effort — a failure
+	// here is observational only and must not abort the run.
+	_ = client.PostEvents(ctx, runID, []event{{
+		Type:    "manifest.set",
+		Level:   "info",
+		Payload: map[string]any{"allowed": runCtx.SecretManifest},
+	}})
+
 	// 2) Fetch scoped secrets. We collect every `{"secret": "name"}`
 	//    reference from destinations + env, plus llm_secret_ref.
-	secretNames := config.CollectSecretRefs(runCtx.Destinations, runCtx.Env, runCtx.LLMSecretRef)
+	// Prefer the server-supplied manifest. Fall back to re-deriving it
+	// from the context fields for compatibility with older API builds
+	// that don't return secret_manifest.
+	secretNames := runCtx.SecretManifest
+	if len(secretNames) == 0 {
+		secretNames = config.CollectSecretRefs(runCtx.Destinations, runCtx.Env, runCtx.LLMSecretRef)
+	}
 	secretMap, err := client.GetSecrets(ctx, secretNames)
 	if err != nil {
 		return failRun(ctx, client, runID, "secrets_fetch", err)
@@ -301,6 +315,7 @@ type runContext struct {
 	Writeback      json.RawMessage `json:"writeback,omitempty"`
 	Env            json.RawMessage `json:"env"`
 	Frontmatter    json.RawMessage `json:"frontmatter"`
+	SecretManifest []string        `json:"secret_manifest"`
 }
 
 func (c *apiClient) GetRunContext(ctx context.Context, runID string) (runContext, error) {
