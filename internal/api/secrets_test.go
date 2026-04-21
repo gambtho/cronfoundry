@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -142,4 +143,115 @@ func TestSecrets_MissingNamesParam(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
+func TestSecrets_LogsFetchedEvents(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, cleanup := testdb.BootPG(t)
+	defer cleanup()
+
+	runID, orgID := seedRun(t, pool)
+
+	master := randomMaster(t)
+	store := secretstore.NewEnvelopePostgresStore(pool, orgID, master)
+	require.NoError(t, store.Put(context.Background(), "slack", "A"))
+	require.NoError(t, store.Put(context.Background(), "openai", "B"))
+
+	signer := token.New(master)
+	tok, hash, err := signer.Sign(token.RunClaims{
+		RunID:      runID,
+		OrgID:      uuid.UUID(orgID.Bytes),
+		SecretRefs: []string{"slack", "openai"},
+		ExpiresAt:  time.Now().Add(time.Minute),
+	})
+	require.NoError(t, err)
+	bindRunHash(t, pool, runID, hash)
+
+	srv := NewServer("127.0.0.1:0", Deps{Pool: pool, Signer: signer, Secrets: store})
+	ts := httptest.NewServer(srv.Handler)
+	defer ts.Close()
+
+	req, _ := http.NewRequest("GET", ts.URL+"/internal/secrets?names=slack,openai", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	resp, err := ts.Client().Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	ctx := context.Background()
+	var count int
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM run_event WHERE run_id = $1 AND event_type = $2`,
+		pgtype.UUID{Bytes: runID, Valid: true}, "secret.fetched").Scan(&count))
+	assert.Equal(t, 2, count)
+
+	// Verify both names appear in payloads.
+	rows, err := pool.Query(ctx,
+		`SELECT payload_json FROM run_event WHERE run_id = $1 AND event_type = $2 ORDER BY payload_json->>'name'`,
+		pgtype.UUID{Bytes: runID, Valid: true}, "secret.fetched")
+	require.NoError(t, err)
+	defer rows.Close()
+	var gotNames []string
+	for rows.Next() {
+		var raw []byte
+		require.NoError(t, rows.Scan(&raw))
+		var p map[string]any
+		require.NoError(t, json.Unmarshal(raw, &p))
+		assert.Equal(t, true, p["in_manifest"])
+		gotNames = append(gotNames, p["name"].(string))
+	}
+	require.NoError(t, rows.Err())
+	assert.Equal(t, []string{"openai", "slack"}, gotNames)
+}
+
+func TestSecrets_LogsDeniedEvent(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, cleanup := testdb.BootPG(t)
+	defer cleanup()
+
+	runID, orgID := seedRun(t, pool)
+
+	master := randomMaster(t)
+	store := secretstore.NewEnvelopePostgresStore(pool, orgID, master)
+
+	signer := token.New(master)
+	tok, hash, err := signer.Sign(token.RunClaims{
+		RunID:      runID,
+		OrgID:      uuid.UUID(orgID.Bytes),
+		SecretRefs: []string{"allowed"},
+		ExpiresAt:  time.Now().Add(time.Minute),
+	})
+	require.NoError(t, err)
+	bindRunHash(t, pool, runID, hash)
+
+	srv := NewServer("127.0.0.1:0", Deps{Pool: pool, Signer: signer, Secrets: store})
+	ts := httptest.NewServer(srv.Handler)
+	defer ts.Close()
+
+	req, _ := http.NewRequest("GET", ts.URL+"/internal/secrets?names=forbidden", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	resp, err := ts.Client().Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusForbidden, resp.StatusCode)
+
+	ctx := context.Background()
+	var count int
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM run_event WHERE run_id = $1 AND event_type = $2`,
+		pgtype.UUID{Bytes: runID, Valid: true}, "secret.denied").Scan(&count))
+	assert.Equal(t, 1, count)
+
+	var raw []byte
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT payload_json FROM run_event WHERE run_id = $1 AND event_type = $2`,
+		pgtype.UUID{Bytes: runID, Valid: true}, "secret.denied").Scan(&raw))
+	var p map[string]any
+	require.NoError(t, json.Unmarshal(raw, &p))
+	assert.Equal(t, "forbidden", p["name"])
+	assert.Equal(t, false, p["in_manifest"])
 }
