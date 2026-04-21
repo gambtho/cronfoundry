@@ -89,12 +89,12 @@ export const api = {
         body: JSON.stringify({ login, role }),
       }),
     updateRole: (login: string, role: 'admin' | 'viewer') =>
-      apiFetch<void>(`/api/users/${login}`, {
+      apiFetch<void>(`/api/users/${encodeURIComponent(login)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ role }),
       }),
     delete: (login: string) =>
-      apiFetch<void>(`/api/users/${login}`, { method: 'DELETE' }),
+      apiFetch<void>(`/api/users/${encodeURIComponent(login)}`, { method: 'DELETE' }),
   },
 }

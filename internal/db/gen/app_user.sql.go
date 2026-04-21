@@ -11,6 +11,17 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countAdmins = `-- name: CountAdmins :one
+SELECT count(*) AS total FROM app_user WHERE org_id = $1 AND role = 'admin'
+`
+
+func (q *Queries) CountAdmins(ctx context.Context, orgID pgtype.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countAdmins, orgID)
+	var total int64
+	err := row.Scan(&total)
+	return total, err
+}
+
 const countUsers = `-- name: CountUsers :one
 SELECT count(*) AS total FROM app_user WHERE org_id = $1
 `
@@ -61,6 +72,29 @@ type DeleteUserParams struct {
 
 func (q *Queries) DeleteUser(ctx context.Context, arg DeleteUserParams) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteUser, arg.OrgID, arg.GithubLogin)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteUserIfNotLast = `-- name: DeleteUserIfNotLast :execrows
+DELETE FROM app_user AS u
+WHERE u.org_id = $1
+  AND u.github_login = $2
+  AND (SELECT count(*) FROM app_user AS u2 WHERE u2.org_id = $1) > 1
+`
+
+type DeleteUserIfNotLastParams struct {
+	OrgID       pgtype.UUID
+	GithubLogin string
+}
+
+// Atomic guard for the last-user invariant. The subquery evaluates within
+// the same statement, so two concurrent admin deletes can't both observe
+// count=2 and both succeed — at most one wins, the loser sees affected=0.
+func (q *Queries) DeleteUserIfNotLast(ctx context.Context, arg DeleteUserIfNotLastParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteUserIfNotLast, arg.OrgID, arg.GithubLogin)
 	if err != nil {
 		return 0, err
 	}

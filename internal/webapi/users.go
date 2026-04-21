@@ -125,16 +125,30 @@ func (h *usersHandler) updateRole(w http.ResponseWriter, r *http.Request) {
 	}
 	// Verify the user exists first — SetUserRole is a blind UPDATE and
 	// won't error when the row is missing.
-	if _, err := h.deps.Queries.GetUserRole(r.Context(), dbgen.GetUserRoleParams{
+	currentRole, err := h.deps.Queries.GetUserRole(r.Context(), dbgen.GetUserRoleParams{
 		OrgID:       org.ID,
 		GithubLogin: login,
-	}); err != nil {
+	})
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeErr(w, http.StatusNotFound, "user not found", "not_found")
 			return
 		}
 		writeErr(w, http.StatusInternalServerError, "failed to load user", "internal")
 		return
+	}
+	// Refuse to demote the last remaining admin — the UI would become
+	// unreachable for /api/users and /api/audit until someone re-seeds.
+	if currentRole == "admin" && req.Role != "admin" {
+		adminCount, err := h.deps.Queries.CountAdmins(r.Context(), org.ID)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, "failed to count admins", "internal")
+			return
+		}
+		if adminCount <= 1 {
+			writeErr(w, http.StatusConflict, "cannot demote the last admin", "last_admin")
+			return
+		}
 	}
 	if err := h.deps.Queries.SetUserRole(r.Context(), dbgen.SetUserRoleParams{
 		OrgID:       org.ID,
@@ -186,20 +200,12 @@ func (h *usersHandler) delete(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "failed to load user", "internal")
 		return
 	}
-	count, err := h.deps.Queries.CountUsers(r.Context(), org.ID)
-	if err != nil {
-		writeErr(w, http.StatusInternalServerError, "failed to count users", "internal")
-		return
-	}
-	if count <= 1 {
-		writeErr(w, http.StatusConflict, "cannot delete the last user", "last_user")
-		return
-	}
-	// NOTE: Count-then-delete is non-atomic; two concurrent admin deletes
-	// could both observe count=2 and both proceed. Single-tenant operator
-	// UI, so the race is theoretical; if it becomes a real risk, replace
-	// with a conditional DELETE ... WHERE (SELECT count(*) ...) > 1 CTE.
-	affected, err := h.deps.Queries.DeleteUser(r.Context(), dbgen.DeleteUserParams{
+	// Atomic last-user guard. DeleteUserIfNotLast's WHERE clause includes
+	// `(SELECT count(*) ...) > 1`, so two concurrent admin deletes can't
+	// both see count=2 and both succeed — at most one wins. Target
+	// existence was already verified above; a zero-affected result here
+	// means the guard fired, so return 409 last_user.
+	affected, err := h.deps.Queries.DeleteUserIfNotLast(r.Context(), dbgen.DeleteUserIfNotLastParams{
 		OrgID:       org.ID,
 		GithubLogin: login,
 	})
@@ -208,9 +214,7 @@ func (h *usersHandler) delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if affected == 0 {
-		// Raced with a concurrent delete — user existed at the exist check
-		// above but is gone now. Surface as 404; idempotent from caller's POV.
-		writeErr(w, http.StatusNotFound, "user not found", "not_found")
+		writeErr(w, http.StatusConflict, "cannot delete the last user", "last_user")
 		return
 	}
 	auditLog(r.Context(), h.deps.Queries, mustClaims(r).Login, audit.Entry{

@@ -12,6 +12,7 @@ export default function Users() {
   const [newRole, setNewRole] = useState<Role>('viewer')
   const [createError, setCreateError] = useState<string | null>(null)
   const [pendingDelete, setPendingDelete] = useState<UserDTO | null>(null)
+  const [opError, setOpError] = useState<string | null>(null)
 
   const meQuery = useQuery({ queryKey: ['me'], queryFn: api.me })
   const { data: users = [], isLoading, error } = useQuery<UserDTO[]>({
@@ -34,14 +35,31 @@ export default function Users() {
   const updateMutation = useMutation({
     mutationFn: ({ login, role }: { login: string; role: Role }) =>
       api.users.updateRole(login, role),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }),
+    onSuccess: () => {
+      setOpError(null)
+      qc.invalidateQueries({ queryKey: ['users'] })
+    },
+    // Surface backend failures (409 last_admin, 404 not_found, 500 infra)
+    // — without this the <select> silently reverts on refetch and the
+    // operator has no signal that the change failed.
+    onError: (err: Error) => {
+      setOpError(err.message)
+      qc.invalidateQueries({ queryKey: ['users'] })
+    },
   })
 
   const deleteMutation = useMutation({
     mutationFn: (login: string) => api.users.delete(login),
     onSuccess: () => {
       setPendingDelete(null)
+      setOpError(null)
       qc.invalidateQueries({ queryKey: ['users'] })
+    },
+    // Close the confirm dialog on failure so a stale 'Delete' click can't
+    // re-fire the mutation; surface the reason (last_user, self_delete, etc.).
+    onError: (err: Error) => {
+      setPendingDelete(null)
+      setOpError(err.message)
     },
   })
 
@@ -53,6 +71,19 @@ export default function Users() {
   return (
     <div>
       <h1 className="text-2xl font-bold mb-4">Users</h1>
+
+      {opError && (
+        <div className="mb-4 px-3 py-2 rounded bg-red-950 border border-red-800 text-red-300 text-sm">
+          {opError}{' '}
+          <button
+            type="button"
+            onClick={() => setOpError(null)}
+            className="ml-2 text-red-400 hover:text-red-200 text-xs"
+          >
+            dismiss
+          </button>
+        </div>
+      )}
 
       <form
         onSubmit={e => {

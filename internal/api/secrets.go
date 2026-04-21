@@ -35,17 +35,24 @@ func (h secretsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing names query parameter", http.StatusBadRequest)
 		return
 	}
-	names := strings.Split(namesParam, ",")
+	// Reject malformed lists up front so `names=,` or `names=%20` can't
+	// partially fetch earlier tokens or write confusing empty-name events.
+	rawNames := strings.Split(namesParam, ",")
+	names := make([]string, 0, len(rawNames))
+	for _, raw := range rawNames {
+		name := strings.TrimSpace(raw)
+		if name == "" {
+			http.Error(w, "secret names must be non-empty", http.StatusBadRequest)
+			return
+		}
+		names = append(names, name)
+	}
 
 	q := dbgen.New(h.deps.Pool)
 	runID := pgtype.UUID{Bytes: claims.RunID, Valid: true}
 
 	out := make(map[string]string, len(names))
 	for _, name := range names {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			continue
-		}
 		if _, ok := allowed[name]; !ok {
 			h.logSecretEvent(r, q, runID, "warn", "secret.denied", map[string]any{
 				"name":        name,
@@ -56,12 +63,16 @@ func (h secretsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		val, err := h.deps.Secrets.Get(r.Context(), name)
 		if err != nil {
+			// Log the real error server-side; keep the run-event payload
+			// generic so runners don't persist backend infra details (KV
+			// URLs, upstream HTTP bodies) in the run timeline.
+			slog.Warn("secret fetch failed", "name", name, "run_id", runID.Bytes, "err", err)
 			h.logSecretEvent(r, q, runID, "error", "secret.fetch_error", map[string]any{
 				"name":        name,
 				"in_manifest": true,
-				"error":       err.Error(),
+				"error":       "secret_store_error",
 			})
-			http.Error(w, "load secret: "+err.Error(), http.StatusInternalServerError)
+			http.Error(w, "load secret failed", http.StatusInternalServerError)
 			return
 		}
 		h.logSecretEvent(r, q, runID, "info", "secret.fetched", map[string]any{

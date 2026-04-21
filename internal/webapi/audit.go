@@ -42,9 +42,11 @@ func (h *auditHandler) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ParseInt with bitSize=32 so values above math.MaxInt32 fail cleanly
+	// on 64-bit builds instead of wrapping into a negative int32.
 	limit := int32(auditDefaultLimit)
 	if v := r.URL.Query().Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+		if n, err := strconv.ParseInt(v, 10, 32); err == nil && n > 0 {
 			if n > auditMaxLimit {
 				n = auditMaxLimit
 			}
@@ -53,7 +55,7 @@ func (h *auditHandler) list(w http.ResponseWriter, r *http.Request) {
 	}
 	offset := int32(0)
 	if v := r.URL.Query().Get("offset"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+		if n, err := strconv.ParseInt(v, 10, 32); err == nil && n >= 0 {
 			offset = int32(n)
 		}
 	}

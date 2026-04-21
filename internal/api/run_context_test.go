@@ -215,7 +215,7 @@ func TestRunContext_MissingRun(t *testing.T) {
 // seedRunWithSecrets creates a full chain (organization → repo_connection →
 // skill → schedule → run) with parameterized destinations_json, env_json, and
 // llm_secret_ref so tests can assert on the derived secret manifest. Returns
-// the run's UUID and the signed-token hash bound to the run row.
+// the run's UUID and the org UUID.
 func seedRunWithSecrets(t *testing.T, pool *pgxpool.Pool, destinations, env string, llmRef *string) (uuid.UUID, pgtype.UUID) {
 	t.Helper()
 	ctx := context.Background()

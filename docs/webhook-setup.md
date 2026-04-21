@@ -45,8 +45,11 @@ environment.
 
 In your GitHub App's **Advanced > Recent Deliveries** page, find the `ping`
 event GitHub sent when you saved the webhook config and click **Redeliver**.
-The handler returns `200 OK`. A 200 response confirms the URL and secret are
-reachable; signature is not checked for `ping` events per GitHub conventions.
+The handler returns `200 OK`. A 200 response confirms the URL is reachable;
+GitHub does sign ping deliveries, and when `CRONFOUNDRY_GITHUB_WEBHOOK_SECRET`
+is set the handler short-circuits before signature verification, so a
+successful ping alone does not prove the secret is correct. For end-to-end
+verification (URL + secret + sync), trigger a real push (next step).
 
 ## Step 4: Trigger a real push
 

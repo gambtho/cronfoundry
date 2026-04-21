@@ -99,7 +99,14 @@ func (h oauthHandlers) callback(w http.ResponseWriter, r *http.Request) {
 		orgID = org.ID
 	}
 
-	role := h.deps.resolveRole(r.Context(), orgID, login)
+	role, err := h.deps.resolveRole(r.Context(), orgID, login)
+	if err != nil {
+		// Infra error (not "user not found") — surface as 500 so an
+		// operator hitting a DB blip doesn't see a misleading 403.
+		slog.Error("oauth: resolve role failed", "login", login, "err", err)
+		http.Error(w, "role lookup failed", http.StatusInternalServerError)
+		return
+	}
 	if role == "" {
 		http.Error(w, "access denied", http.StatusForbidden)
 		return

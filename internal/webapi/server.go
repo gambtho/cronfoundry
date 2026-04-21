@@ -2,8 +2,10 @@ package webapi
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
@@ -33,24 +35,28 @@ type Deps struct {
 	Syncer RepoSyncer
 }
 
-// resolveRole returns "admin", "viewer", or "" (not allowed). Queries the
-// app_user table keyed by (org_id, github_login). Any error (including
-// pgx.ErrNoRows) collapses to "" so OAuth callers see a uniform "not
-// allowed" response without information leakage. Env-var allowlists are
-// no longer consulted at runtime — they seed the table once on first
-// startup (see cmd/cronfoundry/serve.go bootstrap block).
-func (d Deps) resolveRole(ctx context.Context, orgID pgtype.UUID, login string) string {
+// resolveRole returns ("admin"|"viewer", nil) for allowed logins, ("", nil)
+// for a missing row (not allowed), or ("", err) for infrastructure errors.
+// Separating the two negative cases lets callers map "missing row" to 403
+// and "infra error" to 500 — a transient DB blip must NOT silently lock
+// legitimate admins out with a misleading "access denied". Env-var
+// allowlists are no longer consulted at runtime — they seed the table
+// once on first startup (see cmd/cronfoundry/serve.go bootstrap block).
+func (d Deps) resolveRole(ctx context.Context, orgID pgtype.UUID, login string) (string, error) {
 	if d.Queries == nil {
-		return ""
+		return "", nil
 	}
 	role, err := d.Queries.GetUserRole(ctx, dbgen.GetUserRoleParams{
 		OrgID:       orgID,
 		GithubLogin: login,
 	})
 	if err != nil {
-		return ""
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
+		return "", err
 	}
-	return role
+	return role, nil
 }
 
 // RegisterRoutes registers /oauth/*, /api/*, and /* (SPA catch-all) on mux.
