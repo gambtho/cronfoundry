@@ -95,6 +95,10 @@ func RegisterRoutes(mux *http.ServeMux, deps Deps) {
 	mux.Handle("PUT /api/secrets/{name}/rotate", adminOnly(http.HandlerFunc(sech.rotate)))
 	mux.Handle("DELETE /api/secrets/{name}", adminOnly(http.HandlerFunc(sech.delete)))
 
+	// Audit log (admin-only, read-only)
+	ah := &auditHandler{deps: deps}
+	mux.Handle("GET /api/audit", adminOnly(http.HandlerFunc(ah.list)))
+
 	// Webhooks (unauthenticated; HMAC-verified)
 	wh := &webhookHandler{deps: deps, secret: deps.WebhookSecret, syncer: deps.Syncer}
 	mux.Handle("POST /webhook/github", wh)
