@@ -1,8 +1,9 @@
-.PHONY: sqlc test test-short build vet lint dev dev-down migrate e2e clean help
+.PHONY: sqlc test test-short build web vet lint dev dev-down migrate e2e clean help
 
 help:
 	@echo 'Targets:'
-	@echo '  build        Build cronfoundry + cronfoundry-runner binaries'
+	@echo '  build        Build cronfoundry + cronfoundry-runner binaries (runs web first)'
+	@echo '  web          Build the React UI bundle into internal/webapi/web/dist'
 	@echo '  test         Run all tests (with docker/testcontainers integration)'
 	@echo '  test-short   Run unit tests only (no containers)'
 	@echo '  vet          go vet ./...'
@@ -14,7 +15,10 @@ help:
 	@echo '  e2e          Run the end-to-end integration test (requires docker)'
 	@echo '  clean        Remove built binaries'
 
-build:
+web:
+	cd web && npm ci && npm run build
+
+build: web
 	go build -o cronfoundry-runner ./cmd/runner
 	go build -o cronfoundry       ./cmd/cronfoundry
 
@@ -44,6 +48,9 @@ dev-down:
 migrate:
 	@if [ -z "$$CRONFOUNDRY_DATABASE_URL" ]; then \
 	  echo 'CRONFOUNDRY_DATABASE_URL not set'; exit 1; \
+	 fi
+	@if [ -z "$$CRONFOUNDRY_MASTER_KEY" ]; then \
+	  echo 'CRONFOUNDRY_MASTER_KEY not set (run `cronfoundry admin init` to generate one)'; exit 1; \
 	 fi
 	go run ./cmd/cronfoundry admin init
 

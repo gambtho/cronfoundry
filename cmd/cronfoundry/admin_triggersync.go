@@ -20,8 +20,10 @@ import (
 )
 
 const (
-	envGitHubAppID  = "CRONFOUNDRY_GITHUB_APP_ID"
-	envGitHubAppPEM = "CRONFOUNDRY_GITHUB_APP_PEM"
+	envGitHubAppID     = "CRONFOUNDRY_GITHUB_APP_ID"
+	envGitHubAppPEM    = "CRONFOUNDRY_GITHUB_APP_PEM"
+	envGitHubBaseURL   = "CRONFOUNDRY_GITHUB_BASE_URL"
+	envGitHubCloneBase = "CRONFOUNDRY_GITHUB_CLONE_BASE"
 )
 
 func newAdminTriggerSyncCmd() *cobra.Command {
@@ -91,10 +93,14 @@ func runAdminTriggerSync(ctx context.Context, repo string, out io.Writer) error 
 		return fmt.Errorf("no connection for %s/%s; run `cronfoundry admin connect-repo` first", owner, name)
 	}
 
-	cache := github.NewInstallationCache(github.InstallationCacheConfig{
+	cacheCfg := github.InstallationCacheConfig{
 		AppID:      appID,
 		PrivateKey: pemBytes,
-	})
+	}
+	if ghBaseURL := os.Getenv(envGitHubBaseURL); ghBaseURL != "" {
+		cacheCfg.BaseURL = ghBaseURL
+	}
+	cache := github.NewInstallationCache(cacheCfg)
 	poller := sync.NewPoller(sync.PollerConfig{
 		Pool:          pool,
 		OrgID:         org.ID,

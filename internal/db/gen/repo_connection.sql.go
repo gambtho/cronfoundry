@@ -11,6 +11,25 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const deleteRepoConnection = `-- name: DeleteRepoConnection :execrows
+DELETE FROM repo_connection
+WHERE id = $1
+  AND org_id = $2
+`
+
+type DeleteRepoConnectionParams struct {
+	ID    pgtype.UUID
+	OrgID pgtype.UUID
+}
+
+func (q *Queries) DeleteRepoConnection(ctx context.Context, arg DeleteRepoConnectionParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteRepoConnection, arg.ID, arg.OrgID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const getRepoConnection = `-- name: GetRepoConnection :one
 SELECT id, org_id, github_app_install_id, owner, name, default_branch, sync_interval_sec, last_synced_at, last_synced_head_sha, last_sync_error, created_at
 FROM repo_connection

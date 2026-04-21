@@ -1,6 +1,11 @@
 package webapi
 
-import "net/http"
+import (
+	"net/http"
+
+	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
+	"github.com/gambtho/cronfoundry/internal/secretstore"
+)
 
 // Deps holds everything webapi handlers need.
 type Deps struct {
@@ -11,6 +16,12 @@ type Deps struct {
 	ViewerLogins      []string
 	// GitHubAPIBase overrides the GitHub API base URL in tests. Empty = real GitHub.
 	GitHubAPIBase string
+	// Queries provides DB access for /api/* handlers.
+	Queries *dbgen.Queries
+	// Secrets provides secret store access for /api/secrets handlers.
+	Secrets secretstore.SecretStore
+	// APIBaseURL is the base URL for the internal API (used by run-now).
+	APIBaseURL string
 }
 
 // resolveRole returns "admin", "viewer", or "" (not allowed).
@@ -28,18 +39,57 @@ func (d Deps) resolveRole(login string) string {
 	return ""
 }
 
-// RegisterRoutes registers /oauth/* and /api/* on mux.
+// RegisterRoutes registers /oauth/*, /api/*, and /* (SPA catch-all) on mux.
 func RegisterRoutes(mux *http.ServeMux, deps Deps) {
 	session := func(h http.Handler) http.Handler {
 		return RequireSession(deps.MasterKey, h)
 	}
+	adminOnly := func(h http.Handler) http.Handler {
+		return RequireRole(deps.MasterKey, "admin", h)
+	}
 
+	// P3a routes
 	mux.Handle("GET /api/me", session(meHandler{}))
-
-	// OAuth routes registered by oauthHandlers — implemented in oauth.go (Task 4).
 	oh := oauthHandlers{deps: deps}
 	mux.HandleFunc("GET /oauth/login", oh.login)
 	mux.HandleFunc("GET /oauth/callback", oh.callback)
 	mux.HandleFunc("GET /oauth/logout", oh.logout)
+
+	// Repos
+	rh := &reposHandler{deps: deps}
+	mux.Handle("GET /api/repos", session(http.HandlerFunc(rh.list)))
+	mux.Handle("POST /api/repos", adminOnly(http.HandlerFunc(rh.connect)))
+	mux.Handle("DELETE /api/repos/{id}", adminOnly(http.HandlerFunc(rh.disconnect)))
+
+	// Skills
+	sh := &skillsHandler{deps: deps}
+	mux.Handle("GET /api/skills", session(http.HandlerFunc(sh.list)))
+
+	// Schedules
+	sch := &schedulesHandler{deps: deps}
+	mux.Handle("GET /api/schedules", session(http.HandlerFunc(sch.list)))
+	mux.Handle("POST /api/schedules/{id}/pause", adminOnly(http.HandlerFunc(sch.pause)))
+	mux.Handle("POST /api/schedules/{id}/resume", adminOnly(http.HandlerFunc(sch.resume)))
+	mux.Handle("POST /api/schedules/{id}/run-now", adminOnly(http.HandlerFunc(sch.runNow)))
+
+	// Runs
+	rnh := &runsHandler{deps: deps}
+	mux.Handle("GET /api/runs", session(http.HandlerFunc(rnh.list)))
+	mux.Handle("GET /api/runs/{id}", session(http.HandlerFunc(rnh.get)))
+
+	// Events
+	evh := &eventsHandler{deps: deps}
+	mux.Handle("GET /api/runs/{id}/events", session(http.HandlerFunc(evh.list)))
+	mux.Handle("GET /api/runs/{id}/events/stream", session(http.HandlerFunc(evh.stream)))
+
+	// Secrets
+	sech := &secretsHandler{deps: deps}
+	mux.Handle("GET /api/secrets", session(http.HandlerFunc(sech.list)))
+	mux.Handle("POST /api/secrets", adminOnly(http.HandlerFunc(sech.create)))
+	mux.Handle("PUT /api/secrets/{name}/rotate", adminOnly(http.HandlerFunc(sech.rotate)))
+	mux.Handle("DELETE /api/secrets/{name}", adminOnly(http.HandlerFunc(sech.delete)))
+
+	// SPA catch-all — must be last
+	mux.Handle("/", staticHandler())
 }
 

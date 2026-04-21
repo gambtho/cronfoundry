@@ -27,6 +27,11 @@ WHERE last_synced_at IS NULL
    OR last_synced_at + make_interval(secs => sync_interval_sec) <= now()
 ORDER BY coalesce(last_synced_at, to_timestamp(0));
 
+-- name: DeleteRepoConnection :execrows
+DELETE FROM repo_connection
+WHERE id = $1
+  AND org_id = $2;
+
 -- name: MarkRepoSyncedOK :exec
 UPDATE repo_connection
 SET last_synced_at       = now(),
