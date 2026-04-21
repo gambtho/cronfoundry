@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/gambtho/cronfoundry/internal/audit"
 	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
 )
 
@@ -55,6 +56,17 @@ func (h *schedulesHandler) setEnabled(w http.ResponseWriter, r *http.Request, en
 		writeErr(w, http.StatusInternalServerError, "failed to update schedule", "internal")
 		return
 	}
+	idCopy := id // Copy to a local so we can safely take its address for the pointer field.
+	action := "schedule.pause"
+	if enabled {
+		action = "schedule.resume"
+	}
+	auditLog(r.Context(), h.deps.Queries, mustClaims(r).Login, audit.Entry{
+		OrgID:      org.ID,
+		Action:     action,
+		TargetKind: "schedule",
+		TargetID:   &idCopy,
+	})
 	writeJSON(w, http.StatusOK, sched)
 }
 
@@ -90,6 +102,16 @@ func (h *schedulesHandler) runNow(w http.ResponseWriter, r *http.Request) {
 	if resp.StatusCode >= 400 {
 		writeErr(w, resp.StatusCode, "trigger failed", "trigger_error")
 		return
+	}
+	if idParsed, err := uuid.Parse(idStr); err == nil {
+		if org, err := h.deps.Queries.GetFirstOrganization(r.Context()); err == nil {
+			auditLog(r.Context(), h.deps.Queries, actor, audit.Entry{
+				OrgID:      org.ID,
+				Action:     "schedule.run_now",
+				TargetKind: "schedule",
+				TargetID:   &idParsed,
+			})
+		}
 	}
 	w.WriteHeader(http.StatusAccepted)
 }

@@ -3,6 +3,8 @@ package webapi
 import (
 	"encoding/json"
 	"net/http"
+
+	"github.com/gambtho/cronfoundry/internal/audit"
 )
 
 type secretsHandler struct{ deps Deps }
@@ -56,6 +58,14 @@ func (h *secretsHandler) create(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "failed to create secret", "internal")
 		return
 	}
+	if org, err := h.deps.Queries.GetFirstOrganization(r.Context()); err == nil {
+		auditLog(r.Context(), h.deps.Queries, mustClaims(r).Login, audit.Entry{
+			OrgID:      org.ID,
+			Action:     "secret.create",
+			TargetKind: "secret",
+			Detail:     map[string]any{"name": req.Name},
+		})
+	}
 	writeJSON(w, http.StatusCreated, map[string]string{"name": req.Name})
 }
 
@@ -72,6 +82,14 @@ func (h *secretsHandler) rotate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "failed to rotate secret", "internal")
 		return
 	}
+	if org, err := h.deps.Queries.GetFirstOrganization(r.Context()); err == nil {
+		auditLog(r.Context(), h.deps.Queries, mustClaims(r).Login, audit.Entry{
+			OrgID:      org.ID,
+			Action:     "secret.rotate",
+			TargetKind: "secret",
+			Detail:     map[string]any{"name": name},
+		})
+	}
 	writeJSON(w, http.StatusOK, map[string]string{"name": name})
 }
 
@@ -80,6 +98,14 @@ func (h *secretsHandler) delete(w http.ResponseWriter, r *http.Request) {
 	if err := h.deps.Secrets.Delete(r.Context(), name); err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to delete secret", "internal")
 		return
+	}
+	if org, err := h.deps.Queries.GetFirstOrganization(r.Context()); err == nil {
+		auditLog(r.Context(), h.deps.Queries, mustClaims(r).Login, audit.Entry{
+			OrgID:      org.ID,
+			Action:     "secret.delete",
+			TargetKind: "secret",
+			Detail:     map[string]any{"name": name},
+		})
 	}
 	w.WriteHeader(http.StatusNoContent)
 }
