@@ -54,7 +54,7 @@ func TestMigrate_AllTablesCreated(t *testing.T) {
 
 	expected := []string{
 		"organization", "repo_connection", "skill", "schedule",
-		"run", "run_event", "secret", "audit_log",
+		"run", "run_event", "secret", "audit_log", "app_user",
 	}
 	for _, table := range expected {
 		var exists bool
