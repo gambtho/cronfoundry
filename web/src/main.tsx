@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard'
 import Runs from './pages/Runs'
 import Repos from './pages/Repos'
 import Secrets from './pages/Secrets'
+import Users from './pages/Users'
 import Audit from './pages/Audit'
 import Login from './pages/Login'
 
@@ -29,6 +30,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="/runs" element={<Runs />} />
             <Route path="/repos" element={<Repos />} />
             <Route path="/secrets" element={<Secrets />} />
+            <Route path="/users" element={<Users />} />
             <Route path="/audit" element={<Audit />} />
           </Route>
         </Routes>

@@ -98,3 +98,10 @@ export interface AuditEntry {
   target_id?: string
   detail: unknown
 }
+
+export interface UserDTO {
+  login: string
+  role: 'admin' | 'viewer'
+  created_at: string
+  last_login_at?: string
+}

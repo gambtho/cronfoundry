@@ -6,6 +6,7 @@ const navItems = [
   { to: '/runs', label: 'Runs' },
   { to: '/repos', label: 'Repos' },
   { to: '/secrets', label: 'Secrets' },
+  { to: '/users', label: 'Users' },
   { to: '/audit', label: 'Audit' },
 ]
 
