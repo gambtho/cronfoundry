@@ -51,4 +51,26 @@ describe('LogTail — streaming mode', () => {
     unmount()
     expect(es.closed).toBe(true)
   })
+
+  it('does NOT open a stream when status is terminal on mount', () => {
+    render(<LogTail runId="abc" status="succeeded" />)
+    expect(MockEventSource.instances).toHaveLength(0)
+  })
+
+  it('closes the stream when status transitions to terminal', () => {
+    const { rerender } = render(<LogTail runId="abc" status="running" />)
+    const es = MockEventSource.instances[0]
+    expect(es.closed).toBe(false)
+    rerender(<LogTail runId="abc" status="succeeded" />)
+    expect(es.closed).toBe(true)
+  })
+})
+
+describe('LogTail — stream termination', () => {
+  it("closes when server emits 'done' event", () => {
+    render(<LogTail runId="abc" status="running" />)
+    const es = MockEventSource.instances[0]
+    es.emitDone()
+    expect(es.closed).toBe(true)
+  })
 })
