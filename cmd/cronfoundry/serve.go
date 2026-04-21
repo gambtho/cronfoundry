@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
@@ -105,6 +107,42 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 	org, err := q.GetFirstOrganization(ctx)
 	if err != nil {
 		return fmt.Errorf("load organization (run `cronfoundry admin init`?): %w", err)
+	}
+
+	// Bootstrap: seed the app_user table from env vars on first startup only.
+	// Once any user exists (from a prior bootstrap or a UI-driven admin add),
+	// the env vars become inert — UI edits win. CreateUser itself is
+	// ON CONFLICT DO NOTHING, so running this again is harmless, but the
+	// count gate documents the write-once intent.
+	if count, err := q.CountUsers(ctx, org.ID); err != nil {
+		return fmt.Errorf("count users: %w", err)
+	} else if count == 0 && (len(adminLogins) > 0 || len(viewerLogins) > 0) {
+		seeded := 0
+		seedOne := func(login, role string) {
+			if _, err := q.CreateUser(ctx, dbgen.CreateUserParams{
+				OrgID:       org.ID,
+				GithubLogin: login,
+				Role:        role,
+			}); err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					// DO-NOTHING conflict — not an error, just already exists.
+					return
+				}
+				slog.Warn("serve: bootstrap user failed", "login", login, "role", role, "err", err)
+				return
+			}
+			seeded++
+		}
+		for _, login := range adminLogins {
+			seedOne(login, "admin")
+		}
+		for _, login := range viewerLogins {
+			seedOne(login, "viewer")
+		}
+		slog.Info("serve: bootstrapped app_user from env",
+			"admins_requested", len(adminLogins),
+			"viewers_requested", len(viewerLogins),
+			"seeded", seeded)
 	}
 
 	// --- Construct collaborators ---
