@@ -15,6 +15,12 @@ import (
 	gh "github.com/gambtho/cronfoundry/internal/github"
 )
 
+// maxWebhookBodyBytes bounds the GitHub push payload we'll accept. GitHub
+// tops out well below this in practice; the cap exists to prevent abuse and
+// to give oversize requests a clear 413 via http.MaxBytesReader instead of
+// silently truncating and then failing HMAC verification.
+const maxWebhookBodyBytes = 5 * 1024 * 1024
+
 // RepoSyncer resolves a repo_connection by ID and triggers a single sync pass.
 // The concrete implementation in serve.go wraps sync.Poller.SyncOne.
 type RepoSyncer interface {
@@ -42,8 +48,14 @@ func (h *webhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusServiceUnavailable, "webhook secret not configured", "config")
 		return
 	}
-	body, err := io.ReadAll(io.LimitReader(r.Body, 5*1024*1024))
+	r.Body = http.MaxBytesReader(w, r.Body, maxWebhookBodyBytes)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
+		var mbe *http.MaxBytesError
+		if errors.As(err, &mbe) {
+			writeErr(w, http.StatusRequestEntityTooLarge, "request body too large", "body_too_large")
+			return
+		}
 		writeErr(w, http.StatusBadRequest, "read body", "bad_request")
 		return
 	}

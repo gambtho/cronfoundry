@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -49,7 +50,7 @@ func (h runNowHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var body runNowBody
 	if r.Body != nil {
 		dec := json.NewDecoder(r.Body)
-		if err := dec.Decode(&body); err != nil && err.Error() != "EOF" {
+		if err := dec.Decode(&body); err != nil && !errors.Is(err, io.EOF) {
 			http.Error(w, "invalid json: "+err.Error(), http.StatusBadRequest)
 			return
 		}

@@ -13,6 +13,15 @@ function eventColorClass(ev: RunEvent): string {
   return ''
 }
 
+// eventName narrows the unknown payload_json to surface a "name" field when
+// the payload is a plain object that has one. Returns null otherwise.
+function eventName(payload: unknown): string | null {
+  if (typeof payload !== 'object' || payload === null) return null
+  if (!('name' in payload)) return null
+  const v = (payload as { name: unknown }).name
+  return typeof v === 'string' ? v : null
+}
+
 export default function Runs() {
   const [selected, setSelected] = useState<RunSummary | null>(null)
   const { data: runs = [], isLoading } = useQuery({
@@ -113,9 +122,9 @@ function RunDetail({ runId, onClose }: { runId: string; onClose: () => void }) {
             <span className={eventColorClass(ev)}>
               {ev.event_type}
             </span>
-            {ev.event_type === 'secret.denied' && (ev.payload_json as any)?.name && (
+            {ev.event_type === 'secret.denied' && eventName(ev.payload_json) && (
               <span className="text-gray-500 ml-2">
-                name={(ev.payload_json as any).name}
+                name={eventName(ev.payload_json)}
               </span>
             )}
           </div>

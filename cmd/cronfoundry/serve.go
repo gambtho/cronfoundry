@@ -117,8 +117,9 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 	if count, err := q.CountUsers(ctx, org.ID); err != nil {
 		return fmt.Errorf("count users: %w", err)
 	} else if count == 0 && (len(adminLogins) > 0 || len(viewerLogins) > 0) {
-		seeded := 0
-		seedOne := func(login, role string) {
+		adminsSeeded := 0
+		viewersSeeded := 0
+		seedOne := func(login, role string) bool {
 			if _, err := q.CreateUser(ctx, dbgen.CreateUserParams{
 				OrgID:       org.ID,
 				GithubLogin: login,
@@ -126,23 +127,36 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 			}); err != nil {
 				if errors.Is(err, pgx.ErrNoRows) {
 					// DO-NOTHING conflict — not an error, just already exists.
-					return
+					return true
 				}
-				slog.Warn("serve: bootstrap user failed", "login", login, "role", role, "err", err)
-				return
+				slog.Error("serve: bootstrap user failed", "login", login, "role", role, "err", err)
+				return false
 			}
-			seeded++
+			return true
 		}
 		for _, login := range adminLogins {
-			seedOne(login, "admin")
+			if seedOne(login, "admin") {
+				adminsSeeded++
+			}
 		}
 		for _, login := range viewerLogins {
-			seedOne(login, "viewer")
+			if seedOne(login, "viewer") {
+				viewersSeeded++
+			}
 		}
 		slog.Info("serve: bootstrapped app_user from env",
 			"admins_requested", len(adminLogins),
+			"admins_seeded", adminsSeeded,
 			"viewers_requested", len(viewerLogins),
-			"seeded", seeded)
+			"viewers_seeded", viewersSeeded)
+		// If admins were requested but none landed, the service would come
+		// up with no admins and resolveRole would reject every login —
+		// indistinguishable at the UI from a complete outage. Fail fast so
+		// the operator sees the underlying DB error instead of a mysterious
+		// "access denied" page.
+		if len(adminLogins) > 0 && adminsSeeded == 0 {
+			return fmt.Errorf("bootstrap: all %d admin seeds failed — refusing to start with zero admins", len(adminLogins))
+		}
 	}
 
 	// --- Construct collaborators ---

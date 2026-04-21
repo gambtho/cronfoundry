@@ -154,7 +154,10 @@ func (h *usersHandler) updateRole(w http.ResponseWriter, r *http.Request) {
 }
 
 // delete implements DELETE /api/users/{login}. Guards: can't delete
-// yourself (409 self_delete), can't delete the last user (409 last_user).
+// yourself (409 self_delete), target must exist (404 not_found), can't
+// delete the last user (409 last_user). Guard order is deliberate — a
+// caller typoing a login shouldn't see a misleading "last_user" error
+// when the real problem is the target doesn't exist.
 func (h *usersHandler) delete(w http.ResponseWriter, r *http.Request) {
 	login := r.PathValue("login")
 	if login == "" {
@@ -170,6 +173,19 @@ func (h *usersHandler) delete(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "failed to load org", "internal")
 		return
 	}
+	// Verify the target exists before the last-user guard, so a typo'd
+	// login returns 404 instead of a misleading 409 last_user.
+	if _, err := h.deps.Queries.GetUserRole(r.Context(), dbgen.GetUserRoleParams{
+		OrgID:       org.ID,
+		GithubLogin: login,
+	}); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeErr(w, http.StatusNotFound, "user not found", "not_found")
+			return
+		}
+		writeErr(w, http.StatusInternalServerError, "failed to load user", "internal")
+		return
+	}
 	count, err := h.deps.Queries.CountUsers(r.Context(), org.ID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to count users", "internal")
@@ -179,6 +195,10 @@ func (h *usersHandler) delete(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "cannot delete the last user", "last_user")
 		return
 	}
+	// NOTE: Count-then-delete is non-atomic; two concurrent admin deletes
+	// could both observe count=2 and both proceed. Single-tenant operator
+	// UI, so the race is theoretical; if it becomes a real risk, replace
+	// with a conditional DELETE ... WHERE (SELECT count(*) ...) > 1 CTE.
 	affected, err := h.deps.Queries.DeleteUser(r.Context(), dbgen.DeleteUserParams{
 		OrgID:       org.ID,
 		GithubLogin: login,
@@ -188,6 +208,8 @@ func (h *usersHandler) delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if affected == 0 {
+		// Raced with a concurrent delete — user existed at the exist check
+		// above but is gone now. Surface as 404; idempotent from caller's POV.
 		writeErr(w, http.StatusNotFound, "user not found", "not_found")
 		return
 	}

@@ -3,7 +3,9 @@ package webapi
 import (
 	"bytes"
 	"encoding/json"
+	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -11,6 +13,11 @@ import (
 	"github.com/gambtho/cronfoundry/internal/audit"
 	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
 )
+
+// runNowClient is a bounded HTTP client for the loopback proxy hop from the
+// webapi runNow handler to the internal /run-now endpoint. A timeout keeps a
+// hung or slow internal handler from pinning a goroutine.
+var runNowClient = &http.Client{Timeout: 30 * time.Second}
 
 type schedulesHandler struct{ deps Deps }
 
@@ -81,7 +88,10 @@ func (h *schedulesHandler) runNow(w http.ResponseWriter, r *http.Request) {
 
 	apiBase := h.deps.APIBaseURL
 	if apiBase == "" {
-		apiBase = "http://127.0.0.1:8080"
+		slog.Error("runNow: APIBaseURL not configured — refusing to dial a hardcoded fallback",
+			"actor", actor, "schedule_id", idStr)
+		writeErr(w, http.StatusServiceUnavailable, "api base url not configured", "config")
+		return
 	}
 	url := apiBase + "/internal/schedules/" + idStr + "/run-now"
 
@@ -93,8 +103,9 @@ func (h *schedulesHandler) runNow(w http.ResponseWriter, r *http.Request) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := runNowClient.Do(req)
 	if err != nil {
+		slog.Error("runNow: trigger call failed", "err", err, "schedule_id", idStr)
 		writeErr(w, http.StatusBadGateway, "trigger call failed", "gateway")
 		return
 	}

@@ -222,26 +222,13 @@ func TestUsers_Delete(t *testing.T) {
 		assert.Equal(t, "self_delete", body["code"])
 	})
 
-	t.Run("last user blocked", func(t *testing.T) {
-		pool, cleanup := testdb.BootPG(t)
-		defer cleanup()
-		seedOrg(t, pool)
-		seedUser(t, pool, "alice", "admin")
-		// Only one user in the org. Delete a different login so the
-		// self-delete guard doesn't short-circuit; we want the last-user
-		// guard to fire.
-
-		masterKey := make([]byte, 32)
-		mux := http.NewServeMux()
-		webapi.RegisterRoutes(mux, testDeps(pool, masterKey))
-
-		rr := doUsersReq(t, mux, masterKey, "DELETE", "/api/users/someone-else",
-			"", "alice", "admin")
-		require.Equal(t, http.StatusConflict, rr.Code, "body=%s", rr.Body.String())
-		var body map[string]any
-		require.NoError(t, json.NewDecoder(rr.Body).Decode(&body))
-		assert.Equal(t, "last_user", body["code"])
-	})
+	// NOTE: the "last_user" guard (count <= 1) is unreachable in
+	// single-threaded sequential flow after the user-existence check was
+	// reordered ahead of it — the only user with count==1 is self, which
+	// the self_delete guard blocks first. The guard remains in place as
+	// defense-in-depth against the count→delete TOCTOU race documented in
+	// users.go. A test that meaningfully exercises it would require
+	// concurrent writes; we don't run concurrent DB integration tests here.
 
 	t.Run("not found", func(t *testing.T) {
 		pool, cleanup := testdb.BootPG(t)
