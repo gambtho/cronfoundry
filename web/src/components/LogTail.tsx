@@ -13,11 +13,14 @@ const TERMINAL: ReadonlySet<RunStatus> = new Set([
   'failed',
 ])
 const STICKY_THRESHOLD_PX = 50
+const RETRY_CAP = 5
 
 export default function LogTail({ runId, status }: Props) {
   const [events, setEvents] = useState<RunEvent[]>([])
   const [sticky, setSticky] = useState(true)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const retryRef = useRef(0)
+  const [lost, setLost] = useState(false)
 
   useEffect(() => {
     if (TERMINAL.has(status)) {
@@ -29,6 +32,7 @@ export default function LogTail({ runId, status }: Props) {
         cancelled = true
       }
     }
+    retryRef.current = 0
     const es = new EventSource(api.runs.eventsStreamURL(runId))
     es.onmessage = ev => {
       try {
@@ -36,6 +40,13 @@ export default function LogTail({ runId, status }: Props) {
         setEvents(prev => [...prev, parsed])
       } catch {
         // malformed line — ignore
+      }
+    }
+    es.onerror = () => {
+      retryRef.current++
+      if (retryRef.current >= RETRY_CAP) {
+        es.close()
+        setLost(true)
       }
     }
     es.addEventListener('done', () => {
@@ -68,6 +79,11 @@ export default function LogTail({ runId, status }: Props) {
       role="log"
       className="mt-4 h-64 overflow-y-auto rounded bg-black/60 p-2 font-mono text-xs text-gray-300"
     >
+      {lost && (
+        <div className="mb-1 text-red-400">
+          connection lost — reload to retry
+        </div>
+      )}
       {events.length === 0 ? (
         <div className="text-gray-600">Waiting for events…</div>
       ) : (

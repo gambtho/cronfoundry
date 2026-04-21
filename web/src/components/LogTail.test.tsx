@@ -26,6 +26,9 @@ class MockEventSource {
   emitDone() {
     this.listeners.get('done')?.(new MessageEvent('done', { data: '{}' }))
   }
+  emitError() {
+    this.onerror?.(new Event('error'))
+  }
 }
 
 beforeEach(() => {
@@ -98,6 +101,23 @@ describe('LogTail — static mode', () => {
     await findByText('llm.start')
     await findByText('publish.slack.ok')
     expect(MockEventSource.instances).toHaveLength(0)
+  })
+})
+
+describe('LogTail — reconnect cap', () => {
+  it('shows "connection lost" after 5 consecutive errors', async () => {
+    const { findByText, queryByText } = render(
+      <LogTail runId="abc" status="running" />
+    )
+    const es = MockEventSource.instances[0]
+
+    for (let i = 0; i < 4; i++) es.emitError()
+    expect(queryByText(/connection lost/i)).toBeNull()
+    expect(es.closed).toBe(false)
+
+    es.emitError() // 5th
+    await findByText(/connection lost/i)
+    expect(es.closed).toBe(true)
   })
 })
 
