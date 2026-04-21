@@ -93,6 +93,21 @@ export default function LogTail({ runId, status }: Props) {
   )
 }
 
+function eventColorClass(ev: RunEvent): string {
+  if (ev.event_type === 'secret.denied') return 'text-yellow-400 font-semibold'
+  if (ev.event_type === 'secret.fetched') return 'text-emerald-500'
+  if (ev.event_type === 'manifest.set') return 'text-sky-400'
+  if (ev.level === 'error') return 'text-red-400'
+  return 'text-gray-200'
+}
+
+function eventName(payload: unknown): string | null {
+  if (typeof payload !== 'object' || payload === null) return null
+  if (!('name' in payload)) return null
+  const v = (payload as { name: unknown }).name
+  return typeof v === 'string' ? v : null
+}
+
 function LogRow({ ev }: { ev: RunEvent }) {
   const [expanded, setExpanded] = useState(false)
   return (
@@ -104,7 +119,12 @@ function LogRow({ ev }: { ev: RunEvent }) {
       <span className={ev.level === 'error' ? 'text-red-400' : 'text-gray-400'}>
         {ev.level}
       </span>{' '}
-      <span className="text-gray-200">{ev.event_type}</span>
+      <span className={eventColorClass(ev)}>{ev.event_type}</span>
+      {ev.event_type === 'secret.denied' && eventName(ev.payload_json) && (
+        <span className="text-gray-500 ml-2">
+          name={eventName(ev.payload_json)}
+        </span>
+      )}
       {expanded && (
         <pre className="mt-1 whitespace-pre-wrap break-all text-gray-500">
           {JSON.stringify(ev.payload_json, null, 2)}

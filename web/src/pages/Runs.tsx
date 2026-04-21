@@ -3,24 +3,8 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { RunStatusBadge } from '../components/RunStatusBadge'
-import type { RunSummary, RunEvent } from '../lib/types'
-
-function eventColorClass(ev: RunEvent): string {
-  if (ev.event_type === 'secret.denied') return 'text-yellow-400 font-semibold'
-  if (ev.event_type === 'secret.fetched') return 'text-emerald-500'
-  if (ev.event_type === 'manifest.set') return 'text-sky-400'
-  if (ev.level === 'error') return 'text-red-400'
-  return ''
-}
-
-// eventName narrows the unknown payload_json to surface a "name" field when
-// the payload is a plain object that has one. Returns null otherwise.
-function eventName(payload: unknown): string | null {
-  if (typeof payload !== 'object' || payload === null) return null
-  if (!('name' in payload)) return null
-  const v = (payload as { name: unknown }).name
-  return typeof v === 'string' ? v : null
-}
+import LogTail from '../components/LogTail'
+import type { RunSummary } from '../lib/types'
 
 export default function Runs() {
   const [selected, setSelected] = useState<RunSummary | null>(null)
@@ -78,12 +62,10 @@ function RunDetail({ runId, onClose }: { runId: string; onClose: () => void }) {
   const { data: run } = useQuery({
     queryKey: ['run', runId],
     queryFn: () => api.runs.get(runId),
-  })
-  const { data: events = [] } = useQuery({
-    queryKey: ['run-events', runId],
-    queryFn: () => api.runs.events(runId),
-    refetchInterval:
-      run?.status === 'pending' || run?.status === 'running' ? 2000 : false,
+    refetchInterval: query => {
+      const s = query.state.data?.status
+      return s === 'pending' || s === 'running' ? 2000 : false
+    },
   })
 
   return (
@@ -93,43 +75,29 @@ function RunDetail({ runId, onClose }: { runId: string; onClose: () => void }) {
         <button onClick={onClose} className="text-gray-500 hover:text-white">✕</button>
       </div>
       {run && (
-        <div className="space-y-2 text-sm mb-4">
-          <div>
-            <span className="text-gray-500">Status: </span>
-            <RunStatusBadge status={run.status} />
-          </div>
-          {run.tokens_in != null && (
-            <div className="text-gray-400">
-              Tokens: {run.tokens_in} in / {run.tokens_out} out
+        <>
+          <div className="space-y-2 text-sm mb-4">
+            <div>
+              <span className="text-gray-500">Status: </span>
+              <RunStatusBadge status={run.status} />
             </div>
-          )}
-          {run.cost_cents != null && (
-            <div className="text-gray-400">
-              Cost: ${(run.cost_cents / 100).toFixed(4)}
-            </div>
-          )}
-          {run.error_msg && (
-            <div className="text-red-400 text-xs">{run.error_msg}</div>
-          )}
-        </div>
-      )}
-      <div className="space-y-1">
-        {events.map(ev => (
-          <div key={ev.id} className="text-xs text-gray-400 font-mono">
-            <span className="text-gray-600">
-              {new Date(ev.ts).toLocaleTimeString()}{' '}
-            </span>
-            <span className={eventColorClass(ev)}>
-              {ev.event_type}
-            </span>
-            {ev.event_type === 'secret.denied' && eventName(ev.payload_json) && (
-              <span className="text-gray-500 ml-2">
-                name={eventName(ev.payload_json)}
-              </span>
+            {run.tokens_in != null && (
+              <div className="text-gray-400">
+                Tokens: {run.tokens_in} in / {run.tokens_out} out
+              </div>
+            )}
+            {run.cost_cents != null && (
+              <div className="text-gray-400">
+                Cost: ${(run.cost_cents / 100).toFixed(4)}
+              </div>
+            )}
+            {run.error_msg && (
+              <div className="text-red-400 text-xs">{run.error_msg}</div>
             )}
           </div>
-        ))}
-      </div>
+          <LogTail runId={run.id} status={run.status} />
+        </>
+      )}
     </div>
   )
 }
