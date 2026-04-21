@@ -100,3 +100,29 @@ describe('LogTail — static mode', () => {
     expect(MockEventSource.instances).toHaveLength(0)
   })
 })
+
+describe('LogTail — auto-scroll', () => {
+  it('scrolls to bottom on new event when sticky', () => {
+    const scrollToSpy = vi.fn()
+    // jsdom: override Element.prototype so our ref's scrollTo is captured
+    Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
+      value: scrollToSpy,
+      configurable: true,
+    })
+
+    render(<LogTail runId="abc" status="running" />)
+    const es = MockEventSource.instances[0]
+    es.emit({
+      id: 10,
+      run_id: 'abc',
+      ts: new Date().toISOString(),
+      level: 'info',
+      event_type: 'llm.chunk',
+      payload_json: {},
+    })
+    // One frame later React has flushed and the effect has run
+    return Promise.resolve().then(() => {
+      expect(scrollToSpy).toHaveBeenCalled()
+    })
+  })
+})

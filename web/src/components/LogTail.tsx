@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api'
 import type { RunEvent, RunStatus } from '../lib/types'
 
@@ -12,9 +12,12 @@ const TERMINAL: ReadonlySet<RunStatus> = new Set([
   'partial_failure',
   'failed',
 ])
+const STICKY_THRESHOLD_PX = 50
 
 export default function LogTail({ runId, status }: Props) {
   const [events, setEvents] = useState<RunEvent[]>([])
+  const [sticky, setSticky] = useState(true)
+  const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (TERMINAL.has(status)) {
@@ -43,8 +46,25 @@ export default function LogTail({ runId, status }: Props) {
     }
   }, [runId, status])
 
+  useEffect(() => {
+    if (!sticky) return
+    const el = scrollRef.current
+    if (!el) return
+    el.scrollTo?.({ top: el.scrollHeight })
+  }, [events, sticky])
+
+  function handleScroll() {
+    const el = scrollRef.current
+    if (!el) return
+    const atBottom =
+      el.scrollHeight - el.scrollTop - el.clientHeight < STICKY_THRESHOLD_PX
+    setSticky(atBottom)
+  }
+
   return (
     <div
+      ref={scrollRef}
+      onScroll={handleScroll}
       role="log"
       className="mt-4 h-64 overflow-y-auto rounded bg-black/60 p-2 font-mono text-xs text-gray-300"
     >
