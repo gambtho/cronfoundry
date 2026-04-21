@@ -11,6 +11,9 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgtype"
+
+	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
+	"github.com/gambtho/cronfoundry/internal/testdb"
 )
 
 type fakeSyncer struct {
@@ -91,5 +94,97 @@ func TestWebhookHandler_NonDefaultBranchReturns204(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestWebhookHandler_PushTriggersSync(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping testcontainers-backed test in -short mode")
+	}
+	pool, cleanup := testdb.BootPG(t)
+	defer cleanup()
+	q := dbgen.New(pool)
+
+	ctx := context.Background()
+	org, err := q.CreateOrganization(ctx, "test")
+	if err != nil {
+		t.Fatalf("create org: %v", err)
+	}
+	conn, err := q.InsertRepoConnection(ctx, dbgen.InsertRepoConnectionParams{
+		OrgID:              org.ID,
+		GithubAppInstallID: 42,
+		Owner:              "acme",
+		Name:               "widgets",
+		DefaultBranch:      "main",
+		SyncIntervalSec:    60,
+	})
+	if err != nil {
+		t.Fatalf("insert conn: %v", err)
+	}
+
+	syncer := &fakeSyncer{}
+	h := &webhookHandler{
+		deps:   Deps{Queries: q},
+		secret: []byte("topsecret"),
+		syncer: syncer,
+	}
+	body := []byte(`{
+		"ref":"refs/heads/main",
+		"after":"abc",
+		"repository":{"name":"widgets","owner":{"login":"acme"},"default_branch":"main"},
+		"installation":{"id":42}
+	}`)
+	req := httptest.NewRequest("POST", "/webhook/github", bytes.NewReader(body))
+	req.Header.Set("X-GitHub-Event", "push")
+	req.Header.Set("X-Hub-Signature-256", signBody(body, []byte("topsecret")))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !syncer.called {
+		t.Fatal("expected SyncOne to be called")
+	}
+	if syncer.id != conn.ID {
+		t.Fatalf("wrong conn id: got %v want %v", syncer.id, conn.ID)
+	}
+}
+
+func TestWebhookHandler_UnknownRepoReturns200(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping testcontainers-backed test in -short mode")
+	}
+	pool, cleanup := testdb.BootPG(t)
+	defer cleanup()
+	q := dbgen.New(pool)
+
+	ctx := context.Background()
+	if _, err := q.CreateOrganization(ctx, "test"); err != nil {
+		t.Fatalf("create org: %v", err)
+	}
+
+	syncer := &fakeSyncer{}
+	h := &webhookHandler{
+		deps:   Deps{Queries: q},
+		secret: []byte("topsecret"),
+		syncer: syncer,
+	}
+	body := []byte(`{
+		"ref":"refs/heads/main",
+		"repository":{"name":"not-tracked","owner":{"login":"stranger"},"default_branch":"main"}
+	}`)
+	req := httptest.NewRequest("POST", "/webhook/github", bytes.NewReader(body))
+	req.Header.Set("X-GitHub-Event", "push")
+	req.Header.Set("X-Hub-Signature-256", signBody(body, []byte("topsecret")))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+
+	// Unknown repos must respond 200 so GitHub reports the hook healthy.
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status: got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if syncer.called {
+		t.Fatal("SyncOne should not be called for an unknown repo")
 	}
 }
