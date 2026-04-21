@@ -55,6 +55,37 @@ func (q *Queries) GetRepoConnection(ctx context.Context, id pgtype.UUID) (RepoCo
 	return i, err
 }
 
+const getRepoConnectionByOwnerName = `-- name: GetRepoConnectionByOwnerName :one
+SELECT id, org_id, github_app_install_id, owner, name, default_branch, sync_interval_sec, last_synced_at, last_synced_head_sha, last_sync_error, created_at
+FROM repo_connection
+WHERE org_id = $1 AND owner = $2 AND name = $3
+`
+
+type GetRepoConnectionByOwnerNameParams struct {
+	OrgID pgtype.UUID
+	Owner string
+	Name  string
+}
+
+func (q *Queries) GetRepoConnectionByOwnerName(ctx context.Context, arg GetRepoConnectionByOwnerNameParams) (RepoConnection, error) {
+	row := q.db.QueryRow(ctx, getRepoConnectionByOwnerName, arg.OrgID, arg.Owner, arg.Name)
+	var i RepoConnection
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.GithubAppInstallID,
+		&i.Owner,
+		&i.Name,
+		&i.DefaultBranch,
+		&i.SyncIntervalSec,
+		&i.LastSyncedAt,
+		&i.LastSyncedHeadSha,
+		&i.LastSyncError,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const insertRepoConnection = `-- name: InsertRepoConnection :one
 INSERT INTO repo_connection (org_id, github_app_install_id, owner, name, default_branch, sync_interval_sec)
 VALUES ($1, $2, $3, $4, $5, $6)

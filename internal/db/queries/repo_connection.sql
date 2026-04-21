@@ -12,6 +12,11 @@ SELECT *
 FROM repo_connection
 WHERE id = $1;
 
+-- name: GetRepoConnectionByOwnerName :one
+SELECT *
+FROM repo_connection
+WHERE org_id = $1 AND owner = $2 AND name = $3;
+
 -- name: ListRepoConnections :many
 SELECT *
 FROM repo_connection

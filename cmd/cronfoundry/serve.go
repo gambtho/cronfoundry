@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
 
 	"github.com/gambtho/cronfoundry/internal/api"
@@ -24,6 +24,7 @@ import (
 	"github.com/gambtho/cronfoundry/internal/scheduler"
 	"github.com/gambtho/cronfoundry/internal/secretstore"
 	secretstoreazure "github.com/gambtho/cronfoundry/internal/secretstore/azure"
+	"github.com/gambtho/cronfoundry/internal/sync"
 	"github.com/gambtho/cronfoundry/internal/token"
 	"github.com/gambtho/cronfoundry/internal/webapi"
 )
@@ -33,6 +34,7 @@ const (
 	envOAuthClientSecret = "CRONFOUNDRY_GITHUB_OAUTH_CLIENT_SECRET"
 	envAdminLogins       = "CRONFOUNDRY_ADMIN_LOGINS"
 	envViewerLogins      = "CRONFOUNDRY_VIEWER_LOGINS"
+	envWebhookSecret     = "CRONFOUNDRY_GITHUB_WEBHOOK_SECRET"
 )
 
 func newServeCmd() *cobra.Command {
@@ -121,6 +123,13 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 	}
 	installs := github.NewInstallationCache(installsCfg)
 
+	poller := sync.NewPoller(sync.PollerConfig{
+		Pool:          pool,
+		OrgID:         org.ID,
+		Installations: installs,
+		GitHubBaseURL: ghBaseURL,
+	})
+
 	// --- Initial orphan sweep ---
 	if n, err := scheduler.SweepOrphans(ctx, scheduler.Deps{Pool: pool}); err != nil {
 		slog.Warn("serve: initial orphan sweep failed", "err", err)
@@ -148,6 +157,8 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 		Queries:           q,
 		Secrets:           store,
 		APIBaseURL:        "http://" + addr,
+		WebhookSecret:     []byte(os.Getenv(envWebhookSecret)),
+		Syncer:            poller,
 	})
 	srv := &http.Server{
 		Addr:              addr,

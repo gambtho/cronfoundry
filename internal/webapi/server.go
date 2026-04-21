@@ -22,6 +22,12 @@ type Deps struct {
 	Secrets secretstore.SecretStore
 	// APIBaseURL is the base URL for the internal API (used by run-now).
 	APIBaseURL string
+	// WebhookSecret is the shared HMAC secret registered with the GitHub App.
+	// When empty, POST /webhook/github responds 503 Service Unavailable.
+	WebhookSecret []byte
+	// Syncer triggers a one-off repo sync. Injected from cmd/cronfoundry/serve.go
+	// as a thin wrapper around sync.Poller.SyncOne.
+	Syncer RepoSyncer
 }
 
 // resolveRole returns "admin", "viewer", or "" (not allowed).
@@ -89,7 +95,10 @@ func RegisterRoutes(mux *http.ServeMux, deps Deps) {
 	mux.Handle("PUT /api/secrets/{name}/rotate", adminOnly(http.HandlerFunc(sech.rotate)))
 	mux.Handle("DELETE /api/secrets/{name}", adminOnly(http.HandlerFunc(sech.delete)))
 
+	// Webhooks (unauthenticated; HMAC-verified)
+	wh := &webhookHandler{deps: deps, secret: deps.WebhookSecret, syncer: deps.Syncer}
+	mux.Handle("POST /webhook/github", wh)
+
 	// SPA catch-all — must be last
 	mux.Handle("/", staticHandler())
 }
-
