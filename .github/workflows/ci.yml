@@ -45,7 +45,8 @@ jobs:
         run: go test ./... -timeout 120s
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        # v7 is required for golangci-lint v2.x (v6 rejects v2.11.0 at install).
+        uses: golangci/golangci-lint-action@v7
         with:
           version: v2.11.0
 
