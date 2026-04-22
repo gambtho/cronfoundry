@@ -104,6 +104,12 @@ func UpsertSkillsAndSchedules(
 				timezone = "UTC"
 			}
 
+			var autoPauseAfter *int32
+			if sch.AutoPause != nil {
+				v := int32(sch.AutoPause.After)
+				autoPauseAfter = &v
+			}
+
 			if _, err := q.UpsertSchedule(ctx, dbgen.UpsertScheduleParams{
 				OrgID:         orgID,
 				SkillID:       skillID,
@@ -123,6 +129,7 @@ func UpsertSkillsAndSchedules(
 				DestinationsJson: destBytes,
 				WritebackJson:    writebackBytes,
 				EnvJson:          envBytes,
+				AutoPauseAfter:   autoPauseAfter,
 			}); err != nil {
 				return fmt.Errorf("sync: upsert schedule %q/%q: %w", entry.Path, sch.Name, err)
 			}

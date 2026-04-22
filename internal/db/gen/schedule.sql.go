@@ -365,9 +365,9 @@ const upsertSchedule = `-- name: UpsertSchedule :one
 INSERT INTO schedule (
     org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec,
     enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment,
-    destinations_json, writeback_json, env_json, updated_at
+    destinations_json, writeback_json, env_json, auto_pause_after, updated_at
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, now())
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, now())
 ON CONFLICT (skill_id, name) DO UPDATE
   SET cron              = EXCLUDED.cron,
       timezone          = EXCLUDED.timezone,
@@ -382,6 +382,7 @@ ON CONFLICT (skill_id, name) DO UPDATE
       destinations_json = EXCLUDED.destinations_json,
       writeback_json    = EXCLUDED.writeback_json,
       env_json          = EXCLUDED.env_json,
+      auto_pause_after  = EXCLUDED.auto_pause_after,
       updated_at        = now()
 RETURNING id, org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec, enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment, destinations_json, writeback_json, env_json, auto_pause_after, auto_paused_at, auto_pause_reason, last_enabled_at, next_fire_at, created_at, updated_at
 `
@@ -403,6 +404,7 @@ type UpsertScheduleParams struct {
 	DestinationsJson []byte
 	WritebackJson    []byte
 	EnvJson          []byte
+	AutoPauseAfter   *int32
 }
 
 func (q *Queries) UpsertSchedule(ctx context.Context, arg UpsertScheduleParams) (Schedule, error) {
@@ -423,6 +425,7 @@ func (q *Queries) UpsertSchedule(ctx context.Context, arg UpsertScheduleParams) 
 		arg.DestinationsJson,
 		arg.WritebackJson,
 		arg.EnvJson,
+		arg.AutoPauseAfter,
 	)
 	var i Schedule
 	err := row.Scan(

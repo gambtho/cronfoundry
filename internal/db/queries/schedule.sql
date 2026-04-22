@@ -2,9 +2,9 @@
 INSERT INTO schedule (
     org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec,
     enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment,
-    destinations_json, writeback_json, env_json, updated_at
+    destinations_json, writeback_json, env_json, auto_pause_after, updated_at
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, now())
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, now())
 ON CONFLICT (skill_id, name) DO UPDATE
   SET cron              = EXCLUDED.cron,
       timezone          = EXCLUDED.timezone,
@@ -19,6 +19,7 @@ ON CONFLICT (skill_id, name) DO UPDATE
       destinations_json = EXCLUDED.destinations_json,
       writeback_json    = EXCLUDED.writeback_json,
       env_json          = EXCLUDED.env_json,
+      auto_pause_after  = EXCLUDED.auto_pause_after,
       updated_at        = now()
 RETURNING *;
 
