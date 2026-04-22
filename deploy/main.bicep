@@ -74,9 +74,7 @@ module cae 'modules/containerAppsEnv.bicep' = {
   params: {
     location: location
     name: '${prefix}-cae-${env}'
-    logAnalyticsWorkspaceId: law.outputs.resourceId
-    logAnalyticsCustomerId: law.outputs.logAnalyticsWorkspaceId
-    logAnalyticsSharedKey: law.outputs.primarySharedKey
+    logAnalyticsWorkspaceName: law.outputs.name
   }
 }
 
