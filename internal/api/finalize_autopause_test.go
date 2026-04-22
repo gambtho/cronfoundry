@@ -208,8 +208,10 @@ func TestEvaluateAutoPause_AntiFlapWindowExcludesOldRuns(t *testing.T) {
 	}
 	h := newAPHarness(t, nil)
 
-	// One run BEFORE the enable window should be excluded.
-	h.seedRun(t, "failed", "schedule", h.enabledAt.Add(-time.Hour))
+	// One run just BEFORE the enable window should be excluded — use -1ns
+	// to pin the boundary: the query's `created_at >= last_enabled_at`
+	// must use `>=`, not `>`, and anything strictly less is excluded.
+	h.seedRun(t, "failed", "schedule", h.enabledAt.Add(-time.Nanosecond))
 	base := h.enabledAt.Add(time.Second)
 	for i := 0; i < 3; i++ {
 		h.seedRun(t, "failed", "schedule", base.Add(time.Duration(i)*time.Minute))
@@ -283,6 +285,34 @@ func TestEvaluateAutoPause_IdempotentWhenAlreadyPaused(t *testing.T) {
 	require.NoError(t, h.pool.QueryRow(context.Background(),
 		`SELECT count(*) FROM run_event WHERE event_type='schedule.auto_paused'`).Scan(&eventsAfter))
 	assert.Equal(t, eventsBefore, eventsAfter, "no duplicate run_event rows on re-pause")
+}
+
+// TestEvaluateAutoPause_ScheduleIgnoresManualHistory verifies that the SQL
+// filter `fire_reason = 'schedule'` in ListRecentTerminalScheduledRuns
+// correctly excludes manual runs from the streak count. We seed a history
+// where a manual 'succeeded' run sits between scheduled failures: if the
+// filter works, the five scheduled failures trigger a pause; if the filter
+// is broken the succeeded row would break the streak and suppress the pause.
+func TestEvaluateAutoPause_ScheduleIgnoresManualHistory(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	h := newAPHarness(t, nil) // threshold = DefaultAutoPauseAfter (5)
+
+	base := h.enabledAt.Add(time.Second)
+	h.seedRun(t, "failed", "schedule", base.Add(1*time.Minute))
+	// Manual "succeeded" run as noise — must not pollute the streak count.
+	h.seedRun(t, "succeeded", "manual", base.Add(2*time.Minute))
+	h.seedRun(t, "failed", "schedule", base.Add(3*time.Minute))
+	h.seedRun(t, "failed", "schedule", base.Add(4*time.Minute))
+	h.seedRun(t, "failed", "schedule", base.Add(5*time.Minute))
+	last := h.seedRun(t, "failed", "schedule", base.Add(6*time.Minute))
+
+	err := evaluateAutoPause(context.Background(), h.pool,
+		uuid.UUID(h.scheduleID.Bytes), uuid.UUID(last.Bytes), "failed", "schedule")
+	require.NoError(t, err)
+
+	h.assertPaused(t)
 }
 
 func TestEvaluateAutoPause_ThresholdOneTriggersAtFirstFailure(t *testing.T) {

@@ -92,13 +92,12 @@ func evaluateAutoPause(
 		return nil
 	}
 
-	scheduleUUID := scheduleID
 	if err := audit.Log(ctx, q, audit.Entry{
 		OrgID:      cfg.OrgID,
 		Actor:      "system",
 		Action:     "schedule.auto_paused",
 		TargetKind: "schedule",
-		TargetID:   &scheduleUUID,
+		TargetID:   &scheduleID,
 		Detail: map[string]any{
 			"threshold":   threshold,
 			"last_run_id": runID.String(),

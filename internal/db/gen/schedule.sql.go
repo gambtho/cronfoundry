@@ -356,9 +356,9 @@ func (q *Queries) ListSchedulesByOrg(ctx context.Context, orgID pgtype.UUID) ([]
 const setScheduleEnabled = `-- name: SetScheduleEnabled :one
 UPDATE schedule
 SET enabled = $2,
-    auto_paused_at    = CASE WHEN $2 THEN NULL              ELSE auto_paused_at    END,
-    auto_pause_reason = CASE WHEN $2 THEN NULL              ELSE auto_pause_reason END,
-    last_enabled_at   = CASE WHEN $2 THEN now()             ELSE last_enabled_at   END,
+    auto_paused_at    = CASE WHEN $2 THEN NULL                   ELSE auto_paused_at    END,
+    auto_pause_reason = CASE WHEN $2 THEN NULL                   ELSE auto_pause_reason END,
+    last_enabled_at   = CASE WHEN $2 AND NOT enabled THEN now()  ELSE last_enabled_at   END,
     updated_at        = now()
 WHERE id = $1
   AND org_id = $3
@@ -371,11 +371,11 @@ type SetScheduleEnabledParams struct {
 	OrgID   pgtype.UUID
 }
 
-// On enable: clear any auto-pause state and bump last_enabled_at to reset the
-// consecutive-failure anti-flap window. On disable: leave the auto-pause
-// columns untouched (a user-initiated pause should not masquerade as an
-// auto-pause if one happens to already be set, though in practice they can't
-// co-exist because enabled flips from true to false).
+// On enable: clear any auto-pause state. last_enabled_at only advances on a
+// real false→true transition (not on an idempotent enable-already-enabled
+// call), so the anti-flap window isn't silently reset when, e.g., two UI
+// tabs race to click Resume. On disable: leave the auto-pause columns
+// untouched — a user-initiated pause doesn't touch auto-pause state.
 func (q *Queries) SetScheduleEnabled(ctx context.Context, arg SetScheduleEnabledParams) (Schedule, error) {
 	row := q.db.QueryRow(ctx, setScheduleEnabled, arg.ID, arg.Enabled, arg.OrgID)
 	var i Schedule

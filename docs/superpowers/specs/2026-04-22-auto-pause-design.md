@@ -35,7 +35,7 @@ Auto-pause is an additive step in the existing finalize path. No new service, no
 
 - The API's `POST /internal/runs/:id/finalize` handler runs an evaluation step **after** its run-row write has committed, in a dedicated short-lived transaction. Keeping evaluation out of the finalize tx ensures a failed audit insert (or any other evaluation-step error) can never poison the tx and roll back the load-bearing run-row write.
 - Only a run with `fire_reason='schedule'` AND terminal `status='failed'` triggers evaluation.
-- Evaluation queries the last *N* terminal scheduled runs for this schedule with `started_at >= schedule.last_enabled_at`. If the query returns *N* rows and every row is `failed`, the schedule is auto-paused atomically within the evaluation transaction.
+- Evaluation queries the last *N* terminal scheduled runs for this schedule with `created_at >= schedule.last_enabled_at`, ordered by `created_at DESC, id DESC`. (The query uses `created_at`, not `started_at`, because `started_at` is nullable — runs that failed before dispatch have `started_at IS NULL` and must still count toward the streak.) If the query returns *N* rows and every row is `failed`, the schedule is auto-paused atomically within the evaluation transaction.
 
 ### State
 
@@ -46,9 +46,9 @@ Four new columns on `schedule`:
 | `auto_pause_after` | `int NULL` | Per-schedule threshold override from `cronfoundry.yaml`. `NULL` = use global default. |
 | `auto_paused_at` | `timestamptz NULL` | When the most recent auto-pause fired. `NULL` = not currently auto-paused. |
 | `auto_pause_reason` | `text NULL` | Human-readable reason, e.g. `"5 consecutive failed runs"`. `NULL` = not currently auto-paused. |
-| `last_enabled_at` | `timestamptz NOT NULL DEFAULT now()` | Anti-flap boundary. Bumped whenever `enabled` transitions `false → true`. Consecutive-failure check only considers runs with `started_at >= last_enabled_at`. |
+| `last_enabled_at` | `timestamptz NOT NULL DEFAULT now()` | Anti-flap boundary. Bumped whenever `enabled` transitions `false → true`. Consecutive-failure check only considers runs with `created_at >= last_enabled_at`. |
 
-Global default: `DefaultAutoPauseAfter = 5` — a package-level constant in `internal/webapi`, co-located with the finalize handler that reads it.
+Global default: `DefaultAutoPauseAfter = 5` — a package-level constant in `internal/api`, co-located with the finalize handler that reads it.
 
 ### Resume
 
@@ -108,7 +108,7 @@ The sync path already writes schedule rows on `cronfoundry.yaml` changes; the pa
 
 ### API finalize handler
 
-New file `internal/webapi/finalize_autopause.go` — keeps the existing finalize handler readable and gives the logic an obvious home for test coverage.
+New file `internal/api/finalize_autopause.go` — keeps the existing finalize handler readable and gives the logic an obvious home for test coverage. (The run-finalize HTTP handler lives in `internal/api`, not `internal/webapi` — `webapi` hosts user-facing `/api/*` routes; `internal/api` hosts the runner-facing `/internal/*` routes that this feature plugs into.)
 
 Exported function:
 
@@ -139,8 +139,8 @@ Behavior:
     WHERE schedule_id = $1
       AND fire_reason = 'schedule'
       AND status IN ('succeeded','partial_failure','failed')
-      AND started_at >= $2   -- schedule.last_enabled_at
-    ORDER BY started_at DESC
+      AND created_at >= $2   -- schedule.last_enabled_at
+    ORDER BY created_at DESC, id DESC
     LIMIT $3                 -- threshold
    ```
 5. If the result has fewer than `threshold` rows, rollback and return nil.
@@ -197,7 +197,7 @@ No new routes, no new API endpoints. `GET /schedules`, `GET /schedules/:id`, and
 
 ### 1. Auto-pause triggers (5 of 5 failures)
 
-```
+```text
 Runner → POST /internal/runs/:id/finalize (status=failed)
   → API handler:
      finalizeTx: BEGIN; UPDATE run SET status='failed', ...; COMMIT
@@ -214,7 +214,7 @@ Runner → POST /internal/runs/:id/finalize (status=failed)
 
 ### 2. Streak broken (success in window)
 
-```
+```text
 pauseTx: BEGIN
   SELECT ... → [failed, failed, succeeded, failed, failed]
   → any(status != 'failed') → ROLLBACK, return nil
@@ -222,7 +222,7 @@ pauseTx: BEGIN
 
 ### 3. Race (two finalizes at once)
 
-```
+```text
 Both finalize their run rows independently (separate tx's, both commit).
 Each then opens its own pauseTx:
   Tx1 SELECT → 5 failed. UPDATE WHERE enabled=true → 1 row. INSERTs. COMMIT.
@@ -232,7 +232,7 @@ Each then opens its own pauseTx:
 
 ### 4. Resume
 
-```
+```text
 User clicks Resume → POST /schedules/:id/resume
   → API handler:
      UPDATE schedule SET enabled=true, auto_paused_at=NULL,
@@ -243,9 +243,9 @@ User clicks Resume → POST /schedules/:id/resume
 
 ### 5. Post-resume fresh window
 
-```
+```text
 A new scheduled fire fails. evaluateAutoPause runs:
-  SELECT ... WHERE started_at >= schedule.last_enabled_at LIMIT 5
+  SELECT ... WHERE created_at >= schedule.last_enabled_at LIMIT 5
   → only 1 row (the just-finalized one) — count < threshold → return nil
 No pause. Pre-resume failures are correctly excluded.
 ```
@@ -267,7 +267,7 @@ No pause. Pre-resume failures are correctly excluded.
 - **Streak broken by success:** 4 failed + 1 succeeded + 1 new-failed → no pause.
 - **Streak broken by partial_failure:** 4 failed + 1 partial_failure + 1 new-failed → no pause.
 - **Manual excluded:** 4 failed scheduled + 1 new failed manual → no pause.
-- **Anti-flap window:** 5 failed runs, one with `started_at < last_enabled_at` → no pause (only 4 in-window).
+- **Anti-flap window:** 5 failed runs, one with `created_at < last_enabled_at` → no pause (only 4 in-window).
 - **Per-schedule override:** `auto_pause_after=3`; 3 failed → pauses at 3.
 - **Idempotent pause:** already-paused schedule, new failure → UPDATE no-op, no duplicate rows.
 - **Insufficient history:** threshold=5, only 3 runs so far, all failed → no pause.

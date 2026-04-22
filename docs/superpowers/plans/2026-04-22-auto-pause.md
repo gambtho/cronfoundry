@@ -540,14 +540,17 @@ Append:
 -- name: ListRecentTerminalScheduledRuns :many
 -- Used by evaluateAutoPause. Returns the last N terminal scheduled runs for
 -- a schedule, within the anti-flap window defined by last_enabled_at.
--- status ordering: newest first. LIMIT is applied by caller via $3.
+-- Uses `created_at` (NOT NULL, matches the existing run_schedule_created_idx)
+-- so failed-before-dispatch runs (started_at NULL) are still counted.
+-- id DESC is a stable tie-breaker when two runs share created_at (tests /
+-- tight scheduler clocks).
 SELECT status
 FROM run
 WHERE schedule_id = $1
   AND fire_reason = 'schedule'
   AND status IN ('succeeded', 'partial_failure', 'failed')
-  AND started_at >= $2
-ORDER BY started_at DESC
+  AND created_at >= $2
+ORDER BY created_at DESC, id DESC
 LIMIT $3;
 ```
 

@@ -299,6 +299,14 @@ func TestFinalize_TriggersAutoPauseAfterConsecutiveFailures(t *testing.T) {
 		RETURNING id
 	`, orgID, skillID).Scan(&scheduleID))
 
+	// Backdate last_enabled_at so the seeded runs sit in the past rather than
+	// the future, even though the evaluator doesn't care about wall-clock
+	// "now" — this keeps test fixtures legible.
+	_, err := pool.Exec(ctx,
+		`UPDATE schedule SET last_enabled_at = now() - interval '1 hour' WHERE id = $1`,
+		scheduleID)
+	require.NoError(t, err)
+
 	var enabledAt time.Time
 	require.NoError(t, pool.QueryRow(ctx,
 		`SELECT last_enabled_at FROM schedule WHERE id=$1`, scheduleID).Scan(&enabledAt))
