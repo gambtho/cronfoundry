@@ -58,6 +58,8 @@ CREATE TABLE schedule (
     destinations_json   jsonb NOT NULL,
     writeback_json      jsonb,
     env_json            jsonb NOT NULL DEFAULT '{}'::jsonb,
+    mcp_env_json        jsonb NOT NULL DEFAULT '{}'::jsonb,
+    max_turns           int,
     next_fire_at        timestamptz,
     created_at          timestamptz NOT NULL DEFAULT now(),
     updated_at          timestamptz NOT NULL DEFAULT now(),
