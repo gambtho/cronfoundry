@@ -18,6 +18,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -430,7 +431,7 @@ func TestE2E_SuccessfulFireWithLocalClone(t *testing.T) {
 
 	// ── 1. Build a local bare git repo ──────────────────────────────────────
 	t.Log("e2e-success: phase 1 — building local bare git repo")
-	_, bareDir, pinnedSHA := buildLocalSkillRepo(t)
+	bareDir, pinnedSHA := buildLocalSkillRepo(t)
 
 	// ── 2. Boot Postgres + build binary + admin init ─────────────────────────
 	t.Log("e2e-success: phase 2 — booting Postgres and building binary")
@@ -494,11 +495,15 @@ func TestE2E_SuccessfulFireWithLocalClone(t *testing.T) {
 	// ── 4. Fake Slack webhook (records calls) ────────────────────────────────
 	t.Log("e2e-success: phase 4 — starting fake Slack webhook")
 	var slackHits int32
+	var slackBodyMu sync.Mutex
 	var slackBody []byte
 	slackSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&slackHits, 1)
-		slackBody, _ = io.ReadAll(r.Body)
-		t.Logf("e2e-success: fake slack received %s %s body=%s", r.Method, r.URL.Path, string(slackBody))
+		body, _ := io.ReadAll(r.Body)
+		slackBodyMu.Lock()
+		slackBody = body
+		slackBodyMu.Unlock()
+		t.Logf("e2e-success: fake slack received %s %s (%d bytes)", r.Method, r.URL.Path, len(body))
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer slackSrv.Close()
@@ -669,20 +674,30 @@ func TestE2E_SuccessfulFireWithLocalClone(t *testing.T) {
 	require.NotNil(t, finalRun.TokensIn, "tokens_in should be populated")
 	require.Greater(t, *finalRun.TokensIn, int32(0), "tokens_in should be > 0")
 
-	// cost_cents >= 0
+	// cost_cents == 0 — 100 input + 50 output tokens on gpt-4o-mini
+	// ($0.15/$0.60 per 1M) is $0.00015 + $0.0006 = $0.00075, which floors
+	// to 0 cents. Asserting equality (not >= 0) documents the sub-penny
+	// floor and catches a regression where the field fails to populate.
 	require.NotNil(t, finalRun.CostCents, "cost_cents should be populated")
-	require.GreaterOrEqual(t, *finalRun.CostCents, int32(0), "cost_cents should be >= 0")
+	require.EqualValues(t, 0, *finalRun.CostCents,
+		"cost_cents should floor to 0 for this fixture (sub-penny)")
 
 	// Slack was called exactly once.
 	require.Equal(t, int32(1), atomic.LoadInt32(&slackHits),
 		"Slack webhook should have been called exactly once")
 
+	// Read slackBody under the mutex — the httptest handler writes it from
+	// a different goroutine and the race detector will flag an unguarded read.
+	slackBodyMu.Lock()
+	slackBodySnapshot := string(slackBody)
+	slackBodyMu.Unlock()
+
 	// Slack body contains "Hello world".
-	require.Contains(t, string(slackBody), "Hello world",
+	require.Contains(t, slackBodySnapshot, "Hello world",
 		"Slack body should contain the LLM output")
 
 	// Slack body does NOT contain the raw memory block.
-	require.NotContains(t, string(slackBody), "<memory>",
+	require.NotContains(t, slackBodySnapshot, "<memory>",
 		"Slack body must not contain the raw <memory> tag — memory should be stripped")
 
 	// A publish.slack.ok event should exist.
@@ -700,13 +715,13 @@ func TestE2E_SuccessfulFireWithLocalClone(t *testing.T) {
 		runID.String(), finalStatus, atomic.LoadInt32(&slackHits))
 }
 
-// buildLocalSkillRepo creates a temp directory with a working git repo
-// containing cronfoundry.yaml + skills/hello/SKILL.md and returns
-// (workingDir, bareClonePath, HEAD sha). The bare clone is what the
-// runner actually clones from via file://.
-func buildLocalSkillRepo(t *testing.T) (workDir, bareDir, sha string) {
+// buildLocalSkillRepo creates a working git repo containing cronfoundry.yaml
+// + skills/hello/SKILL.md, then produces a bare clone the runner can fetch
+// via file://. Returns (bareClonePath, HEAD sha). The intermediate working
+// directory lives under t.TempDir() and is cleaned up automatically.
+func buildLocalSkillRepo(t *testing.T) (bareDir, sha string) {
 	t.Helper()
-	workDir = t.TempDir()
+	workDir := t.TempDir()
 
 	manifest := `version: 1
 skills:
@@ -736,18 +751,23 @@ Say hello.
 	runGit(t, workDir, "init", "-b", "main")
 	runGit(t, workDir, "-c", "user.email=t@t", "-c", "user.name=T", "add", ".")
 	runGit(t, workDir, "-c", "user.email=t@t", "-c", "user.name=T", "commit", "-m", "init")
-	out, err := exec.Command("git", "-C", workDir, "rev-parse", "HEAD").Output()
-	require.NoError(t, err)
+	// Use CombinedOutput so a git failure includes stderr in the test log —
+	// Output() alone silently drops it, making failures opaque.
+	out, err := exec.Command("git", "-C", workDir, "rev-parse", "HEAD").CombinedOutput()
+	require.NoError(t, err, "git rev-parse failed: %s", out)
 	sha = strings.TrimSpace(string(out))
 
 	// Bare clone so the runner can `git clone file://<bareDir>` safely.
 	bareDir = t.TempDir()
 	runGit(t, "", "clone", "--bare", workDir, bareDir)
 
-	return workDir, bareDir, sha
+	return bareDir, sha
 }
 
 // runGit runs a git command, failing the test if it exits non-zero.
+// runGit runs `git <args...>`. An empty workDir means "do not set Cmd.Dir"
+// (git will run in the current process working directory) — used for
+// standalone commands like `git clone <src> <dst>` that don't need -C.
 func runGit(t *testing.T, workDir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", args...)

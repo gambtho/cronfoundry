@@ -326,10 +326,13 @@ func TestRunnerHTTP_AppliesTimeoutFromRunContext(t *testing.T) {
 		case strings.Contains(r.URL.Path, "/secrets"):
 			_ = json.NewEncoder(w).Encode(map[string]string{})
 		case strings.HasSuffix(r.URL.Path, "/clone-url"):
-			// Simulate upstream hang. Should be cancelled by the 1s deadline.
+			// Simulate upstream hang. The runner's 1s deadline should cancel
+			// r.Context() almost immediately; if it doesn't, the test is
+			// broken (not just slow) — fail explicitly rather than waiting.
 			select {
 			case <-r.Context().Done():
-			case <-time.After(5 * time.Second):
+			case <-time.After(4 * time.Second):
+				t.Error("timeout was never applied — r.Context() never cancelled")
 			}
 			w.WriteHeader(http.StatusGatewayTimeout)
 		case strings.HasSuffix(r.URL.Path, "/finalize"):

@@ -26,10 +26,12 @@ func sig() *object.Signature {
 }
 
 // fakeProvider returns a canned streamed response and records the messages it received.
+// A nil usage field yields the default {InputTokens:10, OutputTokens:20}; tests
+// that need to exercise zero-token behavior explicitly can pass &llm.Usage{}.
 type fakeProvider struct {
 	response string
 	received []llm.Message
-	usage    llm.Usage // if zero, defaults to {InputTokens:10, OutputTokens:20}
+	usage    *llm.Usage
 }
 
 func (f *fakeProvider) Chat(ctx context.Context, msgs []llm.Message, opts llm.CallOptions, onChunk func(llm.StreamChunk)) (llm.Usage, error) {
@@ -38,10 +40,10 @@ func (f *fakeProvider) Chat(ctx context.Context, msgs []llm.Message, opts llm.Ca
 	for _, chunk := range splitIntoN(f.response, 3) {
 		onChunk(llm.StreamChunk{Delta: chunk})
 	}
-	if f.usage.InputTokens == 0 && f.usage.OutputTokens == 0 {
+	if f.usage == nil {
 		return llm.Usage{InputTokens: 10, OutputTokens: 20}, nil
 	}
-	return f.usage, nil
+	return *f.usage, nil
 }
 
 func splitIntoN(s string, n int) []string {
@@ -248,7 +250,7 @@ skills:
 	// 1_000_000 input + 1_000_000 output for gpt-4o-mini → 15 + 60 = 75 cents.
 	fake := &fakeProvider{
 		response: "output",
-		usage:    llm.Usage{InputTokens: 1_000_000, OutputTokens: 1_000_000},
+		usage:    &llm.Usage{InputTokens: 1_000_000, OutputTokens: 1_000_000},
 	}
 	r := New(Deps{
 		ProviderFactory: func(string) (llm.Provider, error) { return fake, nil },
