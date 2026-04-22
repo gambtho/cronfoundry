@@ -226,10 +226,8 @@ func runRunnerHTTP(ctx context.Context, runIDFlag string) error {
 		v := int32(result.Usage.OutputTokens)
 		body.TokensOut = &v
 	}
-	if result.CostCents > 0 {
-		v := int32(result.CostCents)
-		body.CostCents = &v
-	}
+	v := int32(result.CostCents)
+	body.CostCents = &v
 	if result.WritebackSHA != "" {
 		sha := result.WritebackSHA
 		body.WritebackCommitSha = &sha

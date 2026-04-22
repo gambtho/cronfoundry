@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -235,6 +236,30 @@ func TestAPIClient_PostFinalize_SendsCostCents(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, gotBody.CostCents)
 	assert.Equal(t, int32(42), *gotBody.CostCents)
+}
+
+// TestAPIClient_PostFinalize_SendsZeroCostCents verifies that zero-cost runs
+// report cost_cents=0 on the wire rather than omitting the field. CostCents is
+// always deterministically computed by llm.CostCents; the value 0 means 'we
+// know the cost is zero' (BYOK provider, unknown model, or sub-penny run),
+// not 'unknown'.
+func TestAPIClient_PostFinalize_SendsZeroCostCents(t *testing.T) {
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := &apiClient{baseURL: srv.URL, token: "t", http: &http.Client{Timeout: 2 * time.Second}}
+	cents := int32(0)
+	err := c.PostFinalize(context.Background(), "run-1", finalizeRequest{
+		Status:    "succeeded",
+		CostCents: &cents,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, string(gotBody), `"cost_cents":0`,
+		"zero-cost runs must report cost_cents=0, not omit the field")
 }
 
 // TestAPIClient_Do_PropagatesHTTPError ensures non-2xx responses become
