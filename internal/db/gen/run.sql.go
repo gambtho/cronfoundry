@@ -524,22 +524,23 @@ FROM run
 WHERE schedule_id = $1
   AND fire_reason = 'schedule'
   AND status IN ('succeeded', 'partial_failure', 'failed')
-  AND started_at >= $2
-ORDER BY started_at DESC
+  AND created_at >= $2
+ORDER BY created_at DESC
 LIMIT $3
 `
 
 type ListRecentTerminalScheduledRunsParams struct {
 	ScheduleID pgtype.UUID
-	StartedAt  pgtype.Timestamptz
+	CreatedAt  pgtype.Timestamptz
 	Limit      int32
 }
 
 // Used by evaluateAutoPause. Returns the last N terminal scheduled runs for
 // a schedule, within the anti-flap window defined by last_enabled_at.
-// status ordering: newest first. LIMIT is applied by caller via $3.
+// Uses `created_at` (NOT NULL, matches the existing run_schedule_created_idx)
+// so failed-before-dispatch runs (started_at NULL) are still counted.
 func (q *Queries) ListRecentTerminalScheduledRuns(ctx context.Context, arg ListRecentTerminalScheduledRunsParams) ([]string, error) {
-	rows, err := q.db.Query(ctx, listRecentTerminalScheduledRuns, arg.ScheduleID, arg.StartedAt, arg.Limit)
+	rows, err := q.db.Query(ctx, listRecentTerminalScheduledRuns, arg.ScheduleID, arg.CreatedAt, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
