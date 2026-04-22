@@ -270,7 +270,7 @@ func TestOAuth_Callback_SessionCookieIs7Days(t *testing.T) {
 	// and the JWT expiry must agree, otherwise one will outlive the other.
 	claims, err := webapi.VerifySession(sessionCookie.Value, deps.MasterKey)
 	require.NoError(t, err, "session cookie value must verify")
-	ttl := time.Unix(claims.Exp, 0).Sub(time.Now())
+	ttl := time.Until(time.Unix(claims.Exp, 0))
 	// Small clock-skew slack — signing happens ~ms before this check.
 	assert.InDelta(t, (7 * 24 * time.Hour).Seconds(), ttl.Seconds(), 5.0,
 		"signed session Exp must match cookie MaxAge within a few seconds")

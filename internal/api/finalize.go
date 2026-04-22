@@ -1,9 +1,12 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -11,6 +14,13 @@ import (
 
 	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
 )
+
+// autoPauseEvalTimeout bounds the post-commit auto-pause evaluation. The
+// evaluation opens its own transaction against Postgres; five seconds is
+// generous for a threshold query + conditional UPDATE + two inserts even
+// on a loaded server, and short enough to not hold resources if something
+// has gone wrong.
+const autoPauseEvalTimeout = 5 * time.Second
 
 var validFinalizeStatuses = map[string]bool{
 	"succeeded":       true,
@@ -81,7 +91,7 @@ func (h finalizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := dbgen.New(h.deps.Pool)
-	if _, err := q.FinalizeRun(r.Context(), dbgen.FinalizeRunParams{
+	row, err := q.FinalizeRun(r.Context(), dbgen.FinalizeRunParams{
 		ID:                 pgtype.UUID{Bytes: urlRunID, Valid: true},
 		Status:             body.Status,
 		DurationMs:         body.DurationMs,
@@ -91,7 +101,8 @@ func (h finalizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ErrorKind:          body.ErrorKind,
 		ErrorMsg:           body.ErrorMsg,
 		WritebackCommitSha: body.WritebackCommitSha,
-	}); err != nil {
+	})
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// The FinalizeRun query's WHERE clause refuses to match runs
 			// already in a terminal state. A missing run_id would also
@@ -105,5 +116,25 @@ func (h finalizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "finalize: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	// Auto-pause evaluation runs AFTER finalize has committed, in its own
+	// transaction. We deliberately DETACH from the request context: a
+	// client that disconnects right after receiving the 204 must not abort
+	// the evaluation tx mid-flight. We still bound the work with a
+	// timeout so a stuck evaluation can't leak resources.
+	scheduleUUID := uuid.UUID(row.ScheduleID.Bytes)
+	evalCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), autoPauseEvalTimeout)
+	defer cancel()
+	if err := evaluateAutoPause(
+		evalCtx, h.deps.Pool,
+		scheduleUUID, urlRunID,
+		body.Status, row.FireReason,
+	); err != nil {
+		slog.Warn("finalize: auto-pause evaluation failed (non-fatal)",
+			"run_id", urlRunID,
+			"schedule_id", scheduleUUID,
+			"err", err)
+	}
+
 	w.WriteHeader(http.StatusNoContent)
 }

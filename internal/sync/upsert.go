@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -104,6 +105,20 @@ func UpsertSkillsAndSchedules(
 				timezone = "UTC"
 			}
 
+			var autoPauseAfter *int32
+			if sch.AutoPause != nil {
+				// Validate() already enforces After >= 1, but not an upper
+				// bound. Reject anything that would silently wrap under
+				// int32 conversion rather than let it land in Postgres as
+				// garbage.
+				if sch.AutoPause.After > math.MaxInt32 {
+					return fmt.Errorf("sync: skill %q schedule %q: auto_pause.after %d exceeds int32 max",
+						entry.Path, sch.Name, sch.AutoPause.After)
+				}
+				v := int32(sch.AutoPause.After)
+				autoPauseAfter = &v
+			}
+
 			if _, err := q.UpsertSchedule(ctx, dbgen.UpsertScheduleParams{
 				OrgID:         orgID,
 				SkillID:       skillID,
@@ -123,6 +138,7 @@ func UpsertSkillsAndSchedules(
 				DestinationsJson: destBytes,
 				WritebackJson:    writebackBytes,
 				EnvJson:          envBytes,
+				AutoPauseAfter:   autoPauseAfter,
 			}); err != nil {
 				return fmt.Errorf("sync: upsert schedule %q/%q: %w", entry.Path, sch.Name, err)
 			}

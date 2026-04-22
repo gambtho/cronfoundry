@@ -127,3 +127,74 @@ skills:
 		`SELECT enabled FROM schedule WHERE skill_id = $1 AND name = 'daily'`, listed[0].ID).Scan(&dailyEnabled))
 	assert.True(t, dailyEnabled)
 }
+
+func TestUpsert_AutoPauseAfter(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, orgID, repoID, cleanup := startPG(t)
+	defer cleanup()
+
+	skills := map[string]*config.Skill{
+		"skills/a": {
+			Frontmatter: config.SkillFrontmatter{Name: "a"},
+			Body:        "prompt",
+		},
+	}
+
+	ctx := context.Background()
+
+	// First sync: schedule with auto_pause_after = 3.
+	manifestWith := `version: 1
+skills:
+  - path: skills/a
+    schedules:
+      - name: daily
+        cron: "0 9 * * *"
+        provider: openai
+        model: gpt-4o-mini
+        destinations:
+          - slack: { secret: slack_webhook }
+        auto_pause:
+          after: 3
+`
+	m1, err := config.ParseManifest([]byte(manifestWith))
+	require.NoError(t, err)
+	require.NoError(t, m1.Validate())
+	require.NoError(t, UpsertSkillsAndSchedules(ctx, pool, orgID, repoID, m1, skills, "sha1"))
+
+	q := dbgen.New(pool)
+	listed, err := q.ListSkillsByRepo(ctx, repoID)
+	require.NoError(t, err)
+	require.Len(t, listed, 1)
+
+	var autoPauseAfter *int32
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT auto_pause_after FROM schedule WHERE skill_id = $1 AND name = 'daily'`, listed[0].ID).
+		Scan(&autoPauseAfter))
+	require.NotNil(t, autoPauseAfter)
+	assert.Equal(t, int32(3), *autoPauseAfter)
+
+	// Second sync: same schedule without auto_pause → auto_pause_after should become NULL.
+	manifestWithout := `version: 1
+skills:
+  - path: skills/a
+    schedules:
+      - name: daily
+        cron: "0 9 * * *"
+        provider: openai
+        model: gpt-4o-mini
+        destinations:
+          - slack: { secret: slack_webhook }
+`
+	m2, err := config.ParseManifest([]byte(manifestWithout))
+	require.NoError(t, err)
+	require.NoError(t, m2.Validate())
+	require.NoError(t, UpsertSkillsAndSchedules(ctx, pool, orgID, repoID, m2, skills, "sha2"))
+
+	var autoPauseAfterNull *int32
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT auto_pause_after FROM schedule WHERE skill_id = $1 AND name = 'daily'`, listed[0].ID).
+		Scan(&autoPauseAfterNull))
+	assert.Nil(t, autoPauseAfterNull, "auto_pause_after should be NULL when AutoPause is nil")
+}

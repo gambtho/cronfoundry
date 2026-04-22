@@ -36,6 +36,10 @@ export interface Schedule {
   provider: string
   model: string
   next_fire_at: string | null
+  auto_pause_after: number | null
+  auto_paused_at: string | null
+  auto_pause_reason: string | null
+  last_enabled_at: string
   skill_path: string
   skill_name: string
   owner: string

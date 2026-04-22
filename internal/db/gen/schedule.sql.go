@@ -11,6 +11,32 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const autoPauseSchedule = `-- name: AutoPauseSchedule :execrows
+UPDATE schedule
+SET enabled           = false,
+    auto_paused_at    = now(),
+    auto_pause_reason = $2,
+    updated_at        = now()
+WHERE id = $1
+  AND enabled = true
+`
+
+type AutoPauseScheduleParams struct {
+	ID              pgtype.UUID
+	AutoPauseReason *string
+}
+
+// Idempotent conditional pause. Returns the number of rows affected so the
+// caller can distinguish "we paused it" (1) from "someone else already paused
+// it" (0, in which case the caller must not emit duplicate audit rows).
+func (q *Queries) AutoPauseSchedule(ctx context.Context, arg AutoPauseScheduleParams) (int64, error) {
+	result, err := q.db.Exec(ctx, autoPauseSchedule, arg.ID, arg.AutoPauseReason)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const disableMissingSchedules = `-- name: DisableMissingSchedules :exec
 UPDATE schedule
 SET enabled    = false,
@@ -31,6 +57,36 @@ type DisableMissingSchedulesParams struct {
 func (q *Queries) DisableMissingSchedules(ctx context.Context, arg DisableMissingSchedulesParams) error {
 	_, err := q.db.Exec(ctx, disableMissingSchedules, arg.SkillID, arg.Column2)
 	return err
+}
+
+const getScheduleAutoPauseConfig = `-- name: GetScheduleAutoPauseConfig :one
+SELECT org_id, auto_pause_after, last_enabled_at, enabled
+FROM schedule
+WHERE id = $1
+`
+
+type GetScheduleAutoPauseConfigRow struct {
+	OrgID          pgtype.UUID
+	AutoPauseAfter *int32
+	LastEnabledAt  pgtype.Timestamptz
+	Enabled        bool
+}
+
+// Returns the fields evaluateAutoPause needs to decide whether to trigger a
+// pause and emit audit/run_event rows: org_id (for audit), the per-schedule
+// threshold override (nullable), and the anti-flap window boundary.
+// `enabled` is returned for tests/debug; the pause query guards on it
+// independently via `WHERE enabled = true`.
+func (q *Queries) GetScheduleAutoPauseConfig(ctx context.Context, id pgtype.UUID) (GetScheduleAutoPauseConfigRow, error) {
+	row := q.db.QueryRow(ctx, getScheduleAutoPauseConfig, id)
+	var i GetScheduleAutoPauseConfigRow
+	err := row.Scan(
+		&i.OrgID,
+		&i.AutoPauseAfter,
+		&i.LastEnabledAt,
+		&i.Enabled,
+	)
+	return i, err
 }
 
 const getScheduleForTrigger = `-- name: GetScheduleForTrigger :one
@@ -66,7 +122,7 @@ func (q *Queries) GetScheduleForTrigger(ctx context.Context, id pgtype.UUID) (Ge
 }
 
 const listDueSchedules = `-- name: ListDueSchedules :many
-SELECT id, org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec, enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment, destinations_json, writeback_json, env_json, next_fire_at, created_at, updated_at
+SELECT id, org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec, enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment, destinations_json, writeback_json, env_json, auto_pause_after, auto_paused_at, auto_pause_reason, last_enabled_at, next_fire_at, created_at, updated_at
 FROM schedule
 WHERE enabled = true
   AND next_fire_at IS NOT NULL
@@ -103,6 +159,10 @@ func (q *Queries) ListDueSchedules(ctx context.Context) ([]Schedule, error) {
 			&i.DestinationsJson,
 			&i.WritebackJson,
 			&i.EnvJson,
+			&i.AutoPauseAfter,
+			&i.AutoPausedAt,
+			&i.AutoPauseReason,
+			&i.LastEnabledAt,
 			&i.NextFireAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -118,7 +178,7 @@ func (q *Queries) ListDueSchedules(ctx context.Context) ([]Schedule, error) {
 }
 
 const listDueSchedulesWithSha = `-- name: ListDueSchedulesWithSha :many
-SELECT s.id, s.org_id, s.skill_id, s.name, s.cron, s.timezone, s.overlap_policy, s.timeout_sec, s.enabled, s.provider, s.model, s.llm_secret_ref, s.llm_endpoint, s.llm_deployment, s.destinations_json, s.writeback_json, s.env_json, s.next_fire_at, s.created_at, s.updated_at,
+SELECT s.id, s.org_id, s.skill_id, s.name, s.cron, s.timezone, s.overlap_policy, s.timeout_sec, s.enabled, s.provider, s.model, s.llm_secret_ref, s.llm_endpoint, s.llm_deployment, s.destinations_json, s.writeback_json, s.env_json, s.auto_pause_after, s.auto_paused_at, s.auto_pause_reason, s.last_enabled_at, s.next_fire_at, s.created_at, s.updated_at,
        sk.current_sha AS skill_sha
 FROM schedule s
 JOIN skill sk ON sk.id = s.skill_id
@@ -146,6 +206,10 @@ type ListDueSchedulesWithShaRow struct {
 	DestinationsJson []byte
 	WritebackJson    []byte
 	EnvJson          []byte
+	AutoPauseAfter   *int32
+	AutoPausedAt     pgtype.Timestamptz
+	AutoPauseReason  *string
+	LastEnabledAt    pgtype.Timestamptz
 	NextFireAt       pgtype.Timestamptz
 	CreatedAt        pgtype.Timestamptz
 	UpdatedAt        pgtype.Timestamptz
@@ -181,6 +245,10 @@ func (q *Queries) ListDueSchedulesWithSha(ctx context.Context) ([]ListDueSchedul
 			&i.DestinationsJson,
 			&i.WritebackJson,
 			&i.EnvJson,
+			&i.AutoPauseAfter,
+			&i.AutoPausedAt,
+			&i.AutoPauseReason,
+			&i.LastEnabledAt,
 			&i.NextFireAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -197,7 +265,7 @@ func (q *Queries) ListDueSchedulesWithSha(ctx context.Context) ([]ListDueSchedul
 }
 
 const listSchedulesByOrg = `-- name: ListSchedulesByOrg :many
-SELECT s.id, s.org_id, s.skill_id, s.name, s.cron, s.timezone, s.overlap_policy, s.timeout_sec, s.enabled, s.provider, s.model, s.llm_secret_ref, s.llm_endpoint, s.llm_deployment, s.destinations_json, s.writeback_json, s.env_json, s.next_fire_at, s.created_at, s.updated_at, sk.path AS skill_path, sk.name AS skill_name, rc.owner, rc.name AS repo_name
+SELECT s.id, s.org_id, s.skill_id, s.name, s.cron, s.timezone, s.overlap_policy, s.timeout_sec, s.enabled, s.provider, s.model, s.llm_secret_ref, s.llm_endpoint, s.llm_deployment, s.destinations_json, s.writeback_json, s.env_json, s.auto_pause_after, s.auto_paused_at, s.auto_pause_reason, s.last_enabled_at, s.next_fire_at, s.created_at, s.updated_at, sk.path AS skill_path, sk.name AS skill_name, rc.owner, rc.name AS repo_name
 FROM schedule s
 JOIN skill sk ON sk.id = s.skill_id
 JOIN repo_connection rc ON rc.id = sk.repo_id
@@ -223,6 +291,10 @@ type ListSchedulesByOrgRow struct {
 	DestinationsJson []byte
 	WritebackJson    []byte
 	EnvJson          []byte
+	AutoPauseAfter   *int32
+	AutoPausedAt     pgtype.Timestamptz
+	AutoPauseReason  *string
+	LastEnabledAt    pgtype.Timestamptz
 	NextFireAt       pgtype.Timestamptz
 	CreatedAt        pgtype.Timestamptz
 	UpdatedAt        pgtype.Timestamptz
@@ -259,6 +331,10 @@ func (q *Queries) ListSchedulesByOrg(ctx context.Context, orgID pgtype.UUID) ([]
 			&i.DestinationsJson,
 			&i.WritebackJson,
 			&i.EnvJson,
+			&i.AutoPauseAfter,
+			&i.AutoPausedAt,
+			&i.AutoPauseReason,
+			&i.LastEnabledAt,
 			&i.NextFireAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -279,11 +355,14 @@ func (q *Queries) ListSchedulesByOrg(ctx context.Context, orgID pgtype.UUID) ([]
 
 const setScheduleEnabled = `-- name: SetScheduleEnabled :one
 UPDATE schedule
-SET enabled    = $2,
-    updated_at = now()
+SET enabled = $2,
+    auto_paused_at    = CASE WHEN $2 THEN NULL                   ELSE auto_paused_at    END,
+    auto_pause_reason = CASE WHEN $2 THEN NULL                   ELSE auto_pause_reason END,
+    last_enabled_at   = CASE WHEN $2 AND NOT enabled THEN now()  ELSE last_enabled_at   END,
+    updated_at        = now()
 WHERE id = $1
   AND org_id = $3
-RETURNING id, org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec, enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment, destinations_json, writeback_json, env_json, next_fire_at, created_at, updated_at
+RETURNING id, org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec, enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment, destinations_json, writeback_json, env_json, auto_pause_after, auto_paused_at, auto_pause_reason, last_enabled_at, next_fire_at, created_at, updated_at
 `
 
 type SetScheduleEnabledParams struct {
@@ -292,6 +371,11 @@ type SetScheduleEnabledParams struct {
 	OrgID   pgtype.UUID
 }
 
+// On enable: clear any auto-pause state. last_enabled_at only advances on a
+// real false→true transition (not on an idempotent enable-already-enabled
+// call), so the anti-flap window isn't silently reset when, e.g., two UI
+// tabs race to click Resume. On disable: leave the auto-pause columns
+// untouched — a user-initiated pause doesn't touch auto-pause state.
 func (q *Queries) SetScheduleEnabled(ctx context.Context, arg SetScheduleEnabledParams) (Schedule, error) {
 	row := q.db.QueryRow(ctx, setScheduleEnabled, arg.ID, arg.Enabled, arg.OrgID)
 	var i Schedule
@@ -313,6 +397,10 @@ func (q *Queries) SetScheduleEnabled(ctx context.Context, arg SetScheduleEnabled
 		&i.DestinationsJson,
 		&i.WritebackJson,
 		&i.EnvJson,
+		&i.AutoPauseAfter,
+		&i.AutoPausedAt,
+		&i.AutoPauseReason,
+		&i.LastEnabledAt,
 		&i.NextFireAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -341,9 +429,9 @@ const upsertSchedule = `-- name: UpsertSchedule :one
 INSERT INTO schedule (
     org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec,
     enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment,
-    destinations_json, writeback_json, env_json, updated_at
+    destinations_json, writeback_json, env_json, auto_pause_after, updated_at
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, now())
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, now())
 ON CONFLICT (skill_id, name) DO UPDATE
   SET cron              = EXCLUDED.cron,
       timezone          = EXCLUDED.timezone,
@@ -358,8 +446,9 @@ ON CONFLICT (skill_id, name) DO UPDATE
       destinations_json = EXCLUDED.destinations_json,
       writeback_json    = EXCLUDED.writeback_json,
       env_json          = EXCLUDED.env_json,
+      auto_pause_after  = EXCLUDED.auto_pause_after,
       updated_at        = now()
-RETURNING id, org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec, enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment, destinations_json, writeback_json, env_json, next_fire_at, created_at, updated_at
+RETURNING id, org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec, enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment, destinations_json, writeback_json, env_json, auto_pause_after, auto_paused_at, auto_pause_reason, last_enabled_at, next_fire_at, created_at, updated_at
 `
 
 type UpsertScheduleParams struct {
@@ -379,6 +468,7 @@ type UpsertScheduleParams struct {
 	DestinationsJson []byte
 	WritebackJson    []byte
 	EnvJson          []byte
+	AutoPauseAfter   *int32
 }
 
 func (q *Queries) UpsertSchedule(ctx context.Context, arg UpsertScheduleParams) (Schedule, error) {
@@ -399,6 +489,7 @@ func (q *Queries) UpsertSchedule(ctx context.Context, arg UpsertScheduleParams) 
 		arg.DestinationsJson,
 		arg.WritebackJson,
 		arg.EnvJson,
+		arg.AutoPauseAfter,
 	)
 	var i Schedule
 	err := row.Scan(
@@ -419,6 +510,10 @@ func (q *Queries) UpsertSchedule(ctx context.Context, arg UpsertScheduleParams) 
 		&i.DestinationsJson,
 		&i.WritebackJson,
 		&i.EnvJson,
+		&i.AutoPauseAfter,
+		&i.AutoPausedAt,
+		&i.AutoPauseReason,
+		&i.LastEnabledAt,
 		&i.NextFireAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,

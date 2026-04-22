@@ -98,6 +98,10 @@ type Schedule struct {
 	DestinationsJson []byte
 	WritebackJson    []byte
 	EnvJson          []byte
+	AutoPauseAfter   *int32
+	AutoPausedAt     pgtype.Timestamptz
+	AutoPauseReason  *string
+	LastEnabledAt    pgtype.Timestamptz
 	NextFireAt       pgtype.Timestamptz
 	CreatedAt        pgtype.Timestamptz
 	UpdatedAt        pgtype.Timestamptz

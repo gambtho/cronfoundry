@@ -518,6 +518,49 @@ func (q *Queries) ListActiveRunsForSchedule(ctx context.Context, scheduleID pgty
 	return items, nil
 }
 
+const listRecentTerminalScheduledRuns = `-- name: ListRecentTerminalScheduledRuns :many
+SELECT status
+FROM run
+WHERE schedule_id = $1
+  AND fire_reason = 'schedule'
+  AND status IN ('succeeded', 'partial_failure', 'failed')
+  AND created_at >= $2
+ORDER BY created_at DESC, id DESC
+LIMIT $3
+`
+
+type ListRecentTerminalScheduledRunsParams struct {
+	ScheduleID pgtype.UUID
+	CreatedAt  pgtype.Timestamptz
+	Limit      int32
+}
+
+// Used by evaluateAutoPause. Returns the last N terminal scheduled runs for
+// a schedule, within the anti-flap window defined by last_enabled_at.
+// Uses `created_at` (NOT NULL, matches the existing run_schedule_created_idx)
+// so failed-before-dispatch runs (started_at NULL) are still counted.
+// `id DESC` is a stable tie-breaker when two runs share created_at (tests
+// and tight scheduler clocks can produce ties at microsecond resolution).
+func (q *Queries) ListRecentTerminalScheduledRuns(ctx context.Context, arg ListRecentTerminalScheduledRunsParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, listRecentTerminalScheduledRuns, arg.ScheduleID, arg.CreatedAt, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var status string
+		if err := rows.Scan(&status); err != nil {
+			return nil, err
+		}
+		items = append(items, status)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRunsForOrg = `-- name: ListRunsForOrg :many
 SELECT r.id,
        r.status,

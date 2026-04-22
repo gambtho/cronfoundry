@@ -251,3 +251,70 @@ func TestManifest_FindSchedule(t *testing.T) {
 	_, _, err = m.FindSchedule("skills/missing", "s1")
 	assert.ErrorContains(t, err, "skill \"skills/missing\"")
 }
+
+func TestParseManifest_AutoPauseAfter(t *testing.T) {
+	cases := []struct {
+		name string
+		yaml string
+		want *int   // nil means the AutoPause field should be nil
+		err  string // non-empty expected substring means expect a Validate() error
+	}{
+		{
+			name: "missing auto_pause → nil",
+			yaml: minimalManifest(""),
+			want: nil,
+		},
+		{
+			name: "auto_pause.after: 3",
+			yaml: minimalManifest("        auto_pause:\n          after: 3\n"),
+			want: intPtr(3),
+		},
+		{
+			name: "auto_pause.after: 0 rejected",
+			yaml: minimalManifest("        auto_pause:\n          after: 0\n"),
+			err:  "auto_pause.after must be >= 1",
+		},
+		{
+			name: "auto_pause.after: -1 rejected",
+			yaml: minimalManifest("        auto_pause:\n          after: -1\n"),
+			err:  "auto_pause.after must be >= 1",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			m, err := ParseManifest([]byte(tc.yaml))
+			require.NoError(t, err)
+			verr := m.Validate()
+			if tc.err != "" {
+				require.Error(t, verr)
+				require.Contains(t, verr.Error(), tc.err)
+				return
+			}
+			require.NoError(t, verr)
+			sch := m.Skills[0].Schedules[0]
+			if tc.want == nil {
+				require.Nil(t, sch.AutoPause)
+			} else {
+				require.NotNil(t, sch.AutoPause)
+				require.Equal(t, *tc.want, sch.AutoPause.After)
+			}
+		})
+	}
+}
+
+func intPtr(i int) *int { return &i }
+
+// minimalManifest returns a valid manifest YAML with the given extra lines
+// spliced into the single schedule's body. Each extra line must already be
+// indented to align with the schedule block.
+func minimalManifest(extra string) string {
+	return `version: 1
+skills:
+  - path: skills/hello
+    schedules:
+      - name: daily
+        cron: "0 9 * * *"
+        provider: openai
+        model: gpt-4o
+` + extra
+}
