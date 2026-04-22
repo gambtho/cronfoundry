@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -305,4 +306,47 @@ func TestNewRunnerCmd_Hidden(t *testing.T) {
 	cmd := newRunnerCmd()
 	assert.Equal(t, "runner", cmd.Use)
 	assert.True(t, cmd.Hidden, "runner subcommand should be hidden from operator help")
+}
+
+// TestRunnerHTTP_AppliesTimeoutFromRunContext verifies that when the
+// /context endpoint returns TimeoutSec=1, the runner aborts before the
+// configured upstream hang (5s) and finalizes with status=failed.
+func TestRunnerHTTP_AppliesTimeoutFromRunContext(t *testing.T) {
+	var fullBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/context"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(runContext{
+				RunID: "r1", TimeoutSec: 1, SkillPath: "x", ScheduleName: "y",
+				Provider: "openai", Model: "gpt-4o-mini",
+			})
+		case strings.HasSuffix(r.URL.Path, "/events"):
+			w.WriteHeader(http.StatusNoContent)
+		case strings.Contains(r.URL.Path, "/secrets"):
+			_ = json.NewEncoder(w).Encode(map[string]string{})
+		case strings.HasSuffix(r.URL.Path, "/clone-url"):
+			// Simulate upstream hang. Should be cancelled by the 1s deadline.
+			select {
+			case <-r.Context().Done():
+			case <-time.After(5 * time.Second):
+			}
+			w.WriteHeader(http.StatusGatewayTimeout)
+		case strings.HasSuffix(r.URL.Path, "/finalize"):
+			fullBody, _ = io.ReadAll(r.Body)
+			w.WriteHeader(http.StatusNoContent)
+		}
+	}))
+	defer srv.Close()
+
+	t.Setenv(envAPIURL, srv.URL)
+	t.Setenv(envRunID, "r1")
+	t.Setenv(envRunToken, "tok")
+
+	start := time.Now()
+	err := runRunnerHTTP(context.Background(), "r1")
+	elapsed := time.Since(start)
+	require.Error(t, err)
+	assert.Less(t, elapsed, 3*time.Second, "runner must abort within timeout + a small slack")
+	assert.Contains(t, string(fullBody), `"status":"failed"`, "finalize body must record failed status")
 }

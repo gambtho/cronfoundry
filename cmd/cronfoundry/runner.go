@@ -88,6 +88,15 @@ func runRunnerHTTP(ctx context.Context, runIDFlag string) error {
 		return failRun(ctx, client, runID, "context_fetch", err)
 	}
 
+	// Apply the schedule's wall-clock timeout. Keeping a ctx deadline (in
+	// addition to the dispatch JWT's ExpiresAt) lets the runner itself abort
+	// before the Container Apps Job hard-kills it.
+	if runCtx.TimeoutSec > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(runCtx.TimeoutSec)*time.Second)
+		defer cancel()
+	}
+
 	// Announce the run-scoped secret manifest. Best-effort — a failure
 	// here is observational only and must not abort the run.
 	_ = client.PostEvents(ctx, runID, []event{{
@@ -276,9 +285,13 @@ func envMapForSecrets(m map[string]string) map[string]string {
 // failRun posts a finalize-failed with the given kind + error message and
 // returns a wrapped error. Best-effort — if the finalize POST itself fails,
 // we still return the original error so the caller sees what went wrong.
+//
+// The finalize call deliberately uses context.WithoutCancel so that a
+// deadline-exceeded ctx (from the per-run wall-clock timeout) doesn't
+// prevent the final status from being recorded.
 func failRun(ctx context.Context, client *apiClient, runID, kind string, err error) error {
 	errMsg := err.Error()
-	_ = client.PostFinalize(ctx, runID, finalizeRequest{
+	_ = client.PostFinalize(context.WithoutCancel(ctx), runID, finalizeRequest{
 		Status:    "failed",
 		ErrorKind: &kind,
 		ErrorMsg:  &errMsg,
@@ -311,6 +324,7 @@ type runContext struct {
 	InstallationID int64           `json:"installation_id"`
 	Provider       string          `json:"provider"`
 	Model          string          `json:"model"`
+	TimeoutSec     int32           `json:"timeout_sec"`
 	LLMSecretRef   *string         `json:"llm_secret_ref,omitempty"`
 	LLMEndpoint    *string         `json:"llm_endpoint,omitempty"`
 	LLMDeployment  *string         `json:"llm_deployment,omitempty"`

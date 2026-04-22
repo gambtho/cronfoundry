@@ -143,6 +143,7 @@ func TestRunContext_ReturnsContext(t *testing.T) {
 	assert.Equal(t, "acme/widgets", body["repo"])
 	assert.Equal(t, "main", body["default_branch"])
 	assert.EqualValues(t, 42, body["installation_id"])
+	assert.EqualValues(t, 600, body["timeout_sec"], "timeout_sec must reflect schedule default of 600")
 }
 
 func TestRunContext_RejectsMismatchedRunID(t *testing.T) {
