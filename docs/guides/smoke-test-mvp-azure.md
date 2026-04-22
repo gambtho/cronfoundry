@@ -229,7 +229,56 @@ identities, Container App, and the runner Job are all created. Because
 `githubAppPem` param, the serve Container App's Key Vault secret
 reference resolves at creation time and no post-deploy upload is needed.
 
-### 4d. (Only if you passed `githubAppPem: ""`) Upload the pem manually
+The serve Container App will crash-loop until you run `admin init`
+(next step) — this is expected.
+
+### 4d. Run migrations and seed the org
+
+`serve` does **not** auto-migrate. You must run `admin init` once after
+the first deploy to create the schema and seed the default organization.
+
+First, add your operator IP to the Postgres firewall:
+
+```bash
+MY_IP=$(curl -s https://ifconfig.me)
+az postgres flexible-server firewall-rule create \
+  --resource-group "rg-cronfoundry-<env>" \
+  --name "cf-pg-<env>" \
+  --rule-name AllowSmokeOperator \
+  --start-ip-address "$MY_IP" --end-ip-address "$MY_IP"
+```
+
+Then run `admin init` locally (build first if needed):
+
+```bash
+CRONFOUNDRY_DATABASE_URL="postgres://cfadmin:<password>@cf-pg-<env>.postgres.database.azure.com:5432/cronfoundry?sslmode=require" \
+CRONFOUNDRY_MASTER_KEY="<your-master-key>" \
+./cronfoundry admin init
+```
+
+You should see `Seeded organization id=... name="default". Ready.`
+
+After init succeeds, force a new Container App revision so the serve
+process picks up the migrated schema (failed revisions don't auto-heal):
+
+```bash
+az containerapp update \
+  --resource-group "rg-cronfoundry-<env>" \
+  --name "cf-serve-<env>" \
+  --set-env-vars "RESTART_TRIGGER=$(date +%s)"
+```
+
+Wait ~30 s, then verify the revision is `Healthy`:
+
+```bash
+az containerapp revision list \
+  --resource-group "rg-cronfoundry-<env>" \
+  --name "cf-serve-<env>" \
+  --query '[?properties.trafficWeight>`0`].{health:properties.healthState, running:properties.runningState}' \
+  -o table
+```
+
+### 4e. (Only if you passed `githubAppPem: ""`) Upload the pem manually
 
 Skip this section if your params file carried the real pem value in §4b.
 
@@ -251,7 +300,7 @@ az containerapp revision restart \
     --name cf-serve-p7smoke --query '[0].name' -o tsv)"
 ```
 
-### 4e. Record the API FQDN and update the GitHub App
+### 4f. Record the API FQDN and update the GitHub App
 
 The Bicep names the serve Container App `cf-serve-${env}`:
 
