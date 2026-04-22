@@ -58,6 +58,7 @@ type RunInput struct {
 type RunResult struct {
 	Status         Status
 	Usage          llm.Usage
+	CostCents      int
 	Output         string
 	MemoryContent  string
 	PublishResults []publish.Result
@@ -159,6 +160,7 @@ func (r *Runner) Run(ctx context.Context, in RunInput) (RunResult, error) {
 		return fail(&result, err, r.deps.Now)
 	}
 	result.Usage = usage
+	result.CostCents = llm.CostCents(sch.Provider, sch.Model, usage)
 
 	published, memBlock, hasMemory := memory.Extract(sb.String())
 	result.Output = published

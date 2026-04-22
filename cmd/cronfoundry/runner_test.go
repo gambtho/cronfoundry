@@ -216,6 +216,27 @@ func TestAPIClient_PostFinalize(t *testing.T) {
 	assert.NotContains(t, raw, `"tokens_in"`, "nil pointer fields must be omitted")
 }
 
+// TestAPIClient_PostFinalize_SendsCostCents verifies that cost_cents travels
+// through PostFinalize when the field is set.
+func TestAPIClient_PostFinalize_SendsCostCents(t *testing.T) {
+	var gotBody finalizeRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := &apiClient{baseURL: srv.URL, token: "t", http: srv.Client()}
+	cents := int32(42)
+	err := c.PostFinalize(context.Background(), "run-1", finalizeRequest{
+		Status:    "succeeded",
+		CostCents: &cents,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, gotBody.CostCents)
+	assert.Equal(t, int32(42), *gotBody.CostCents)
+}
+
 // TestAPIClient_Do_PropagatesHTTPError ensures non-2xx responses become
 // errors carrying the response body.
 func TestAPIClient_Do_PropagatesHTTPError(t *testing.T) {
