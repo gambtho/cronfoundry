@@ -206,6 +206,66 @@ func TestOAuth_Callback_RejectsUnallowedLogin(t *testing.T) {
 	assert.Equal(t, http.StatusForbidden, cbRR.Code)
 }
 
+func TestOAuth_Callback_SessionCookieIs7Days(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, cleanup := testdb.BootPG(t)
+	defer cleanup()
+	seedOrg(t, pool)
+
+	ctx := context.Background()
+	q := dbgen.New(pool)
+	org, err := q.GetFirstOrganization(ctx)
+	require.NoError(t, err)
+	_, err = q.CreateUser(ctx, dbgen.CreateUserParams{
+		OrgID:       org.ID,
+		GithubLogin: "octocat",
+		Role:        "admin",
+	})
+	require.NoError(t, err)
+
+	stub := stubGitHub(t, "octocat")
+	defer stub.Close()
+
+	mux := http.NewServeMux()
+	webapi.RegisterRoutes(mux, newTestDepsWithDB(t, pool, stub.URL))
+
+	// Get state from /oauth/login.
+	loginReq := httptest.NewRequest("GET", "/oauth/login", nil)
+	loginRR := httptest.NewRecorder()
+	mux.ServeHTTP(loginRR, loginReq)
+	require.Equal(t, http.StatusFound, loginRR.Code)
+
+	var stateCookie *http.Cookie
+	for _, c := range loginRR.Result().Cookies() {
+		if c.Name == "oauth_state" {
+			stateCookie = c
+		}
+	}
+	require.NotNil(t, stateCookie)
+
+	cbURL := "/oauth/callback?code=testcode&state=" + url.QueryEscape(stateCookie.Value)
+	cbReq := httptest.NewRequest("GET", cbURL, nil)
+	cbReq.AddCookie(stateCookie)
+	cbRR := httptest.NewRecorder()
+	mux.ServeHTTP(cbRR, cbReq)
+
+	require.Equal(t, http.StatusFound, cbRR.Code, "body: %s", cbRR.Body.String())
+
+	var sessionCookie *http.Cookie
+	for _, c := range cbRR.Result().Cookies() {
+		if c.Name == "cf_session" {
+			sessionCookie = c
+		}
+	}
+	require.NotNil(t, sessionCookie, "cf_session cookie not set")
+
+	// Assert MaxAge is 7 days (7 * 24 * 3600 = 604800 seconds)
+	expectedMaxAge := 7 * 24 * 3600
+	assert.Equal(t, expectedMaxAge, sessionCookie.MaxAge, "session cookie MaxAge should be 7 days")
+}
+
 func TestOAuth_Logout_ClearsSession(t *testing.T) {
 	mux := http.NewServeMux()
 	webapi.RegisterRoutes(mux, newTestDeps(t, ""))

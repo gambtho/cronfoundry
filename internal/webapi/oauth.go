@@ -126,7 +126,7 @@ func (h oauthHandlers) callback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	session, err := SignSession(SessionClaims{Login: login, Role: role}, h.deps.MasterKey, 24*time.Hour)
+	session, err := SignSession(SessionClaims{Login: login, Role: role}, h.deps.MasterKey, 7*24*time.Hour)
 	if err != nil {
 		http.Error(w, "session creation failed", http.StatusInternalServerError)
 		return
@@ -135,7 +135,7 @@ func (h oauthHandlers) callback(w http.ResponseWriter, r *http.Request) {
 		Name:     "cf_session",
 		Value:    session,
 		Path:     "/",
-		MaxAge:   86400,
+		MaxAge:   7 * 24 * 3600,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 		Secure:   !isLocalhost(r.Host),
