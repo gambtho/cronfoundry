@@ -88,9 +88,12 @@ func runRunnerHTTP(ctx context.Context, runIDFlag string) error {
 		return failRun(ctx, client, runID, "context_fetch", err)
 	}
 
-	// Apply the schedule's wall-clock timeout. Keeping a ctx deadline (in
-	// addition to the dispatch JWT's ExpiresAt) lets the runner itself abort
-	// before the Container Apps Job hard-kills it.
+	// Apply the schedule's wall-clock timeout. Three layers bound a run's
+	// lifetime: (1) this ctx deadline, (2) the dispatch JWT's ExpiresAt,
+	// (3) the Container Apps Job hard-timeout. A non-positive
+	// timeout_sec — only possible if an operator explicitly set the column
+	// to 0 (NOT NULL DEFAULT 600) — opts out of this layer but remains
+	// bounded by (2) and (3).
 	if runCtx.TimeoutSec > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, time.Duration(runCtx.TimeoutSec)*time.Second)
