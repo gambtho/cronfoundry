@@ -118,7 +118,9 @@ func (h finalizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		body.Status, row.FireReason,
 	); err != nil {
 		slog.Warn("finalize: auto-pause evaluation failed (non-fatal)",
-			"run_id", urlRunID, "err", err)
+			"run_id", urlRunID,
+			"schedule_id", scheduleUUID,
+			"err", err)
 	}
 
 	w.WriteHeader(http.StatusNoContent)
