@@ -344,7 +344,7 @@ func TestFinalize_TriggersAutoPauseAfterConsecutiveFailures(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+tok)
 	resp, err := ts.Client().Do(req)
 	require.NoError(t, err)
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 
 	// Assert pause landed.
