@@ -263,7 +263,10 @@ func TestE2E_FullScheduleFire(t *testing.T) {
 func buildBinary(t *testing.T) string {
 	t.Helper()
 	binPath := filepath.Join(t.TempDir(), "cronfoundry")
-	cmd := exec.Command("go", "build", "-o", binPath, ".")
+	// Build with the e2e tag so that clone_url_e2e.go (CRONFOUNDRY_SMOKE_CLONE_URL
+	// bypass) is compiled in. The no-op clone_url_prod.go is excluded by its
+	// //go:build !e2e constraint.
+	cmd := exec.Command("go", "build", "-tags=e2e", "-o", binPath, ".")
 	cmd.Dir = "."
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "build failed: %s", out)

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -31,11 +30,10 @@ func (h cloneURLHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Test hook: when CRONFOUNDRY_SMOKE_CLONE_URL is set, short-circuit the
-	// GitHub installation-token path and return the env value verbatim. This
-	// exists solely for the smoke-test harness (see cmd/cronfoundry/e2e_test.go)
-	// — production deployments do not set this variable.
-	if v := os.Getenv("CRONFOUNDRY_SMOKE_CLONE_URL"); v != "" {
+	// smokeCloneOverride is a compile-time no-op in production builds
+	// (clone_url_prod.go). In e2e builds (clone_url_e2e.go) it reads
+	// CRONFOUNDRY_SMOKE_CLONE_URL so the smoke harness can inject a local URL.
+	if v, ok := smokeCloneOverride(); ok {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"url": v})
 		return
