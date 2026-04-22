@@ -108,3 +108,26 @@ missing KV-referenced secret at create time.
    group create`, `az keyvault secret set` the pem, then deploy the rest.
 2. Code: accept the pem as a `@secure` Bicep param and have `keyVault.bicep`
    create the secret before `containerApp.bicep` references it.
+
+## F8 — `main` is red from a staticcheck lint error
+
+**Severity:** blocker (CI failure on every PR that branches from main)
+**Type:** code
+
+Commit `fd91fd6` (PR #15, "MVP follow-ups") landed on main while CI was
+failing:
+
+```
+internal/webapi/oauth_test.go:273:9: S1024: should use time.Until instead
+of t.Sub(time.Now()) (staticcheck)
+    ttl := time.Unix(claims.Exp, 0).Sub(time.Now())
+```
+
+Noticed because PR #16 (this doc fix branch) inherited the red CI. The
+release workflow doesn't run lint, so a `v*` tag push would still produce
+an image — but every future branch is blocked from merging until main is
+green again.
+
+**Fix:** code — one-line change in `oauth_test.go:273` to
+`time.Until(time.Unix(claims.Exp, 0))`. Landed on this branch so PR #16
+also unblocks main.
