@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +18,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -402,4 +404,352 @@ func insertManualRun(
 	})
 	require.NoError(t, err)
 	return row.ID
+}
+
+// TestE2E_SuccessfulFireWithLocalClone is the success-path e2e test.
+// It exercises the full hot path: scheduler → runner subprocess → fake OpenAI
+// SSE stream → fake Slack webhook → finalize. A local bare git repo stands in
+// for GitHub, bypassed via CRONFOUNDRY_SMOKE_CLONE_URL.
+//
+// Assertions:
+//   - run.status == "succeeded"
+//   - run.tokens_in > 0, run.cost_cents >= 0
+//   - Slack webhook was called exactly once
+//   - Slack body contains "Hello world" but NOT "<memory>"
+//   - a run_event with event_type="publish.slack.ok" exists
+func TestE2E_SuccessfulFireWithLocalClone(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: skipped in short mode")
+	}
+
+	ctx := context.Background()
+
+	// ── 1. Build a local bare git repo ──────────────────────────────────────
+	t.Log("e2e-success: phase 1 — building local bare git repo")
+	_, bareDir, pinnedSHA := buildLocalSkillRepo(t)
+
+	// ── 2. Boot Postgres + build binary + admin init ─────────────────────────
+	t.Log("e2e-success: phase 2 — booting Postgres and building binary")
+	dsn, teardownDB := testdb.BootPGWithDSN(t)
+	defer teardownDB()
+
+	binPath := buildBinary(t)
+	masterKey := generateMasterKey(t, binPath, dsn)
+	runAdminInitWithKey(t, binPath, dsn, masterKey)
+
+	pool, err := pgxpool.New(ctx, dsn)
+	require.NoError(t, err)
+	defer pool.Close()
+
+	q := dbgen.New(pool)
+	org, err := q.GetFirstOrganization(ctx)
+	require.NoError(t, err)
+
+	// ── 3. Seed repo + skill + schedule ─────────────────────────────────────
+	t.Log("e2e-success: phase 3 — seeding DB rows")
+	repoRow, err := q.InsertRepoConnection(ctx, dbgen.InsertRepoConnectionParams{
+		OrgID:              org.ID,
+		GithubAppInstallID: 12345,
+		Owner:              "e2etest",
+		Name:               "smoke",
+		DefaultBranch:      "main",
+		SyncIntervalSec:    3600,
+	})
+	require.NoError(t, err)
+
+	skillRow, err := q.UpsertSkill(ctx, dbgen.UpsertSkillParams{
+		OrgID:           org.ID,
+		RepoID:          repoRow.ID,
+		Path:            "skills/hello",
+		Name:            "hello",
+		CurrentSha:      pinnedSHA,
+		FrontmatterJson: []byte(`{"name":"hello","description":"smoke test skill"}`),
+	})
+	require.NoError(t, err)
+
+	llmRef := "openai_key"
+	destsJSON := []byte(`[{"slack":{"secret":"slack_webhook"}}]`)
+	schedRow, err := q.UpsertSchedule(ctx, dbgen.UpsertScheduleParams{
+		OrgID:            org.ID,
+		SkillID:          skillRow.ID,
+		Name:             "smoke",
+		Cron:             "0 0 1 1 *", // never fires naturally
+		Timezone:         "UTC",
+		OverlapPolicy:    "skip",
+		TimeoutSec:       120,
+		Enabled:          true,
+		Provider:         "openai",
+		Model:            "gpt-4o-mini",
+		LlmSecretRef:     &llmRef,
+		DestinationsJson: destsJSON,
+		WritebackJson:    []byte(`null`),
+		EnvJson:          []byte(`{}`),
+	})
+	require.NoError(t, err)
+
+	// ── 4. Fake Slack webhook (records calls) ────────────────────────────────
+	t.Log("e2e-success: phase 4 — starting fake Slack webhook")
+	var slackHits int32
+	var slackBody []byte
+	slackSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&slackHits, 1)
+		slackBody, _ = io.ReadAll(r.Body)
+		t.Logf("e2e-success: fake slack received %s %s body=%s", r.Method, r.URL.Path, string(slackBody))
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer slackSrv.Close()
+
+	// ── 5. Store secrets ─────────────────────────────────────────────────────
+	t.Log("e2e-success: phase 5 — storing secrets")
+	master, err := secretstore.ParseMasterKey(masterKey)
+	require.NoError(t, err)
+	store := secretstore.NewEnvelopePostgresStore(pool, org.ID, master)
+	require.NoError(t, store.Put(ctx, "openai_key", "sk-fake-smoke-key"))
+	require.NoError(t, store.Put(ctx, "slack_webhook", slackSrv.URL+"/webhook"))
+
+	// ── 6. Fake OpenAI server (SSE with <memory> block) ─────────────────────
+	t.Log("e2e-success: phase 6 — starting fake OpenAI server")
+	openaiSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/chat/completions") {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.WriteHeader(http.StatusOK)
+
+		// Chunk 1: content text
+		chunk1 := map[string]any{
+			"id":     "chatcmpl-smoke",
+			"object": "chat.completion.chunk",
+			"choices": []map[string]any{
+				{"index": 0, "delta": map[string]any{"role": "assistant", "content": "Hello world "}},
+			},
+		}
+		// Chunk 2: memory block
+		chunk2 := map[string]any{
+			"id":     "chatcmpl-smoke",
+			"object": "chat.completion.chunk",
+			"choices": []map[string]any{
+				{"index": 0, "delta": map[string]any{"content": "<memory>new-note</memory>"}},
+			},
+		}
+		// Chunk 3: usage
+		chunk3 := map[string]any{
+			"id":     "chatcmpl-smoke",
+			"object": "chat.completion.chunk",
+			"choices": []map[string]any{
+				{"index": 0, "delta": map[string]any{}},
+			},
+			"usage": map[string]any{
+				"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150,
+			},
+		}
+		flusher, hasFlusher := w.(http.Flusher)
+		for _, chunk := range []any{chunk1, chunk2, chunk3} {
+			b, _ := json.Marshal(chunk)
+			fmt.Fprintf(w, "data: %s\n\n", b)
+			if hasFlusher {
+				flusher.Flush()
+			}
+		}
+		fmt.Fprintf(w, "data: [DONE]\n\n")
+		if hasFlusher {
+			flusher.Flush()
+		}
+	}))
+	defer openaiSrv.Close()
+
+	// ── 7. Fake GitHub API (installation token endpoint) ────────────────────
+	t.Log("e2e-success: phase 7 — starting fake GitHub API")
+	ghSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/access_tokens") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"token":      "ghs_fake_smoke_token",
+				"expires_at": time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+			})
+			return
+		}
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer ghSrv.Close()
+
+	pemPath := generateTestPEMFile(t)
+
+	// ── 8. Start cronfoundry serve ───────────────────────────────────────────
+	t.Log("e2e-success: phase 8 — starting cronfoundry serve")
+	apiAddr := freeAddr(t)
+
+	serveEnv := buildEnvMap(map[string]string{
+		"CRONFOUNDRY_DATABASE_URL":          dsn,
+		"CRONFOUNDRY_MASTER_KEY":            masterKey,
+		"CRONFOUNDRY_GITHUB_APP_ID":         "123456",
+		"CRONFOUNDRY_GITHUB_APP_PEM":        pemPath,
+		"CRONFOUNDRY_GITHUB_BASE_URL":       ghSrv.URL,
+		"CRONFOUNDRY_OPENAI_BASE_URL":       openaiSrv.URL,
+		"CRONFOUNDRY_SMOKE_CLONE_URL":       "file://" + bareDir,
+		"CRONFOUNDRY_GITHUB_OAUTH_CLIENT_ID":     "fake-client-id",
+		"CRONFOUNDRY_GITHUB_OAUTH_CLIENT_SECRET": "fake-client-secret",
+		"CRONFOUNDRY_ADMIN_LOGINS":               "smoke-admin",
+		"HOME": os.Getenv("HOME"),
+		"PATH": os.Getenv("PATH"),
+	})
+
+	serveCmd := exec.Command(binPath, "serve",
+		"--addr", apiAddr,
+		"--tick-cadence", "2s",
+	)
+	serveCmd.Env = serveEnv
+	serveCmd.Stdout = os.Stderr
+	serveCmd.Stderr = os.Stderr
+	require.NoError(t, serveCmd.Start())
+	defer func() {
+		_ = serveCmd.Process.Kill()
+		_ = serveCmd.Wait()
+	}()
+
+	apiBaseURL := "http://" + apiAddr
+	waitHealthy(t, apiBaseURL+"/healthz", 15*time.Second)
+	t.Log("e2e-success: serve is healthy")
+
+	// ── 9. Insert a manual pending run ──────────────────────────────────────
+	t.Log("e2e-success: phase 9 — inserting manual run")
+	runID := insertManualRun(t, ctx, pool, org.ID, schedRow.ID, pinnedSHA)
+	t.Logf("e2e-success: inserted manual run %s", runID)
+
+	// ── 10. Poll until terminal ──────────────────────────────────────────────
+	t.Log("e2e-success: phase 10 — polling until terminal status")
+	terminalStatuses := map[string]bool{
+		"succeeded":       true,
+		"partial_failure": true,
+		"failed":          true,
+	}
+
+	deadline := time.Now().Add(90 * time.Second)
+	var finalStatus string
+	var finalRun dbgen.Run
+	for time.Now().Before(deadline) {
+		time.Sleep(3 * time.Second)
+		run, err := q.GetRun(ctx, runID)
+		if err != nil {
+			t.Logf("e2e-success: GetRun err (may be transient): %v", err)
+			continue
+		}
+		t.Logf("e2e-success: run status = %s", run.Status)
+		if terminalStatuses[run.Status] {
+			finalStatus = run.Status
+			finalRun = run
+			break
+		}
+	}
+
+	require.NotEmpty(t, finalStatus, "run did not reach terminal status within deadline")
+	t.Logf("e2e-success: run reached terminal status %q", finalStatus)
+
+	// Log run events for debugging.
+	events, err := q.ListRunEvents(ctx, runID)
+	require.NoError(t, err)
+	t.Logf("e2e-success: %d run event(s) stored", len(events))
+	for _, ev := range events {
+		t.Logf("e2e-success: run event type=%s level=%s", ev.EventType, ev.Level)
+	}
+
+	// ── 11. Assertions ───────────────────────────────────────────────────────
+	// status == "succeeded"
+	require.Equal(t, "succeeded", finalStatus,
+		"expected run to succeed; check logs above for error details")
+
+	// tokens_in > 0
+	require.NotNil(t, finalRun.TokensIn, "tokens_in should be populated")
+	require.Greater(t, *finalRun.TokensIn, int32(0), "tokens_in should be > 0")
+
+	// cost_cents >= 0
+	require.NotNil(t, finalRun.CostCents, "cost_cents should be populated")
+	require.GreaterOrEqual(t, *finalRun.CostCents, int32(0), "cost_cents should be >= 0")
+
+	// Slack was called exactly once.
+	require.Equal(t, int32(1), atomic.LoadInt32(&slackHits),
+		"Slack webhook should have been called exactly once")
+
+	// Slack body contains "Hello world".
+	require.Contains(t, string(slackBody), "Hello world",
+		"Slack body should contain the LLM output")
+
+	// Slack body does NOT contain the raw memory block.
+	require.NotContains(t, string(slackBody), "<memory>",
+		"Slack body must not contain the raw <memory> tag — memory should be stripped")
+
+	// A publish.slack.ok event should exist.
+	var slackOKEvent bool
+	for _, ev := range events {
+		if ev.EventType == "publish.slack.ok" {
+			slackOKEvent = true
+			break
+		}
+	}
+	require.True(t, slackOKEvent,
+		"expected a run_event with event_type='publish.slack.ok'")
+
+	t.Logf("e2e-success: PASS — run %s finalized with status %q, Slack called %d time(s)",
+		runID.String(), finalStatus, atomic.LoadInt32(&slackHits))
+}
+
+// buildLocalSkillRepo creates a temp directory with a working git repo
+// containing cronfoundry.yaml + skills/hello/SKILL.md and returns
+// (workingDir, bareClonePath, HEAD sha). The bare clone is what the
+// runner actually clones from via file://.
+func buildLocalSkillRepo(t *testing.T) (workDir, bareDir, sha string) {
+	t.Helper()
+	workDir = t.TempDir()
+
+	manifest := `version: 1
+skills:
+  - path: skills/hello
+    schedules:
+      - name: smoke
+        cron: "0 0 1 1 *"
+        timezone: UTC
+        provider: openai
+        model: gpt-4o-mini
+        destinations:
+          - slack:
+              secret: slack_webhook
+`
+	require.NoError(t, os.WriteFile(filepath.Join(workDir, "cronfoundry.yaml"), []byte(manifest), 0644))
+
+	skillDir := filepath.Join(workDir, "skills", "hello")
+	require.NoError(t, os.MkdirAll(skillDir, 0755))
+	skillMD := `---
+name: hello
+description: smoke test skill
+---
+Say hello.
+`
+	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(skillMD), 0644))
+
+	runGit(t, workDir, "init", "-b", "main")
+	runGit(t, workDir, "-c", "user.email=t@t", "-c", "user.name=T", "add", ".")
+	runGit(t, workDir, "-c", "user.email=t@t", "-c", "user.name=T", "commit", "-m", "init")
+	out, err := exec.Command("git", "-C", workDir, "rev-parse", "HEAD").Output()
+	require.NoError(t, err)
+	sha = strings.TrimSpace(string(out))
+
+	// Bare clone so the runner can `git clone file://<bareDir>` safely.
+	bareDir = t.TempDir()
+	runGit(t, "", "clone", "--bare", workDir, bareDir)
+
+	return workDir, bareDir, sha
+}
+
+// runGit runs a git command, failing the test if it exits non-zero.
+func runGit(t *testing.T, workDir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	if workDir != "" {
+		cmd.Dir = workDir
+	}
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "git %v failed: %s", args, string(out))
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -27,6 +28,16 @@ func (h cloneURLHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	repoID, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
 		http.Error(w, "invalid repo id", http.StatusBadRequest)
+		return
+	}
+
+	// Test hook: when CRONFOUNDRY_SMOKE_CLONE_URL is set, short-circuit the
+	// GitHub installation-token path and return the env value verbatim. This
+	// exists solely for the smoke-test harness (see cmd/cronfoundry/e2e_test.go)
+	// — production deployments do not set this variable.
+	if v := os.Getenv("CRONFOUNDRY_SMOKE_CLONE_URL"); v != "" {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"url": v})
 		return
 	}
 

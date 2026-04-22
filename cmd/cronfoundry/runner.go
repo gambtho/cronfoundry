@@ -201,7 +201,35 @@ func runRunnerHTTP(ctx context.Context, runIDFlag string) error {
 		SkipPush: true,
 	})
 
-	// 9) Post a terminal event for observability.
+	// 9a) Post publish-result events for observability. One event per destination
+	//     so the UI can display per-channel outcomes without parsing the runner
+	//     finish payload.
+	if runErr == nil && len(result.PublishResults) > 0 {
+		pubEvents := make([]event, 0, len(result.PublishResults))
+		for _, pr := range result.PublishResults {
+			suffix := "ok"
+			level := "info"
+			if !pr.OK {
+				suffix = "fail"
+				level = "error"
+			}
+			payload := map[string]any{}
+			if pr.Detail != "" {
+				payload["detail"] = pr.Detail
+			}
+			if pr.Err != nil {
+				payload["error"] = pr.Err.Error()
+			}
+			pubEvents = append(pubEvents, event{
+				Type:    "publish." + pr.Type + "." + suffix,
+				Level:   level,
+				Payload: payload,
+			})
+		}
+		_ = client.PostEvents(ctx, runID, pubEvents)
+	}
+
+	// 9b) Post a terminal event for observability.
 	endType := "runner.finish"
 	if runErr != nil {
 		endType = "runner.error"
