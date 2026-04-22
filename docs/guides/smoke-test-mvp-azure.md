@@ -35,21 +35,41 @@ for the audit-verification and push-webhook steps.
 
 ## 2. Register the GitHub App
 
-1. GitHub → Settings → Developer settings → GitHub Apps → **New GitHub App**.
-2. **Homepage URL:** anything (e.g., `https://<your-api-hostname>`). You'll fill
-   the real hostname after the Bicep deploy in step 3.
-3. **Callback URL:** `https://<your-api-hostname>/oauth/callback`
-4. **Webhook URL:** `https://<your-api-hostname>/webhook/github`  
-   **Webhook secret:** generate a long random string; save for step 4.
-5. **Permissions:**
+> Register a **GitHub App**, not an **OAuth App**. Both live under
+> *Settings → Developer settings*, but only GitHub Apps have an App ID,
+> installations, and the server-to-server private key (the `.pem`) that
+> CronFoundry uses to sign JWTs for GitHub API calls. OAuth Apps expose
+> Client ID + Client Secret only and will not satisfy the Bicep's
+> `githubAppId` param.
+
+1. Open the "New GitHub App" form for your account:
+   - Personal: https://github.com/settings/apps/new
+   - Organization: https://github.com/organizations/`<org>`/settings/apps/new
+
+   (Equivalent path through the UI: GitHub → Settings → Developer settings →
+   **GitHub Apps** → **New GitHub App**. Check that the URL ends in
+   `/settings/apps/new` — if it ends in `/settings/applications/new`
+   you're on the OAuth Apps form.)
+2. **GitHub App name:** must be globally unique (e.g., `cronfoundry-p7smoke`).
+3. **Homepage URL:** anything (e.g., `https://example.com`). You'll fill
+   the real hostname after the Bicep deploy in §4.
+4. **Callback URL:** `https://example.com/oauth/callback` — placeholder.
+5. **Webhook URL:** `https://example.com/webhook/github` — placeholder.
+   **Webhook secret:** generate a long random string; save for §5 step 4.
+6. **Permissions:**
    - Repository: Contents (R+W), Issues (W), Metadata (R).
    - Account: Email (R).
-6. **Subscribe to events:** Push.
-7. Save. Generate + download the **private key** (`.pem`). Note the **App ID**
-   and **Client ID / Client Secret**.
-8. **Install the App** on your two repos (skill + reports).
+7. **Subscribe to events:** Push.
+8. Save. On the resulting settings page:
+   - Note the **App ID** (numeric, shown at the top).
+   - Under **Client secrets**, click **Generate a new client secret** — copy
+     the value; it's shown once. Note the **Client ID** too (starts with
+     `Iv23li…` for GitHub Apps — NOT `Ov23li…` which is OAuth Apps).
+   - Under **Private keys**, click **Generate a private key** — your browser
+     downloads a `.pem` file. Keep it; you'll upload it to Key Vault in §4d.
+9. **Install App** (left sidebar) on your two repos (skill + reports).
 
-You'll come back after step 3 to update the three URLs with the real hostname.
+You'll come back after §4 to update the three URLs with the real hostname.
 
 ## 3. Publish a container image
 

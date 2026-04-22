@@ -161,3 +161,54 @@ first deploy.
 
 **Fix:** doc — §3 now names the exact pushed tags (prefix-stripped) and
 sets `"imageTag": "0.7.0"` in the params example.
+
+## F10 — Runbook §2 let an operator register an OAuth App instead of a GitHub App
+
+**Severity:** blocker (Bicep's `githubAppId` param has no analogue in an OAuth App)
+**Type:** doc
+
+§2 opened with "GitHub → Settings → Developer settings → GitHub Apps →
+**New GitHub App**." Both OAuth Apps and GitHub Apps live on adjacent
+pages under Developer settings, and the runbook never explained what
+distinguishes them. An operator who landed on *OAuth Apps* by accident
+produced an App with Client ID + Client Secret (no App ID, no private
+key), then hit a dead end when the Bicep asked for `githubAppId`.
+
+Observed on this smoke: registered an OAuth App first, got Client ID
+`Ov23li…` (an OAuth App prefix; GitHub Apps use `Iv23li…`) and no
+**Private keys** section on the settings page, then had to start over
+with a real GitHub App.
+
+**Fix:** doc — §2 now opens with a callout contrasting GitHub Apps vs
+OAuth Apps, links directly to `/settings/apps/new`, tells the operator
+to check the URL to confirm they're on the right form, and splits the
+"Save" step so the private-key download and client-secret generation are
+unmistakable.
+
+## F11 — Bicep main.bicep failed to compile at `law.outputs.primarySharedKey`
+
+**Severity:** blocker (compilation error — az never submitted the deployment)
+**Type:** code
+
+`deploy/main.bicep:79` passed `law.outputs.primarySharedKey` to the
+`containerAppsEnv` module. AVM's `operational-insights/workspace:0.9.0`
+does not expose `primarySharedKey` as a module output (by design — keys
+are secrets). `az deployment sub create` exited with `BCP053: The type
+'outputs' does not contain property 'primarySharedKey'`.
+
+First attempted fix — `listKeys(law.outputs.resourceId, '2022-10-01')`
+called from `main.bicep` — hit `BCP181: This expression is being used
+in an argument of the function 'listKeys', which requires a value that
+can be calculated at the start of the deployment.` Module outputs are
+resolved mid-deployment, not at plan time.
+
+**Fix:** code — moved the lookup inside `containerAppsEnv.bicep`:
+declare the workspace with an `existing` resource keyed by name and
+call `law.listKeys().primarySharedKey` from the rg-scoped module. Pass
+only `logAnalyticsWorkspaceName` from `main.bicep`. As a side effect
+the now-redundant `logAnalyticsWorkspaceId` / `logAnalyticsCustomerId`
+/ `logAnalyticsSharedKey` params are gone, clearing the stale
+`no-unused-params` warning on `logAnalyticsWorkspaceId`.
+
+Committed on branch `fix/smoke-f11-bicep-listkeys` (worktree); fast-
+forwarded into `fix/smoke-runbook-azure-p7` and pushed to PR #16.
