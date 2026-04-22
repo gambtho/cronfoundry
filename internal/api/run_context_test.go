@@ -48,9 +48,12 @@ func seedRunWithHash(t *testing.T, pool *pgxpool.Pool, hash string) (uuid.UUID, 
 		 VALUES ($1, $2, 'skills/a', 'a', 'sha-1', '{"name":"a"}'::jsonb) RETURNING id`,
 		orgPG, repoID).Scan(&skillID))
 	var schedID pgtype.UUID
+	// Use an explicit non-default timeout_sec (123) so the test catches a
+	// regression where GetRunForContext stops returning the column value and
+	// silently falls back to the DB default (600).
 	require.NoError(t, pool.QueryRow(ctx,
-		`INSERT INTO schedule (org_id, skill_id, name, cron, provider, model, destinations_json)
-		 VALUES ($1, $2, 's', '* * * * *', 'openai', 'gpt-4o-mini', '[]'::jsonb) RETURNING id`,
+		`INSERT INTO schedule (org_id, skill_id, name, cron, provider, model, timeout_sec, destinations_json)
+		 VALUES ($1, $2, 's', '* * * * *', 'openai', 'gpt-4o-mini', 123, '[]'::jsonb) RETURNING id`,
 		orgPG, skillID).Scan(&schedID))
 
 	var runPG pgtype.UUID
@@ -143,7 +146,9 @@ func TestRunContext_ReturnsContext(t *testing.T) {
 	assert.Equal(t, "acme/widgets", body["repo"])
 	assert.Equal(t, "main", body["default_branch"])
 	assert.EqualValues(t, 42, body["installation_id"])
-	assert.EqualValues(t, 600, body["timeout_sec"], "timeout_sec must reflect schedule default of 600")
+	// Seeded with 123 (not the default 600) — a regression that returned the
+	// default would silently pass if we asserted 600.
+	assert.EqualValues(t, 123, body["timeout_sec"], "timeout_sec must reflect the seeded value")
 }
 
 func TestRunContext_RejectsMismatchedRunID(t *testing.T) {
