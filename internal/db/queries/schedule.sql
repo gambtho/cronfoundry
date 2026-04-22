@@ -43,9 +43,17 @@ WHERE s.org_id = $1
 ORDER BY rc.owner, rc.name, sk.path, s.name;
 
 -- name: SetScheduleEnabled :one
+-- On enable: clear any auto-pause state and bump last_enabled_at to reset the
+-- consecutive-failure anti-flap window. On disable: leave the auto-pause
+-- columns untouched (a user-initiated pause should not masquerade as an
+-- auto-pause if one happens to already be set, though in practice they can't
+-- co-exist because enabled flips from true to false).
 UPDATE schedule
-SET enabled    = $2,
-    updated_at = now()
+SET enabled = $2,
+    auto_paused_at    = CASE WHEN $2 THEN NULL              ELSE auto_paused_at    END,
+    auto_pause_reason = CASE WHEN $2 THEN NULL              ELSE auto_pause_reason END,
+    last_enabled_at   = CASE WHEN $2 THEN now()             ELSE last_enabled_at   END,
+    updated_at        = now()
 WHERE id = $1
   AND org_id = $3
 RETURNING *;

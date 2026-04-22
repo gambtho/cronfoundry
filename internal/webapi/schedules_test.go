@@ -6,8 +6,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/gambtho/cronfoundry/internal/testdb"
@@ -107,4 +110,87 @@ func TestSchedulesHandler_PauseRequiresAdmin(t *testing.T) {
 	mux.ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusForbidden, rr.Code)
+}
+
+// seedAutoPausedSchedule inserts a minimal org (if not already present), repo,
+// skill, and a schedule that is currently auto-paused (enabled=false,
+// auto_paused_at set, auto_pause_reason set). Returns the schedule UUID.
+func seedAutoPausedSchedule(t *testing.T, pool *pgxpool.Pool) pgtype.UUID {
+	t.Helper()
+	ctx := context.Background()
+
+	// Ensure an org exists (seedOrg may have already been called, but we need
+	// the org's ID here).
+	_, _ = pool.Exec(ctx, `INSERT INTO organization (name) VALUES ('test-org') ON CONFLICT DO NOTHING`)
+
+	var orgID pgtype.UUID
+	require.NoError(t, pool.QueryRow(ctx, `SELECT id FROM organization LIMIT 1`).Scan(&orgID))
+
+	var repoID pgtype.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO repo_connection (org_id, github_app_install_id, owner, name, default_branch)
+		 VALUES ($1, 1, 'o', 'r', 'main') RETURNING id`, orgID).Scan(&repoID))
+
+	var skillID pgtype.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO skill (org_id, repo_id, path, name, current_sha, frontmatter_json)
+		 VALUES ($1, $2, 'sk', 'sk', 'sha', '{}'::jsonb) RETURNING id`, orgID, repoID).Scan(&skillID))
+
+	var schedID pgtype.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO schedule (org_id, skill_id, name, cron, timeout_sec, provider, model, destinations_json,
+		                       enabled, auto_paused_at, auto_pause_reason)
+		 VALUES ($1, $2, 's', '* * * * *', 60, 'openai', 'm', '[]'::jsonb,
+		         false, now(), 'test')
+		 RETURNING id`, orgID, skillID).Scan(&schedID))
+
+	return schedID
+}
+
+func TestResume_ClearsAutoPauseAndBumpsLastEnabledAt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, cleanup := testdb.BootPG(t)
+	defer cleanup()
+
+	schedID := seedAutoPausedSchedule(t, pool)
+
+	// Capture last_enabled_at before resume.
+	var beforeLEA pgtype.Timestamptz
+	require.NoError(t, pool.QueryRow(context.Background(),
+		`SELECT last_enabled_at FROM schedule WHERE id = $1`, schedID).Scan(&beforeLEA))
+
+	// Simulate a small tick of wall-clock so "bumped" is observable.
+	time.Sleep(10 * time.Millisecond)
+
+	// Build the mux and perform resume via the real handler.
+	masterKey := make([]byte, 32)
+	mux := http.NewServeMux()
+	webapi.RegisterRoutes(mux, testDeps(pool, masterKey))
+
+	schedUUID, err := schedUUIDFromPg(schedID)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest("POST", "/api/schedules/"+schedUUID+"/resume", nil)
+	addTestSession(t, req, masterKey, "alice", "admin")
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	// Verify: enabled true, reason/at cleared, last_enabled_at bumped.
+	var enabled bool
+	var pausedAt pgtype.Timestamptz
+	var reason *string
+	var afterLEA pgtype.Timestamptz
+	require.NoError(t, pool.QueryRow(context.Background(),
+		`SELECT enabled, auto_paused_at, auto_pause_reason, last_enabled_at FROM schedule WHERE id = $1`,
+		schedID).Scan(&enabled, &pausedAt, &reason, &afterLEA))
+	assert.True(t, enabled)
+	assert.False(t, pausedAt.Valid, "auto_paused_at should be NULL after resume")
+	assert.Nil(t, reason)
+	assert.True(t, afterLEA.Valid, "last_enabled_at should be set after resume")
+	if beforeLEA.Valid {
+		assert.True(t, afterLEA.Time.After(beforeLEA.Time), "last_enabled_at should advance on resume")
+	}
 }

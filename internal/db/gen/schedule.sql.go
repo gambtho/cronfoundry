@@ -299,8 +299,11 @@ func (q *Queries) ListSchedulesByOrg(ctx context.Context, orgID pgtype.UUID) ([]
 
 const setScheduleEnabled = `-- name: SetScheduleEnabled :one
 UPDATE schedule
-SET enabled    = $2,
-    updated_at = now()
+SET enabled = $2,
+    auto_paused_at    = CASE WHEN $2 THEN NULL              ELSE auto_paused_at    END,
+    auto_pause_reason = CASE WHEN $2 THEN NULL              ELSE auto_pause_reason END,
+    last_enabled_at   = CASE WHEN $2 THEN now()             ELSE last_enabled_at   END,
+    updated_at        = now()
 WHERE id = $1
   AND org_id = $3
 RETURNING id, org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec, enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment, destinations_json, writeback_json, env_json, auto_pause_after, auto_paused_at, auto_pause_reason, last_enabled_at, next_fire_at, created_at, updated_at
@@ -312,6 +315,11 @@ type SetScheduleEnabledParams struct {
 	OrgID   pgtype.UUID
 }
 
+// On enable: clear any auto-pause state and bump last_enabled_at to reset the
+// consecutive-failure anti-flap window. On disable: leave the auto-pause
+// columns untouched (a user-initiated pause should not masquerade as an
+// auto-pause if one happens to already be set, though in practice they can't
+// co-exist because enabled flips from true to false).
 func (q *Queries) SetScheduleEnabled(ctx context.Context, arg SetScheduleEnabledParams) (Schedule, error) {
 	row := q.db.QueryRow(ctx, setScheduleEnabled, arg.ID, arg.Enabled, arg.OrgID)
 	var i Schedule
