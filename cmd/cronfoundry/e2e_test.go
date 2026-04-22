@@ -267,7 +267,8 @@ func buildBinary(t *testing.T) string {
 	// bypass) is compiled in. The no-op clone_url_prod.go is excluded by its
 	// //go:build !e2e constraint.
 	cmd := exec.Command("go", "build", "-tags=e2e", "-o", binPath, ".")
-	cmd.Dir = "."
+	// go test runs with cwd set to the package source directory, which is
+	// already what we want — no cmd.Dir needed.
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "build failed: %s", out)
 	return binPath
