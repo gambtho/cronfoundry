@@ -11,12 +11,18 @@ is the one that worked end to end.
 **Depends on:** P6 merged (`docs/superpowers/plans/2026-04-20-p6-mvp-gaps.md`)
 for the audit-verification and push-webhook steps.
 
+**Running log of issues found while executing this runbook:**
+[`smoke-test-mvp-azure-findings.md`](./smoke-test-mvp-azure-findings.md).
+
 ---
 
 ## 1. Prerequisites
 
-- An Azure subscription with Contributor rights.
-- `az` CLI ≥ 2.60 and Bicep CLI ≥ 0.26. Verify: `az --version`.
+- An Azure subscription with Contributor rights. `az login` and
+  `az account set --subscription <id>` before starting.
+- `az` CLI ≥ 2.60. Verify with `az --version`.
+- Bicep CLI ≥ 0.26. Install once via `az bicep install` (drops the binary
+  under `~/.azure/bin/bicep`). Confirm with `az bicep version`.
 - A GitHub account that can register a new GitHub App.
 - **One** LLM key from OpenAI, Anthropic, or Azure AI Foundry.
 - A Slack **Incoming Webhook URL** for any channel. Create one at
@@ -45,23 +51,135 @@ for the audit-verification and push-webhook steps.
 
 You'll come back after step 3 to update the three URLs with the real hostname.
 
-## 3. Deploy via Bicep
+## 3. Publish a container image
+
+`deploy/modules/containerApp.bicep` pulls from
+`ghcr.io/gambtho/cronfoundry:${imageTag}`. The `release.yml` workflow builds
+and pushes multi-arch images, but only on `v*` tags — a fresh checkout with
+no release tag has nothing to pull. First push also creates the package as
+**private**; Container Apps pulls anonymously, so it must be public.
+
+1. Tag and push:
+
+   ```bash
+   git tag v0.7.0
+   git push origin v0.7.0
+   ```
+
+   The `Release` workflow takes ~8 minutes to build linux/amd64+arm64 and
+   push `ghcr.io/<owner>/cronfoundry:{v0.7.0, 0.7, latest}`. Watch with
+   `gh run watch`.
+
+2. Flip the GHCR package to **Public**:
+   `https://github.com/users/<owner>/packages/container/cronfoundry/settings`
+   → Danger Zone → *Change visibility* → Public. Skip this and the
+   Container App's image pull will 401.
+
+Pick the tag you'll reference from the params file — `latest` works, but
+pinning to `v0.7.0` makes the deployed version explicit.
+
+## 4. Deploy via Bicep
+
+### 4a. Generate a master key
+
+`masterKey` is used to envelope-encrypt secrets at rest. Any 32 random bytes
+encoded as standard base64 work. Fastest:
+
+```bash
+openssl rand -base64 32
+```
+
+Equivalent, using the binary's built-in generator (requires `make build`):
+
+```bash
+./cronfoundry admin init    # prints CRONFOUNDRY_MASTER_KEY=<value> and exits
+```
+
+Save the value. If it's ever lost, encrypted secrets in the database are
+unrecoverable.
+
+### 4b. Fill the params file
+
+Copy the example and edit it:
 
 ```bash
 cp deploy/params.example.json deploy/params.p7smoke.json
-# Edit deploy/params.p7smoke.json — set:
-#   envName:           "p7smoke"
-#   location:          "eastus" (or your region)
-#   adminLogins:       ["<your-github-login>"]
-#   containerImageTag: "latest" (or a specific release tag)
+```
 
+`deploy/params.p7smoke.json`:
+
+```json
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "env":                         { "value": "p7smoke" },
+    "location":                    { "value": "eastus" },
+    "imageTag":                    { "value": "v0.7.0" },
+    "githubAppId":                 { "value": "<APP_ID from §2>" },
+    "githubAppOAuthClientId":      { "value": "<CLIENT_ID from §2>" },
+    "githubAppOAuthClientSecret":  { "value": "<CLIENT_SECRET from §2>" },
+    "postgresAdminPassword":       { "value": "<20+ char alphanumeric — no @ : / % # ? & =>" },
+    "masterKey":                   { "value": "<output of §4a>" },
+    "adminLogins":                 { "value": "<your-github-login>" },
+    "viewerLogins":                { "value": "" },
+    "ingressExternal":             { "value": true }
+  }
+}
+```
+
+Param-by-param reality check:
+- `env` — suffix for every resource name; keep it short (≤ 10 chars).
+- `imageTag` — whatever you pushed in §3. `latest` works; pinning is better.
+- `githubAppId` / `githubAppOAuthClientId` / `githubAppOAuthClientSecret` —
+  from the GitHub App settings page in §2. The client secret is shown once
+  at creation.
+- `postgresAdminPassword` — ends up in a connection string; avoid any
+  character `urlencode` would touch. Alphanumerics are safest.
+- `masterKey` — the base64 string from §4a. Paste verbatim (trailing `=`
+  included).
+- `adminLogins` — a **comma-separated string** (not a JSON array). Users in
+  this list can mutate everything.
+- `ingressExternal` — **must** be `true` for GitHub's webhook to reach the
+  API. The default is `false` and silently breaks the smoke.
+
+### 4c. Run the deploy
+
+```bash
 az deployment sub create \
   --location eastus \
   --template-file deploy/main.bicep \
   --parameters @deploy/params.p7smoke.json
 ```
 
-After ~10 minutes, the deployment completes. Grab the API hostname:
+Takes ~10 minutes. The Key Vault, Postgres, Container Apps Environment,
+identities, Container App, and the runner Job are all created.
+
+### 4d. Upload the GitHub App private key to Key Vault
+
+`containerApp.bicep` references a Key Vault secret named `github-app-pem`.
+Key Vault itself is created by the deploy, but the secret is not — the
+Container App reads the pem at process start, so upload it now:
+
+```bash
+KV_NAME=$(az keyvault list \
+  --resource-group rg-cronfoundry-p7smoke \
+  --query "[0].name" -o tsv)
+
+az keyvault secret set \
+  --vault-name "$KV_NAME" \
+  --name github-app-pem \
+  --file /path/to/your-app.private-key.pem
+
+az containerapp revision restart \
+  --resource-group rg-cronfoundry-p7smoke \
+  --name api \
+  --revision "$(az containerapp revision list \
+    --resource-group rg-cronfoundry-p7smoke \
+    --name api --query '[0].name' -o tsv)"
+```
+
+### 4e. Record the API FQDN and update the GitHub App
 
 ```bash
 az containerapp show \
@@ -73,10 +191,10 @@ az containerapp show \
 Go back to the GitHub App settings and replace `<your-api-hostname>` in
 Homepage URL, Callback URL, and Webhook URL with this FQDN. Save.
 
-## 4. First-boot config (web UI)
+## 5. First-boot config (web UI)
 
 Do the repo + secrets setup through the web UI so each action emits the
-`repo.connect` and `secret.create` audit events the verification step in §8
+`repo.connect` and `secret.create` audit events the verification step in §9
 checks for. CLI-based setup (`./cronfoundry admin connect-repo` etc.) bypasses
 those handlers and would yield no audit rows.
 
@@ -99,7 +217,7 @@ those handlers and would yield no audit rows.
      --set-env-vars CRONFOUNDRY_GITHUB_WEBHOOK_SECRET=<same value>
    ```
 
-## 5. Land a skill
+## 6. Land a skill
 
 In your skill repo's `cronfoundry.yaml`, define one schedule firing every 5
 minutes:
@@ -148,9 +266,9 @@ run at {{ run.started_at }}
 
 Commit and push. The push webhook re-syncs the schedule within seconds.
 
-## 6. Observe the first fire
+## 7. Observe the first fire
 
-1. You're already logged in from §4. Dashboard shows the new `every-5` schedule.
+1. You're already logged in from §5. Dashboard shows the new `every-5` schedule.
 2. Wait up to 5 minutes for the first natural fire — or click **Run now**.
 3. Go to **Runs**, click the newest row.
 4. Confirm the **log panel streams** with row levels `info/warn/error` and
@@ -158,7 +276,7 @@ Commit and push. The push webhook re-syncs the schedule within seconds.
    `publish.github-issue.ok`, `writeback.commit.ok`). Status transitions to
    `succeeded`.
 
-## 7. Verify the three side effects
+## 8. Verify the three side effects
 
 - **Slack:** message lands in the configured channel with the skill output.
 - **GitHub issue:** a new issue exists in the reports repo, titled
@@ -167,7 +285,7 @@ Commit and push. The push webhook re-syncs the schedule within seconds.
   author is `cronfoundry[bot]` with message
   `chore(cronfoundry): update memory.md from run <uuid>`.
 
-## 8. Verify the audit log
+## 9. Verify the audit log
 
 Navigate to **Audit** in the sidebar (shipped in P6c). Confirm rows are
 present for the session you just walked through:
@@ -183,7 +301,7 @@ present for the session you just walked through:
 
 If any row is missing, file it as a P6c fix and do not mark the smoke passed.
 
-## 9. Teardown
+## 10. Teardown
 
 ```bash
 az group delete --name rg-cronfoundry-p7smoke --yes --no-wait
@@ -201,6 +319,8 @@ resource group is gone.
 - [ ] GitHub issue filed in the reports repo.
 - [ ] `memory.md` commit authored by `cronfoundry[bot]`.
 - [ ] Audit log contains login + repo-connect + secret-create rows.
+- [ ] Run detail shows non-zero `tokens_in`, `tokens_out`, and `cost_cents`
+      (cost accounting from the P7 follow-up).
 
 If every box is checked, MVP is shipped. Otherwise, every unchecked box
 becomes a fix in code or docs and the runbook re-runs.
