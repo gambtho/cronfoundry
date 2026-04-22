@@ -12,3 +12,5 @@ app.pem
 .claude/
 .worktrees/
 deploy/params.json
+deploy/params.*.json
+!deploy/params.example.json
