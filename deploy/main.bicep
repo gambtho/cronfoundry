@@ -53,6 +53,14 @@ module kv 'modules/keyVault.bicep' = {
     location: location
     name: '${prefix}-kv-${env}'
     cfServePrincipalId: identities.outputs.cfServePrincipalId
+    // Some subscriptions (notably Microsoft-internal tenants) enforce
+    // Key Vault purge protection via Azure Policy. Leaving this at the
+    // module default (false) causes Azure to reject the deploy with
+    // "enablePurgeProtection cannot be set to false." Cost: a deleted
+    // vault is soft-preserved for softDeleteRetentionDays (7), so
+    // re-deploys with the same vault name must wait out that window or
+    // use a different env suffix.
+    enablePurgeProtection: true
   }
 }
 

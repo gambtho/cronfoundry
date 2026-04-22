@@ -212,3 +212,61 @@ the now-redundant `logAnalyticsWorkspaceId` / `logAnalyticsCustomerId`
 
 Committed on branch `fix/smoke-f11-bicep-listkeys` (worktree); fast-
 forwarded into `fix/smoke-runbook-azure-p7` and pushed to PR #16.
+
+## F12 — Key Vault deploy rejected `enablePurgeProtection: false`
+
+**Severity:** blocker
+**Type:** code
+
+Second deploy attempt reached the KV creation step and failed with:
+
+```
+BadRequest: The property "enablePurgeProtection" cannot be set to
+false. Enabling the purge protection for a vault is an irreversible
+action.
+```
+
+`keyVault.bicep` defaults `enablePurgeProtection = false` and
+`main.bicep` did not override it, so Azure received `false`. The
+Microsoft-internal subscription used for this smoke
+(`d0ecd0d2-779b-4fd0-8f04-d46d07f05703`) enforces purge protection via
+a custom Key Vault policy — `az policy assignment list` surfaced
+"Custom Azure Key Vault RBAC permission model Policy" and "Custom
+Resource logs on Key Vault should be enabled Policy" on the sub. The
+error message is Azure's generic "can't turn it off once on" wording
+even though our vault didn't exist yet; the policy evaluator treats
+the incoming `false` as a forbidden transition from the required
+state.
+
+**Fix:** code — `main.bicep`'s KV module call now sets
+`enablePurgeProtection: true` with an inline comment explaining the
+tradeoff (soft-deleted vault lingers for `softDeleteRetentionDays`
+= 7, so re-deploys with the same env suffix need to wait the window
+out or use a different `env`). The module default stays `false` so
+non-enforcing subs aren't affected.
+
+## F13 — Postgres Flexible Server offer-restricted in `eastus`
+
+**Severity:** blocker
+**Type:** operational + doc
+
+Alongside F12, the second deploy also failed with:
+
+```
+LocationIsOfferRestricted: Subscriptions are restricted from
+provisioning in location 'eastus'. Try again in a different location.
+```
+
+Not a CronFoundry bug — the subscription has Postgres Flexible Server
+offer restrictions for `eastus`. Spot-checked `eastus2`, `westus2`,
+`westus3`, `centralus`, `southcentralus`, `northeurope`, `westeurope`
+with `az postgres flexible-server list-skus` — all return SKUs, so any
+of them works.
+
+**Fix:** operational — switched `params.p7smoke.json` to `eastus2`.
+The existing RG had to be torn down because `main.bicep` creates the
+RG with `location: location` and Azure rejects region changes on an
+existing RG. Teardown + redeploy in `eastus2` is the standard path.
+
+Runbook §1 / §3 stays region-agnostic; if future runs hit the same
+restriction we'll pick any of the listed working regions.
