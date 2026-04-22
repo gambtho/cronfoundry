@@ -81,17 +81,26 @@ start.
 gains a new §3 "Publish a container image" that documents the tag push and
 the wait.
 
-## F6 — GHCR image is private by default on first push
+## F6 — GHCR image visibility (observed: already public for this repo)
 
-**Severity:** blocker
+**Severity:** potentially blocker (turned out not to be)
 **Type:** doc
 
-First CI push creates a private GHCR package. `containerApp.bicep` uses no
-`imagePullSecrets`, so the Container App pulls anonymously and gets a 401
-until the package is flipped to public in the GHCR UI.
+Hypothesis going in: first CI push creates a **private** GHCR package,
+and `containerApp.bicep` has no `imagePullSecrets`, so the Container App
+would 401 until the package is manually flipped to public.
 
-**Fix:** doc — §3 ends with a step pointing at the GHCR package-settings URL
-to flip visibility to Public.
+Observed on live push (`v0.7.0`, release run 24757432665): the package
+was public on first push — `docker manifest inspect
+ghcr.io/gambtho/cronfoundry:0.7.0` returned the manifest index
+anonymously with no visibility change. Likely because
+`gambtho/cronfoundry` is a public source repository and GHCR inherits
+that visibility.
+
+**Fix:** doc — §3 step 2 is now a **verification** step (try the
+anonymous pull; if it works you're done) with the GHCR settings URL kept
+as a fallback in case the default changes on a fork, private mirror, or
+future GitHub policy update.
 
 ## F7 (pending) — Container App references a KV secret `github-app-pem` that Bicep never seeds
 
@@ -131,3 +140,24 @@ green again.
 **Fix:** code — one-line change in `oauth_test.go:273` to
 `time.Until(time.Unix(claims.Exp, 0))`. Landed on this branch so PR #16
 also unblocks main.
+
+## F9 — Runbook §3 wrote `v0.7.0` as an image tag; metadata-action strips the `v`
+
+**Severity:** blocker (deploy would pull a nonexistent tag)
+**Type:** doc
+
+The initial §3 rewrite said the release would push
+`ghcr.io/<owner>/cronfoundry:{v0.7.0, 0.7, latest}` and set
+`"imageTag": "v0.7.0"` in the params example. In reality
+`docker/metadata-action@v5` is configured with
+`type=semver,pattern={{version}}`, which **strips the leading `v`** —
+the actual tags pushed are `0.7.0`, `0.7`, and `latest`.
+
+Caught when `docker manifest inspect ghcr.io/gambtho/cronfoundry:v0.7.0`
+returned `manifest unknown` after a successful release run; inspecting
+the run log confirmed the pushed tags were `0.7.0` / `0.7` / `latest`.
+If we hadn't caught this, the Container App would fail to pull on the
+first deploy.
+
+**Fix:** doc — §3 now names the exact pushed tags (prefix-stripped) and
+sets `"imageTag": "0.7.0"` in the params example.

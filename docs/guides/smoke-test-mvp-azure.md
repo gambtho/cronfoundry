@@ -56,8 +56,8 @@ You'll come back after step 3 to update the three URLs with the real hostname.
 `deploy/modules/containerApp.bicep` pulls from
 `ghcr.io/gambtho/cronfoundry:${imageTag}`. The `release.yml` workflow builds
 and pushes multi-arch images, but only on `v*` tags — a fresh checkout with
-no release tag has nothing to pull. First push also creates the package as
-**private**; Container Apps pulls anonymously, so it must be public.
+no release tag has nothing to pull. Container Apps pulls anonymously, so
+the GHCR package must also be public.
 
 1. Tag and push:
 
@@ -67,16 +67,28 @@ no release tag has nothing to pull. First push also creates the package as
    ```
 
    The `Release` workflow takes ~8 minutes to build linux/amd64+arm64 and
-   push `ghcr.io/<owner>/cronfoundry:{v0.7.0, 0.7, latest}`. Watch with
-   `gh run watch`.
+   push three tags. `docker/metadata-action` uses
+   `type=semver,pattern={{version}}`, which **strips the `v` prefix**, so
+   the pushed tags are:
+   - `ghcr.io/<owner>/cronfoundry:0.7.0`
+   - `ghcr.io/<owner>/cronfoundry:0.7`
+   - `ghcr.io/<owner>/cronfoundry:latest`
 
-2. Flip the GHCR package to **Public**:
+   Watch with `gh run watch`, then verify:
+
+   ```bash
+   docker manifest inspect ghcr.io/<owner>/cronfoundry:0.7.0 | head -5
+   ```
+
+2. Verify the GHCR package is **Public**. Packages linked to public source
+   repositories inherit public visibility by default, so the step above
+   should succeed without auth. If it returns `manifest unknown` or
+   `denied`, flip the package visibility manually:
    `https://github.com/users/<owner>/packages/container/cronfoundry/settings`
-   → Danger Zone → *Change visibility* → Public. Skip this and the
-   Container App's image pull will 401.
+   → Danger Zone → *Change visibility* → Public.
 
 Pick the tag you'll reference from the params file — `latest` works, but
-pinning to `v0.7.0` makes the deployed version explicit.
+pinning to `0.7.0` makes the deployed version explicit.
 
 ## 4. Deploy via Bicep
 
@@ -115,7 +127,7 @@ cp deploy/params.example.json deploy/params.p7smoke.json
   "parameters": {
     "env":                         { "value": "p7smoke" },
     "location":                    { "value": "eastus" },
-    "imageTag":                    { "value": "v0.7.0" },
+    "imageTag":                    { "value": "0.7.0" },
     "githubAppId":                 { "value": "<APP_ID from §2>" },
     "githubAppOAuthClientId":      { "value": "<CLIENT_ID from §2>" },
     "githubAppOAuthClientSecret":  { "value": "<CLIENT_SECRET from §2>" },
