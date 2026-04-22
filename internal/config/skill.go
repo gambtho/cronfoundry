@@ -3,6 +3,7 @@ package config
 import (
 	"bytes"
 	"fmt"
+	"regexp"
 
 	"sigs.k8s.io/yaml"
 )
@@ -17,11 +18,19 @@ type SkillFrontmatter struct {
 	Description string                    `json:"description"`
 	ModelHint   string                    `json:"model_hint"`
 	MaxTokens   int                       `json:"max_tokens"`
+	MaxTurns    int                       `json:"max_turns"`
+	MCPServers  []MCPServer               `json:"mcp_servers,omitempty"`
 	Writeback   SkillWritebackFrontmatter `json:"writeback"`
 }
 
 type SkillWritebackFrontmatter struct {
 	BlockFormat string `json:"block_format"`
+}
+
+type MCPServer struct {
+	Name    string   `json:"name"`
+	Command string   `json:"command"`
+	Args    []string `json:"args,omitempty"`
 }
 
 var fence = []byte("---")
@@ -73,4 +82,29 @@ func ParseSkillFile(data []byte) (*Skill, error) {
 		return nil, fmt.Errorf("parse frontmatter: %w", err)
 	}
 	return &Skill{Frontmatter: fm, Body: string(body)}, nil
+}
+
+var mcpServerNameRe = regexp.MustCompile(`^[a-z][a-z0-9_-]*$`)
+
+// Validate returns the first schema violation found, or nil.
+func (s *Skill) Validate() error {
+	seen := map[string]bool{}
+	for i, ms := range s.Frontmatter.MCPServers {
+		if !mcpServerNameRe.MatchString(ms.Name) {
+			return fmt.Errorf("skill %q: mcp_servers[%d].name %q invalid (want: %s)",
+				s.Frontmatter.Name, i, ms.Name, mcpServerNameRe.String())
+		}
+		if seen[ms.Name] {
+			return fmt.Errorf("skill %q: duplicate mcp_servers name %q", s.Frontmatter.Name, ms.Name)
+		}
+		seen[ms.Name] = true
+		if ms.Command == "" {
+			return fmt.Errorf("skill %q: mcp_servers[%d] %q: command required",
+				s.Frontmatter.Name, i, ms.Name)
+		}
+	}
+	if s.Frontmatter.MaxTurns < 0 {
+		return fmt.Errorf("skill %q: max_turns must be >= 0", s.Frontmatter.Name)
+	}
+	return nil
 }
