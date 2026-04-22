@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -81,7 +82,7 @@ func (h finalizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := dbgen.New(h.deps.Pool)
-	if _, err := q.FinalizeRun(r.Context(), dbgen.FinalizeRunParams{
+	row, err := q.FinalizeRun(r.Context(), dbgen.FinalizeRunParams{
 		ID:                 pgtype.UUID{Bytes: urlRunID, Valid: true},
 		Status:             body.Status,
 		DurationMs:         body.DurationMs,
@@ -91,7 +92,8 @@ func (h finalizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ErrorKind:          body.ErrorKind,
 		ErrorMsg:           body.ErrorMsg,
 		WritebackCommitSha: body.WritebackCommitSha,
-	}); err != nil {
+	})
+	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// The FinalizeRun query's WHERE clause refuses to match runs
 			// already in a terminal state. A missing run_id would also
@@ -105,5 +107,19 @@ func (h finalizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "finalize: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+
+	// Auto-pause evaluation runs AFTER finalize has committed, in its own
+	// transaction. Errors here are logged and swallowed — the finalize
+	// response must not depend on it.
+	scheduleUUID := uuid.UUID(row.ScheduleID.Bytes)
+	if err := evaluateAutoPause(
+		r.Context(), h.deps.Pool,
+		scheduleUUID, urlRunID,
+		body.Status, row.FireReason,
+	); err != nil {
+		slog.Warn("finalize: auto-pause evaluation failed (non-fatal)",
+			"run_id", urlRunID, "err", err)
+	}
+
 	w.WriteHeader(http.StatusNoContent)
 }

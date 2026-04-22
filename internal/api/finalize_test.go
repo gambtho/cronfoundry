@@ -268,3 +268,90 @@ func TestFinalize_RejectsMismatchedRunID(t *testing.T) {
 	defer func() { _ = resp.Body.Close() }()
 	assert.Equal(t, http.StatusForbidden, resp.StatusCode)
 }
+
+func TestFinalize_TriggersAutoPauseAfterConsecutiveFailures(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, cleanup := testdb.BootPG(t)
+	defer cleanup()
+
+	// Seed a schedule with 4 prior failed scheduled runs (inline like the
+	// existing seedRunWithHash helper — this package does not expose
+	// smaller seedOrg/seedRepo helpers).
+	ctx := context.Background()
+	var orgID pgtype.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO organization (name) VALUES ('o') RETURNING id`).Scan(&orgID))
+	var repoID pgtype.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO repo_connection (org_id, github_app_install_id, owner, name, default_branch)
+		 VALUES ($1, 42, 'acme', 'widgets', 'main') RETURNING id`, orgID).Scan(&repoID))
+	var skillID pgtype.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO skill (org_id, repo_id, path, name, current_sha, frontmatter_json)
+		 VALUES ($1, $2, 'skills/a', 'a', 'sha-1', '{"name":"a"}'::jsonb) RETURNING id`,
+		orgID, repoID).Scan(&skillID))
+	var scheduleID pgtype.UUID
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO schedule (org_id, skill_id, name, cron, provider, model, destinations_json)
+		VALUES ($1, $2, 'daily', '0 9 * * *', 'openai', 'gpt-4o', '[]'::jsonb)
+		RETURNING id
+	`, orgID, skillID).Scan(&scheduleID))
+
+	var enabledAt time.Time
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT last_enabled_at FROM schedule WHERE id=$1`, scheduleID).Scan(&enabledAt))
+
+	base := enabledAt.Add(time.Second)
+	for i := 0; i < 4; i++ {
+		ts := base.Add(time.Duration(i) * time.Minute)
+		_, err := pool.Exec(ctx, `
+			INSERT INTO run (org_id, schedule_id, skill_sha, status, fire_reason,
+			                 fire_time, started_at, finished_at, runner_token_hash, created_at)
+			VALUES ($1, $2, 'abc', 'failed', 'schedule', $3, $3, $3, 'hash-seed', $3)
+		`, orgID, scheduleID, ts)
+		require.NoError(t, err)
+	}
+
+	// Create a 5th pending run under the same org/schedule and finalize it via the handler.
+	fiveFireTime := base.Add(5 * time.Minute)
+	var runPG pgtype.UUID
+	require.NoError(t, pool.QueryRow(ctx, `
+		INSERT INTO run (org_id, schedule_id, skill_sha, status, fire_reason, fire_time, runner_token_hash, created_at)
+		VALUES ($1, $2, 'sha-1', 'pending', 'schedule', $3, 'placeholder', $3)
+		RETURNING id
+	`, orgID, scheduleID, fiveFireTime).Scan(&runPG))
+	runID := uuid.UUID(runPG.Bytes)
+
+	signer := token.New(randomMaster(t))
+	tok, hash, err := signer.Sign(token.RunClaims{
+		RunID:     runID,
+		OrgID:     uuid.UUID(orgID.Bytes),
+		ExpiresAt: time.Now().Add(time.Minute),
+	})
+	require.NoError(t, err)
+	bindRunHash(t, pool, runID, hash)
+
+	srv := NewServer("127.0.0.1:0", Deps{Pool: pool, Signer: signer})
+	ts := httptest.NewServer(srv.Handler)
+	defer ts.Close()
+
+	errKind := "llm_error"
+	body := map[string]any{"status": "failed", "error_kind": errKind}
+	buf, _ := json.Marshal(body)
+	req, _ := http.NewRequest("POST", ts.URL+"/internal/runs/"+runID.String()+"/finalize", bytes.NewReader(buf))
+	req.Header.Set("Authorization", "Bearer "+tok)
+	resp, err := ts.Client().Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+
+	// Assert pause landed.
+	var enabled bool
+	var pausedAt *time.Time
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT enabled, auto_paused_at FROM schedule WHERE id=$1`, scheduleID).Scan(&enabled, &pausedAt))
+	assert.False(t, enabled, "schedule must be disabled by auto-pause")
+	require.NotNil(t, pausedAt, "auto_paused_at must be stamped")
+}
