@@ -45,11 +45,11 @@ func runAdminTriggerSync(ctx context.Context, repo string, out io.Writer) error 
 	if appID == "" {
 		return fmt.Errorf("%s is required", envGitHubAppID)
 	}
-	pemPath := os.Getenv(envGitHubAppPEM)
-	if pemPath == "" {
-		return fmt.Errorf("%s is required (path to GitHub App private key PEM)", envGitHubAppPEM)
+	pemValue := os.Getenv(envGitHubAppPEM)
+	if pemValue == "" {
+		return fmt.Errorf("%s is required (path to GitHub App private key PEM, or inline PEM contents)", envGitHubAppPEM)
 	}
-	pemBytes, err := os.ReadFile(pemPath)
+	pemBytes, err := github.ReadPEM(pemValue)
 	if err != nil {
 		return fmt.Errorf("read %s: %w", envGitHubAppPEM, err)
 	}

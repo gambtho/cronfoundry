@@ -89,7 +89,7 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 	adminLogins := splitLogins(adminLoginsRaw)
 	viewerLogins := splitLogins(os.Getenv(envViewerLogins))
 
-	pemBytes, err := os.ReadFile(pemPath)
+	pemBytes, err := github.ReadPEM(pemPath)
 	if err != nil {
 		return fmt.Errorf("read PEM: %w", err)
 	}

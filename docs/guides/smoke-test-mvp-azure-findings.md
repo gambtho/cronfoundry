@@ -329,3 +329,47 @@ Consequences:
   existing callers don't break.
 
 F7 retroactively marked resolved via this bundle.
+
+## F15 — `serve` treats `CRONFOUNDRY_GITHUB_APP_PEM` strictly as a file path
+
+**Severity:** blocker (Container App CrashLoopBackOff after F14 deploy succeeded)
+**Type:** code
+
+Fourth deploy succeeded — all Azure resources including the pre-seeded
+`github-app-pem` KV secret landed. But the serve Container App
+immediately started crash-looping (restartCount=11 inside 30 min,
+`runningState: ActivationFailed`, `health: Unhealthy`). Log Analytics
+query of `ContainerAppConsoleLogs_CL` showed:
+
+```
+error: read PEM: open -----BEGIN RSA PRIVATE KEY-----
+<... full PEM body ...>
+-----END RSA PRIVATE KEY-----
+: no such file or directory
+```
+
+Root cause: `cmd/cronfoundry/serve.go:72-95` did
+`os.ReadFile(os.Getenv("CRONFOUNDRY_GITHUB_APP_PEM"))` — i.e. treated
+the env var strictly as a filesystem path. Same pattern in
+`cmd/cronfoundry/admin_triggersync.go:48-55`. Local/docker-compose
+deploys mount a `.pem` file and pass its path, so the pattern worked
+there. In Azure Container Apps the Key Vault secret is mapped
+**inline** into the env var (secretRef at `containerApp.bicep:63`),
+so the process gets the multi-line PEM text and tries to open it as
+a path.
+
+**Fix:** code — new `github.ReadPEM(value string) ([]byte, error)` in
+`internal/github/pem.go` auto-detects inline vs. path by checking for
+a leading `-----BEGIN` marker after trimming whitespace; falls back to
+`os.ReadFile`. `serve.go` and `admin_triggersync.go` swapped to use it.
+Preserves the local dev contract (env var = path) and unblocks the
+Azure deploy (env var = inline content). Unit test in
+`internal/github/pem_test.go` covers both modes plus leading-whitespace
+and missing-file cases.
+
+Requires a new release tag so the Container App can pull an image with
+the fix. Tagging `v0.7.1` off this branch; release workflow runs on
+any `v*` tag regardless of base branch. After the image builds,
+`params.p7smoke.json` `imageTag` bumps to `0.7.1` and a second
+`az deployment sub create` is incremental — only the Container App
+revision changes.
