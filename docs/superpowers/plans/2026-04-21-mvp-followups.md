@@ -458,11 +458,16 @@ Run: `go test ./cmd/cronfoundry/ -run TestAPIClient_PostFinalize_SendsCostCents 
 Expected: PASS already (the `CostCents` field on `finalizeRequest` exists at `runner.go:366`). If the test fails for an unrelated reason, fix. Then ensure the production call site populates it — in `cmd/cronfoundry/runner.go` around line 227 (the block that sets `body.TokensOut`), append:
 
 ```go
-if result.CostCents > 0 {
-    v := int32(result.CostCents)
-    body.CostCents = &v
-}
+v := int32(result.CostCents)
+body.CostCents = &v
 ```
+
+> **Note on the unconditional assignment:** an earlier draft gated this
+> with `if result.CostCents > 0`. Don't — the cost is always
+> deterministically computed (0 means BYOK, sub-penny, or unknown
+> model), so sending 0 is distinct from "omitted." Add a second test
+> asserting that `"cost_cents":0` appears on the wire when CostCents
+> is 0, and drop `,omitempty` from the JSON tag on `finalizeRequest.CostCents`.
 
 - [ ] **Step 7: Run the full test suite**
 
@@ -664,11 +669,11 @@ git commit -m "feat(runner): enforce per-run wall-clock timeout from schedule.ti
 ## Task 6: Local end-to-end smoke test
 
 **Files:**
-- Create: `cmd/cronfoundry/smoke_test.go`
+- Create: `cmd/cronfoundry/smoke_test.go` — OR (preferred) extend the existing `cmd/cronfoundry/e2e_test.go` with a new test function that reuses its helpers (`buildBinary`, `generateMasterKey`, `runAdminInitWithKey`, etc.). The latter avoids duplicating boot scaffolding.
 
 Validates the full hot-path end-to-end against mocks: throwaway Postgres → seed org/repo/skill/schedule → mock OpenAI returning a fixed response with `<memory>...</memory>` → mock Slack webhook → mock GitHub clone endpoint serving a bare git repo with `cronfoundry.yaml` + `SKILL.md` → scheduler tick → runner subprocess → assert run row is `succeeded` + Slack was called + `run_event` has `publish.slack.ok`.
 
-Build tag: `smoke` (so it doesn't run in the default `go test` pass but can be invoked with `go test -tags=smoke`).
+Build tag: use `//go:build e2e` (matches the existing e2e file). The test harness's clone-URL bypass is compile-time gated behind that tag — see Step 2 below. A separate `//go:build smoke` tag is **not** recommended: it would duplicate the e2e helpers without benefit.
 
 - [ ] **Step 1: Create the smoke test file**
 
@@ -884,19 +889,60 @@ func repoWorkingDir(t *testing.T) string {
 > gpt-4o-mini pricing (Task 3) that rounds to 0 cents — either bump the fixture
 > to 1,000,000/1,000,000 or relax the cost assertion to `>= 0`.
 
-- [ ] **Step 2: Teach the clone-URL endpoint to honor `SMOKE_LOCAL_CLONE_URL`**
+- [ ] **Step 2: Add a compile-time clone-URL bypass for the test harness**
 
-The smoke test needs the API to return `file://...` for the bare repo instead of fetching a real GitHub installation token. In `internal/api/clone_url.go`:
+The smoke test needs the API to return `file://...` for the bare repo instead of fetching a real GitHub installation token. A runtime env-var bypass in the production handler is **not** acceptable — a misconfig or supply-chain attack could silently hijack clone URLs. Instead, split the bypass behind a build tag so it is physically absent from production binaries.
+
+**Don't** add `if v := os.Getenv("SMOKE_LOCAL_CLONE_URL"); v != "" { ... }` to `internal/api/clone_url.go`.
+
+**Do:** introduce a helper with two build-tag-gated implementations. In `internal/api/clone_url.go`, call a helper near the top of `ServeHTTP`:
 
 ```go
-// Near the top of the handler, before the GitHub token fetch:
-if v := os.Getenv("SMOKE_LOCAL_CLONE_URL"); v != "" {
+// smokeCloneOverride is a compile-time no-op in production builds
+// (clone_url_prod.go). In e2e builds (clone_url_e2e.go) it reads
+// CRONFOUNDRY_SMOKE_CLONE_URL so the smoke harness can inject a local URL.
+if v, ok := smokeCloneOverride(); ok {
+    w.Header().Set("Content-Type", "application/json")
     _ = json.NewEncoder(w).Encode(map[string]string{"url": v})
     return
 }
 ```
 
-This env var is only set in tests; production deployments leave it unset and take the real GitHub path.
+Create `internal/api/clone_url_prod.go`:
+
+```go
+//go:build !e2e
+
+package api
+
+// smokeCloneOverride is a compile-time no-op in production builds.
+// See clone_url_e2e.go for the test-only implementation.
+func smokeCloneOverride() (string, bool) { return "", false }
+```
+
+Create `internal/api/clone_url_e2e.go`:
+
+```go
+//go:build e2e
+
+package api
+
+import "os"
+
+// smokeCloneOverride returns the CRONFOUNDRY_SMOKE_CLONE_URL env value
+// when set. Included ONLY in e2e-tagged builds; production binaries
+// replace this with the prod no-op at compile time.
+func smokeCloneOverride() (string, bool) {
+    v := os.Getenv("CRONFOUNDRY_SMOKE_CLONE_URL")
+    return v, v != ""
+}
+```
+
+When the `buildBinary` helper in `e2e_test.go` compiles the subprocess binary, it must pass `-tags=e2e` so the e2e variant is linked in — otherwise the prod no-op wins and the env var is silently ignored:
+
+```go
+cmd := exec.Command("go", "build", "-tags=e2e", "-o", binPath, ".")
+```
 
 - [ ] **Step 3: Run the smoke test**
 
