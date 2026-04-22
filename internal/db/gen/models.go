@@ -98,6 +98,8 @@ type Schedule struct {
 	DestinationsJson []byte
 	WritebackJson    []byte
 	EnvJson          []byte
+	McpEnvJson       []byte
+	MaxTurns         *int32
 	NextFireAt       pgtype.Timestamptz
 	CreatedAt        pgtype.Timestamptz
 	UpdatedAt        pgtype.Timestamptz

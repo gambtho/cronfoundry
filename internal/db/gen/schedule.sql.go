@@ -66,7 +66,7 @@ func (q *Queries) GetScheduleForTrigger(ctx context.Context, id pgtype.UUID) (Ge
 }
 
 const listDueSchedules = `-- name: ListDueSchedules :many
-SELECT id, org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec, enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment, destinations_json, writeback_json, env_json, next_fire_at, created_at, updated_at
+SELECT id, org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec, enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment, destinations_json, writeback_json, env_json, mcp_env_json, max_turns, next_fire_at, created_at, updated_at
 FROM schedule
 WHERE enabled = true
   AND next_fire_at IS NOT NULL
@@ -103,6 +103,8 @@ func (q *Queries) ListDueSchedules(ctx context.Context) ([]Schedule, error) {
 			&i.DestinationsJson,
 			&i.WritebackJson,
 			&i.EnvJson,
+			&i.McpEnvJson,
+			&i.MaxTurns,
 			&i.NextFireAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -118,7 +120,7 @@ func (q *Queries) ListDueSchedules(ctx context.Context) ([]Schedule, error) {
 }
 
 const listDueSchedulesWithSha = `-- name: ListDueSchedulesWithSha :many
-SELECT s.id, s.org_id, s.skill_id, s.name, s.cron, s.timezone, s.overlap_policy, s.timeout_sec, s.enabled, s.provider, s.model, s.llm_secret_ref, s.llm_endpoint, s.llm_deployment, s.destinations_json, s.writeback_json, s.env_json, s.next_fire_at, s.created_at, s.updated_at,
+SELECT s.id, s.org_id, s.skill_id, s.name, s.cron, s.timezone, s.overlap_policy, s.timeout_sec, s.enabled, s.provider, s.model, s.llm_secret_ref, s.llm_endpoint, s.llm_deployment, s.destinations_json, s.writeback_json, s.env_json, s.mcp_env_json, s.max_turns, s.next_fire_at, s.created_at, s.updated_at,
        sk.current_sha AS skill_sha
 FROM schedule s
 JOIN skill sk ON sk.id = s.skill_id
@@ -146,6 +148,8 @@ type ListDueSchedulesWithShaRow struct {
 	DestinationsJson []byte
 	WritebackJson    []byte
 	EnvJson          []byte
+	McpEnvJson       []byte
+	MaxTurns         *int32
 	NextFireAt       pgtype.Timestamptz
 	CreatedAt        pgtype.Timestamptz
 	UpdatedAt        pgtype.Timestamptz
@@ -181,6 +185,8 @@ func (q *Queries) ListDueSchedulesWithSha(ctx context.Context) ([]ListDueSchedul
 			&i.DestinationsJson,
 			&i.WritebackJson,
 			&i.EnvJson,
+			&i.McpEnvJson,
+			&i.MaxTurns,
 			&i.NextFireAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -197,7 +203,7 @@ func (q *Queries) ListDueSchedulesWithSha(ctx context.Context) ([]ListDueSchedul
 }
 
 const listSchedulesByOrg = `-- name: ListSchedulesByOrg :many
-SELECT s.id, s.org_id, s.skill_id, s.name, s.cron, s.timezone, s.overlap_policy, s.timeout_sec, s.enabled, s.provider, s.model, s.llm_secret_ref, s.llm_endpoint, s.llm_deployment, s.destinations_json, s.writeback_json, s.env_json, s.next_fire_at, s.created_at, s.updated_at, sk.path AS skill_path, sk.name AS skill_name, rc.owner, rc.name AS repo_name
+SELECT s.id, s.org_id, s.skill_id, s.name, s.cron, s.timezone, s.overlap_policy, s.timeout_sec, s.enabled, s.provider, s.model, s.llm_secret_ref, s.llm_endpoint, s.llm_deployment, s.destinations_json, s.writeback_json, s.env_json, s.mcp_env_json, s.max_turns, s.next_fire_at, s.created_at, s.updated_at, sk.path AS skill_path, sk.name AS skill_name, rc.owner, rc.name AS repo_name
 FROM schedule s
 JOIN skill sk ON sk.id = s.skill_id
 JOIN repo_connection rc ON rc.id = sk.repo_id
@@ -223,6 +229,8 @@ type ListSchedulesByOrgRow struct {
 	DestinationsJson []byte
 	WritebackJson    []byte
 	EnvJson          []byte
+	McpEnvJson       []byte
+	MaxTurns         *int32
 	NextFireAt       pgtype.Timestamptz
 	CreatedAt        pgtype.Timestamptz
 	UpdatedAt        pgtype.Timestamptz
@@ -259,6 +267,8 @@ func (q *Queries) ListSchedulesByOrg(ctx context.Context, orgID pgtype.UUID) ([]
 			&i.DestinationsJson,
 			&i.WritebackJson,
 			&i.EnvJson,
+			&i.McpEnvJson,
+			&i.MaxTurns,
 			&i.NextFireAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
@@ -283,7 +293,7 @@ SET enabled    = $2,
     updated_at = now()
 WHERE id = $1
   AND org_id = $3
-RETURNING id, org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec, enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment, destinations_json, writeback_json, env_json, next_fire_at, created_at, updated_at
+RETURNING id, org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec, enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment, destinations_json, writeback_json, env_json, mcp_env_json, max_turns, next_fire_at, created_at, updated_at
 `
 
 type SetScheduleEnabledParams struct {
@@ -313,6 +323,8 @@ func (q *Queries) SetScheduleEnabled(ctx context.Context, arg SetScheduleEnabled
 		&i.DestinationsJson,
 		&i.WritebackJson,
 		&i.EnvJson,
+		&i.McpEnvJson,
+		&i.MaxTurns,
 		&i.NextFireAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -359,7 +371,7 @@ ON CONFLICT (skill_id, name) DO UPDATE
       writeback_json    = EXCLUDED.writeback_json,
       env_json          = EXCLUDED.env_json,
       updated_at        = now()
-RETURNING id, org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec, enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment, destinations_json, writeback_json, env_json, next_fire_at, created_at, updated_at
+RETURNING id, org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec, enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment, destinations_json, writeback_json, env_json, mcp_env_json, max_turns, next_fire_at, created_at, updated_at
 `
 
 type UpsertScheduleParams struct {
@@ -419,6 +431,8 @@ func (q *Queries) UpsertSchedule(ctx context.Context, arg UpsertScheduleParams) 
 		&i.DestinationsJson,
 		&i.WritebackJson,
 		&i.EnvJson,
+		&i.McpEnvJson,
+		&i.MaxTurns,
 		&i.NextFireAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
