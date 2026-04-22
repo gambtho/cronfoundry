@@ -41,6 +41,7 @@ func (p *azureFoundryProvider) Chat(ctx context.Context, messages []Message, opt
 		// from the environment by default, which would otherwise attach a
 		// bogus `Authorization: Bearer ...` header to every Azure request.
 		option.WithHeaderDel("Authorization"),
+		option.WithMaxRetries(3),
 	)
 
 	msgs := make([]openai.ChatCompletionMessageParamUnion, 0, len(messages))
