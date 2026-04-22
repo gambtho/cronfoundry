@@ -46,6 +46,15 @@ resource allowAzure 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@202
   }
 }
 
+resource azureExtensions 'Microsoft.DBforPostgreSQL/flexibleServers/configurations@2023-06-01-preview' = {
+  parent: pg
+  name: 'azure.extensions'
+  properties: {
+    value: 'UUID-OSSP,CITEXT'
+    source: 'user-override'
+  }
+}
+
 resource cronfoundryDb 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2023-06-01-preview' = {
   parent: pg
   name: 'cronfoundry'

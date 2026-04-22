@@ -400,3 +400,28 @@ the same region.
 integration is used, the rule is skipped (traffic flows through the
 delegated subnet instead). Forced a new Container App revision after
 the incremental redeploy since failed revisions don't auto-recover.
+
+## F17 — Postgres `uuid-ossp` and `citext` extensions not allow-listed on Azure
+
+**Severity:** blocker (migrations fail on `admin init`)
+**Type:** code + doc
+
+After F16 unblocked Postgres connectivity, running `cronfoundry admin init`
+against the Azure Postgres failed:
+
+```
+ERROR: extension "uuid-ossp" is not allow-listed for users in
+Azure Database for PostgreSQL (SQLSTATE 0A000)
+```
+
+After allow-listing `UUID-OSSP`, the next migration hit the same error for
+`citext`. Azure Postgres Flexible Server requires extensions to be
+explicitly enabled via the `azure.extensions` server parameter before
+`CREATE EXTENSION` can succeed.
+
+**Fix:** code — `postgres.bicep` now sets the `azure.extensions` server
+configuration to `UUID-OSSP,CITEXT` via a
+`Microsoft.DBforPostgreSQL/flexibleServers/configurations` resource.
+Runbook §4c gains a note that `admin init` must be run after the first
+deploy to migrate the schema and seed the org — `serve` does not
+auto-migrate.
