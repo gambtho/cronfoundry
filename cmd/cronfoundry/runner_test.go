@@ -6,7 +6,9 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -216,6 +218,51 @@ func TestAPIClient_PostFinalize(t *testing.T) {
 	assert.NotContains(t, raw, `"tokens_in"`, "nil pointer fields must be omitted")
 }
 
+// TestAPIClient_PostFinalize_SendsCostCents verifies that cost_cents travels
+// through PostFinalize when the field is set.
+func TestAPIClient_PostFinalize_SendsCostCents(t *testing.T) {
+	var gotBody finalizeRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := &apiClient{baseURL: srv.URL, token: "t", http: srv.Client()}
+	cents := int32(42)
+	err := c.PostFinalize(context.Background(), "run-1", finalizeRequest{
+		Status:    "succeeded",
+		CostCents: &cents,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, gotBody.CostCents)
+	assert.Equal(t, int32(42), *gotBody.CostCents)
+}
+
+// TestAPIClient_PostFinalize_SendsZeroCostCents verifies that zero-cost runs
+// report cost_cents=0 on the wire rather than omitting the field. CostCents is
+// always deterministically computed by llm.CostCents; the value 0 means 'we
+// know the cost is zero' (BYOK provider, unknown model, or sub-penny run),
+// not 'unknown'.
+func TestAPIClient_PostFinalize_SendsZeroCostCents(t *testing.T) {
+	var gotBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer srv.Close()
+
+	c := &apiClient{baseURL: srv.URL, token: "t", http: &http.Client{Timeout: 2 * time.Second}}
+	cents := int32(0)
+	err := c.PostFinalize(context.Background(), "run-1", finalizeRequest{
+		Status:    "succeeded",
+		CostCents: &cents,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, string(gotBody), `"cost_cents":0`,
+		"zero-cost runs must report cost_cents=0, not omit the field")
+}
+
 // TestAPIClient_Do_PropagatesHTTPError ensures non-2xx responses become
 // errors carrying the response body.
 func TestAPIClient_Do_PropagatesHTTPError(t *testing.T) {
@@ -259,4 +306,50 @@ func TestNewRunnerCmd_Hidden(t *testing.T) {
 	cmd := newRunnerCmd()
 	assert.Equal(t, "runner", cmd.Use)
 	assert.True(t, cmd.Hidden, "runner subcommand should be hidden from operator help")
+}
+
+// TestRunnerHTTP_AppliesTimeoutFromRunContext verifies that when the
+// /context endpoint returns TimeoutSec=1, the runner aborts before the
+// configured upstream hang (5s) and finalizes with status=failed.
+func TestRunnerHTTP_AppliesTimeoutFromRunContext(t *testing.T) {
+	var fullBody []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/context"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(runContext{
+				RunID: "r1", TimeoutSec: 1, SkillPath: "x", ScheduleName: "y",
+				Provider: "openai", Model: "gpt-4o-mini",
+			})
+		case strings.HasSuffix(r.URL.Path, "/events"):
+			w.WriteHeader(http.StatusNoContent)
+		case strings.Contains(r.URL.Path, "/secrets"):
+			_ = json.NewEncoder(w).Encode(map[string]string{})
+		case strings.HasSuffix(r.URL.Path, "/clone-url"):
+			// Simulate upstream hang. The runner's 1s deadline should cancel
+			// r.Context() almost immediately; if it doesn't, the test is
+			// broken (not just slow) — fail explicitly rather than waiting.
+			select {
+			case <-r.Context().Done():
+			case <-time.After(4 * time.Second):
+				t.Error("timeout was never applied — r.Context() never cancelled")
+			}
+			w.WriteHeader(http.StatusGatewayTimeout)
+		case strings.HasSuffix(r.URL.Path, "/finalize"):
+			fullBody, _ = io.ReadAll(r.Body)
+			w.WriteHeader(http.StatusNoContent)
+		}
+	}))
+	defer srv.Close()
+
+	t.Setenv(envAPIURL, srv.URL)
+	t.Setenv(envRunID, "r1")
+	t.Setenv(envRunToken, "tok")
+
+	start := time.Now()
+	err := runRunnerHTTP(context.Background(), "r1")
+	elapsed := time.Since(start)
+	require.Error(t, err)
+	assert.Less(t, elapsed, 3*time.Second, "runner must abort within timeout + a small slack")
+	assert.Contains(t, string(fullBody), `"status":"failed"`, "finalize body must record failed status")
 }

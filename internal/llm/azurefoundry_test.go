@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -63,4 +64,29 @@ func TestAzureFoundry_MissingDeployment(t *testing.T) {
 		CallOptions{Endpoint: "https://x", APIKey: "k"},
 		func(StreamChunk) {})
 	assert.ErrorContains(t, err, "deployment")
+}
+
+func TestAzureFoundry_Chat_RetriesOn500UpTo3Times(t *testing.T) {
+	var attempts int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&attempts, 1)
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":{"message":"boom"}}`))
+	}))
+	defer srv.Close()
+
+	p := NewAzureFoundry()
+	_, err := p.Chat(context.Background(),
+		[]Message{{Role: RoleUser, Content: "u"}},
+		CallOptions{
+			Model:      "m",
+			Deployment: "dep1",
+			APIKey:     "k",
+			Endpoint:   srv.URL,
+		},
+		func(StreamChunk) {})
+	require.Error(t, err)
+	// Spec: max 3 retries → 1 initial + 3 retries = 4 attempts total.
+	assert.Equal(t, int32(4), atomic.LoadInt32(&attempts),
+		"expected 1 initial + 3 retries = 4 total attempts")
 }

@@ -28,6 +28,7 @@ type RunContext struct {
 	InstallationID  int64           `json:"installation_id"`
 	Provider        string          `json:"provider"`
 	Model           string          `json:"model"`
+	TimeoutSec      int32           `json:"timeout_sec"`
 	LLMSecretRef    *string         `json:"llm_secret_ref,omitempty"`
 	LLMEndpoint     *string         `json:"llm_endpoint,omitempty"`
 	LLMDeployment   *string         `json:"llm_deployment,omitempty"`
@@ -82,6 +83,7 @@ func (h runContextHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		InstallationID:  row.GithubAppInstallID,
 		Provider:        row.Provider,
 		Model:           row.Model,
+		TimeoutSec:      row.TimeoutSec,
 		LLMSecretRef:    row.LlmSecretRef,
 		LLMEndpoint:     row.LlmEndpoint,
 		LLMDeployment:   row.LlmDeployment,

@@ -26,9 +26,12 @@ func sig() *object.Signature {
 }
 
 // fakeProvider returns a canned streamed response and records the messages it received.
+// A nil usage field yields the default {InputTokens:10, OutputTokens:20}; tests
+// that need to exercise zero-token behavior explicitly can pass &llm.Usage{}.
 type fakeProvider struct {
 	response string
 	received []llm.Message
+	usage    *llm.Usage
 }
 
 func (f *fakeProvider) Chat(ctx context.Context, msgs []llm.Message, opts llm.CallOptions, onChunk func(llm.StreamChunk)) (llm.Usage, error) {
@@ -37,7 +40,10 @@ func (f *fakeProvider) Chat(ctx context.Context, msgs []llm.Message, opts llm.Ca
 	for _, chunk := range splitIntoN(f.response, 3) {
 		onChunk(llm.StreamChunk{Delta: chunk})
 	}
-	return llm.Usage{InputTokens: 10, OutputTokens: 20}, nil
+	if f.usage == nil {
+		return llm.Usage{InputTokens: 10, OutputTokens: 20}, nil
+	}
+	return *f.usage, nil
 }
 
 func splitIntoN(s string, n int) []string {
@@ -219,4 +225,46 @@ skills:
 		}
 	}
 	assert.Equal(t, 1, okCount)
+}
+
+func TestRun_PopulatesCostCentsFromUsage(t *testing.T) {
+	repoRoot := t.TempDir()
+	_, err := git.PlainInit(repoRoot, false)
+	require.NoError(t, err)
+
+	manifest := `
+version: 1
+skills:
+  - path: sk
+    schedules:
+      - name: s
+        cron: "* * * * *"
+        provider: openai
+        model: gpt-4o-mini
+`
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "cronfoundry.yaml"), []byte(manifest), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "sk"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "sk/SKILL.md"),
+		[]byte("---\nname: t\n---\nprompt\n"), 0o644))
+
+	// 1_000_000 input + 1_000_000 output for gpt-4o-mini → 15 + 60 = 75 cents.
+	fake := &fakeProvider{
+		response: "output",
+		usage:    &llm.Usage{InputTokens: 1_000_000, OutputTokens: 1_000_000},
+	}
+	r := New(Deps{
+		ProviderFactory: func(string) (llm.Provider, error) { return fake, nil },
+	})
+
+	result, err := r.Run(context.Background(), RunInput{
+		RepoRoot:     repoRoot,
+		ManifestPath: "cronfoundry.yaml",
+		SkillPath:    "sk",
+		ScheduleName: "s",
+		LLMAPIKey:    "k",
+		DryRun:       true,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1_000_000, result.Usage.InputTokens)
+	assert.Equal(t, 75, result.CostCents)
 }

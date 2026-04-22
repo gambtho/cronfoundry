@@ -220,6 +220,7 @@ SELECT r.id, r.org_id, r.schedule_id, r.skill_sha, r.fire_time, r.status, r.fire
        s.name  AS schedule_name,
        s.cron,
        s.timezone,
+       s.timeout_sec,
        s.provider,
        s.model,
        s.llm_secret_ref,
@@ -267,6 +268,7 @@ type GetRunForContextRow struct {
 	ScheduleName       string
 	Cron               string
 	Timezone           string
+	TimeoutSec         int32
 	Provider           string
 	Model              string
 	LlmSecretRef       *string
@@ -314,6 +316,7 @@ func (q *Queries) GetRunForContext(ctx context.Context, id pgtype.UUID) (GetRunF
 		&i.ScheduleName,
 		&i.Cron,
 		&i.Timezone,
+		&i.TimeoutSec,
 		&i.Provider,
 		&i.Model,
 		&i.LlmSecretRef,

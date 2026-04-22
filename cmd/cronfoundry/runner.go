@@ -88,6 +88,18 @@ func runRunnerHTTP(ctx context.Context, runIDFlag string) error {
 		return failRun(ctx, client, runID, "context_fetch", err)
 	}
 
+	// Apply the schedule's wall-clock timeout. Three layers bound a run's
+	// lifetime: (1) this ctx deadline, (2) the dispatch JWT's ExpiresAt,
+	// (3) the Container Apps Job hard-timeout. A non-positive
+	// timeout_sec — only possible if an operator explicitly set the column
+	// to 0 (NOT NULL DEFAULT 600) — opts out of this layer but remains
+	// bounded by (2) and (3).
+	if runCtx.TimeoutSec > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(runCtx.TimeoutSec)*time.Second)
+		defer cancel()
+	}
+
 	// Announce the run-scoped secret manifest. Best-effort — a failure
 	// here is observational only and must not abort the run.
 	_ = client.PostEvents(ctx, runID, []event{{
@@ -189,7 +201,41 @@ func runRunnerHTTP(ctx context.Context, runIDFlag string) error {
 		SkipPush: true,
 	})
 
-	// 9) Post a terminal event for observability.
+	// 9a) Post publish-result events for observability. One event per destination
+	//     so the UI can display per-channel outcomes without parsing the runner
+	//     finish payload. runner.Run only returns a non-nil error before the
+	//     publish stage (via fail()), so PublishResults is only populated on the
+	//     success path — guarding on runErr == nil is correct.
+	//     Each payload carries "index" so operators can distinguish multiple
+	//     destinations of the same Type (e.g., two slack webhooks).
+	if runErr == nil && len(result.PublishResults) > 0 {
+		pubEvents := make([]event, 0, len(result.PublishResults))
+		for i, pr := range result.PublishResults {
+			suffix := "ok"
+			level := "info"
+			if !pr.OK {
+				suffix = "fail"
+				level = "error"
+			}
+			payload := map[string]any{"index": i}
+			if pr.Detail != "" {
+				payload["detail"] = pr.Detail
+			}
+			if pr.Err != nil {
+				payload["error"] = pr.Err.Error()
+			}
+			pubEvents = append(pubEvents, event{
+				Type:    "publish." + pr.Type + "." + suffix,
+				Level:   level,
+				Payload: payload,
+			})
+		}
+		if err := client.PostEvents(ctx, runID, pubEvents); err != nil {
+			slog.Warn("post publish events failed", "run_id", runID, "err", err)
+		}
+	}
+
+	// 9b) Post a terminal event for observability.
 	endType := "runner.finish"
 	if runErr != nil {
 		endType = "runner.error"
@@ -226,18 +272,25 @@ func runRunnerHTTP(ctx context.Context, runIDFlag string) error {
 		v := int32(result.Usage.OutputTokens)
 		body.TokensOut = &v
 	}
+	v := int32(result.CostCents)
+	body.CostCents = &v
+	// The finalize and writeback-push calls must survive the per-run wall-clock
+	// timeout (see runner.go:91-96). If ctx is already past its deadline, use
+	// an uncancellable copy so the server still receives terminal state — the
+	// http.Client's own 2-minute timeout on line 82 still bounds the call.
+	finalizeCtx := context.WithoutCancel(ctx)
 	if result.WritebackSHA != "" {
 		sha := result.WritebackSHA
 		body.WritebackCommitSha = &sha
 		// Push is done server-side so the install token never leaves the API.
-		if err := client.PostWritebackPush(ctx, runID, sha, cloneDir); err != nil {
+		if err := client.PostWritebackPush(finalizeCtx, runID, sha, cloneDir); err != nil {
 			slog.Warn("writeback push failed", "err", err)
 			if body.Status == "succeeded" {
 				body.Status = "partial_failure"
 			}
 		}
 	}
-	if err := client.PostFinalize(ctx, runID, body); err != nil {
+	if err := client.PostFinalize(finalizeCtx, runID, body); err != nil {
 		return fmt.Errorf("finalize: %w", err)
 	}
 
@@ -274,13 +327,24 @@ func envMapForSecrets(m map[string]string) map[string]string {
 // failRun posts a finalize-failed with the given kind + error message and
 // returns a wrapped error. Best-effort — if the finalize POST itself fails,
 // we still return the original error so the caller sees what went wrong.
+//
+// The finalize call deliberately uses context.WithoutCancel so that a
+// deadline-exceeded ctx (from the per-run wall-clock timeout) doesn't
+// prevent the final status from being recorded.
 func failRun(ctx context.Context, client *apiClient, runID, kind string, err error) error {
 	errMsg := err.Error()
-	_ = client.PostFinalize(ctx, runID, finalizeRequest{
+	if finalizeErr := client.PostFinalize(context.WithoutCancel(ctx), runID, finalizeRequest{
 		Status:    "failed",
 		ErrorKind: &kind,
 		ErrorMsg:  &errMsg,
-	})
+	}); finalizeErr != nil {
+		// The run is already failing; we don't escalate the finalize error
+		// but we must surface it — otherwise the run appears stuck in the DB
+		// with no hint in the logs that the terminal POST itself failed.
+		slog.Error("finalize after failure also failed",
+			"run_id", runID, "kind", kind,
+			"original_err", errMsg, "finalize_err", finalizeErr)
+	}
 	return fmt.Errorf("runner %s: %w", kind, err)
 }
 
@@ -309,6 +373,7 @@ type runContext struct {
 	InstallationID int64           `json:"installation_id"`
 	Provider       string          `json:"provider"`
 	Model          string          `json:"model"`
+	TimeoutSec     int32           `json:"timeout_sec"`
 	LLMSecretRef   *string         `json:"llm_secret_ref,omitempty"`
 	LLMEndpoint    *string         `json:"llm_endpoint,omitempty"`
 	LLMDeployment  *string         `json:"llm_deployment,omitempty"`
@@ -364,7 +429,7 @@ type finalizeRequest struct {
 	DurationMs         *int32  `json:"duration_ms,omitempty"`
 	TokensIn           *int32  `json:"tokens_in,omitempty"`
 	TokensOut          *int32  `json:"tokens_out,omitempty"`
-	CostCents          *int32  `json:"cost_cents,omitempty"`
+	CostCents          *int32  `json:"cost_cents"`
 	ErrorKind          *string `json:"error_kind,omitempty"`
 	ErrorMsg           *string `json:"error_msg,omitempty"`
 	WritebackCommitSha *string `json:"writeback_commit_sha,omitempty"`

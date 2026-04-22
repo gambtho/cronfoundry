@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -68,4 +69,24 @@ func TestOpenAI_Chat_ErrorOn500(t *testing.T) {
 		func(StreamChunk) {})
 	require.Error(t, err)
 	assert.True(t, strings.Contains(err.Error(), "500") || strings.Contains(err.Error(), "boom"))
+}
+
+func TestOpenAI_Chat_RetriesOn500UpTo3Times(t *testing.T) {
+	var attempts int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&attempts, 1)
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":{"message":"boom"}}`))
+	}))
+	defer srv.Close()
+
+	p := NewOpenAI(srv.URL)
+	_, err := p.Chat(context.Background(),
+		[]Message{{Role: RoleUser, Content: "u"}},
+		CallOptions{Model: "m", APIKey: "k"},
+		func(StreamChunk) {})
+	require.Error(t, err)
+	// Spec: max 3 retries → 1 initial + 3 retries = 4 attempts total.
+	assert.Equal(t, int32(4), atomic.LoadInt32(&attempts),
+		"expected 1 initial + 3 retries = 4 total attempts")
 }

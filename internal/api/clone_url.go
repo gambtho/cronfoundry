@@ -30,6 +30,15 @@ func (h cloneURLHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// smokeCloneOverride is a compile-time no-op in production builds
+	// (clone_url_prod.go). In e2e builds (clone_url_e2e.go) it reads
+	// CRONFOUNDRY_SMOKE_CLONE_URL so the smoke harness can inject a local URL.
+	if v, ok := smokeCloneOverride(); ok {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"url": v})
+		return
+	}
+
 	// Scope check: the caller may only fetch the clone URL for the repo
 	// their authenticated run is bound to.
 	runID := ClaimsFromContext(r.Context()).RunID

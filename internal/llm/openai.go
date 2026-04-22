@@ -19,7 +19,10 @@ func NewOpenAI(baseURL string) Provider {
 }
 
 func (p *openAIProvider) Chat(ctx context.Context, messages []Message, opts CallOptions, onChunk func(StreamChunk)) (Usage, error) {
-	clientOpts := []option.RequestOption{option.WithAPIKey(opts.APIKey)}
+	clientOpts := []option.RequestOption{
+		option.WithAPIKey(opts.APIKey),
+		option.WithMaxRetries(3),
+	}
 	if p.baseURL != "" {
 		clientOpts = append(clientOpts, option.WithBaseURL(p.baseURL))
 	}
