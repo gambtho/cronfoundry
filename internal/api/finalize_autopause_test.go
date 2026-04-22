@@ -104,6 +104,11 @@ func (h apHarness) assertPaused(t *testing.T) {
 		`SELECT count(*) FROM audit_log WHERE action = 'schedule.auto_paused' AND target_id = $1`,
 		h.scheduleID).Scan(&n))
 	assert.GreaterOrEqual(t, n, 1, "at least one schedule.auto_paused audit row")
+
+	var nEvents int
+	require.NoError(t, h.pool.QueryRow(context.Background(),
+		`SELECT count(*) FROM run_event WHERE event_type='schedule.auto_paused'`).Scan(&nEvents))
+	assert.GreaterOrEqual(t, nEvents, 1, "at least one schedule.auto_paused run_event row")
 }
 
 // assertNotPaused confirms the schedule is still enabled and no auto-pause
@@ -260,7 +265,11 @@ func TestEvaluateAutoPause_IdempotentWhenAlreadyPaused(t *testing.T) {
 		`SELECT count(*) FROM audit_log WHERE action='schedule.auto_paused' AND target_id=$1`,
 		h.scheduleID).Scan(&countBefore))
 
-	// Second call: schedule is already paused; UPDATE affects 0 rows; no new audit.
+	var eventsBefore int
+	require.NoError(t, h.pool.QueryRow(context.Background(),
+		`SELECT count(*) FROM run_event WHERE event_type='schedule.auto_paused'`).Scan(&eventsBefore))
+
+	// Second call: schedule is already paused; UPDATE affects 0 rows; no new audit or run_event.
 	require.NoError(t, evaluateAutoPause(context.Background(), h.pool,
 		uuid.UUID(h.scheduleID.Bytes), uuid.UUID(last.Bytes), "failed", "schedule"))
 
@@ -269,6 +278,25 @@ func TestEvaluateAutoPause_IdempotentWhenAlreadyPaused(t *testing.T) {
 		`SELECT count(*) FROM audit_log WHERE action='schedule.auto_paused' AND target_id=$1`,
 		h.scheduleID).Scan(&countAfter))
 	assert.Equal(t, countBefore, countAfter, "no duplicate audit rows on re-pause")
+
+	var eventsAfter int
+	require.NoError(t, h.pool.QueryRow(context.Background(),
+		`SELECT count(*) FROM run_event WHERE event_type='schedule.auto_paused'`).Scan(&eventsAfter))
+	assert.Equal(t, eventsBefore, eventsAfter, "no duplicate run_event rows on re-pause")
+}
+
+func TestEvaluateAutoPause_ThresholdOneTriggersAtFirstFailure(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	threshold := int32(1)
+	h := newAPHarness(t, &threshold)
+
+	last := h.seedRun(t, "failed", "schedule", h.enabledAt.Add(time.Second))
+	err := evaluateAutoPause(context.Background(), h.pool,
+		uuid.UUID(h.scheduleID.Bytes), uuid.UUID(last.Bytes), "failed", "schedule")
+	require.NoError(t, err)
+	h.assertPaused(t)
 }
 
 func TestEvaluateAutoPause_NoOpForNonFailedOrNonScheduled(t *testing.T) {

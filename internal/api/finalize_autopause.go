@@ -85,8 +85,10 @@ func evaluateAutoPause(
 	if err != nil {
 		return fmt.Errorf("evaluateAutoPause: pause update: %w", err)
 	}
+	// Under race: if another finalize already paused the schedule, our UPDATE
+	// matched 0 rows (WHERE enabled = true). Do NOT emit audit or run_event —
+	// those would be duplicates of the winner's writes.
 	if affected == 0 {
-		// Raced with another finalize; it already paused the schedule.
 		return nil
 	}
 
