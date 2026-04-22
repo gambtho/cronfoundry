@@ -155,3 +155,36 @@ func TestClient_InitializeFail_ServerExits(t *testing.T) {
 	defer cancel()
 	require.Error(t, c.initialize(ctx))
 }
+
+func TestClient_CallTool_Concurrent(t *testing.T) {
+	if testing.Short() {
+		t.Skip()
+	}
+	bin := stub(t)
+	cmd := exec.Command(bin)
+	stdin, _ := cmd.StdinPipe()
+	stdout, _ := cmd.StdoutPipe()
+	require.NoError(t, cmd.Start())
+	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+
+	c := newClient(stdout, stdin)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	require.NoError(t, c.initialize(ctx))
+
+	const N = 20
+	var wg sync.WaitGroup
+	errs := make([]error, N)
+	for i := 0; i < N; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, _, err := c.callTool(ctx, "echo", json.RawMessage(`{}`))
+			errs[i] = err
+		}(i)
+	}
+	wg.Wait()
+	for i, err := range errs {
+		assert.NoError(t, err, "call %d", i)
+	}
+}

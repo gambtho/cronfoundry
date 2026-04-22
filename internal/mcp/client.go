@@ -14,9 +14,10 @@ import (
 // per response from stdout, writes one line per request to stdin. Requests
 // are correlated by ID.
 type client struct {
-	w    io.Writer
-	r    *bufio.Reader
-	nextID atomic.Int64
+	w       io.Writer
+	writeMu sync.Mutex // serializes writes to w
+	r       *bufio.Reader
+	nextID  atomic.Int64
 
 	mu      sync.Mutex
 	pending map[int64]chan jsonrpcResponse
@@ -93,7 +94,10 @@ func (c *client) send(ctx context.Context, method string, params any) (jsonrpcRe
 	c.pending[id] = ch
 	c.mu.Unlock()
 
-	if _, err := c.w.Write(reqBytes); err != nil {
+	c.writeMu.Lock()
+	_, err := c.w.Write(reqBytes)
+	c.writeMu.Unlock()
+	if err != nil {
 		c.mu.Lock()
 		delete(c.pending, id)
 		c.mu.Unlock()
