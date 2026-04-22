@@ -23,6 +23,11 @@ const (
 	githubAuthorizeURL   = "https://github.com/login/oauth/authorize"
 	githubAccessTokenURL = "https://github.com/login/oauth/access_token"
 	githubUserURL        = "https://api.github.com/user"
+
+	// sessionDuration is the single source of truth for the cf_session TTL.
+	// It feeds both the signed session's expiry (via SignSession) and the
+	// cookie's MaxAge so the two can't drift. Per design spec §Auth flow.
+	sessionDuration = 7 * 24 * time.Hour
 )
 
 // githubClient is used for all outbound GitHub API calls. The 10-second timeout
@@ -126,7 +131,7 @@ func (h oauthHandlers) callback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	session, err := SignSession(SessionClaims{Login: login, Role: role}, h.deps.MasterKey, 7*24*time.Hour)
+	session, err := SignSession(SessionClaims{Login: login, Role: role}, h.deps.MasterKey, sessionDuration)
 	if err != nil {
 		http.Error(w, "session creation failed", http.StatusInternalServerError)
 		return
@@ -135,7 +140,7 @@ func (h oauthHandlers) callback(w http.ResponseWriter, r *http.Request) {
 		Name:     "cf_session",
 		Value:    session,
 		Path:     "/",
-		MaxAge:   7 * 24 * 3600,
+		MaxAge:   int(sessionDuration.Seconds()),
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
 		Secure:   !isLocalhost(r.Host),

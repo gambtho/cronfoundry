@@ -229,7 +229,8 @@ func TestOAuth_Callback_SessionCookieIs7Days(t *testing.T) {
 	defer stub.Close()
 
 	mux := http.NewServeMux()
-	webapi.RegisterRoutes(mux, newTestDepsWithDB(t, pool, stub.URL))
+	deps := newTestDepsWithDB(t, pool, stub.URL)
+	webapi.RegisterRoutes(mux, deps)
 
 	// Get state from /oauth/login.
 	loginReq := httptest.NewRequest("GET", "/oauth/login", nil)
@@ -264,6 +265,15 @@ func TestOAuth_Callback_SessionCookieIs7Days(t *testing.T) {
 	// Assert MaxAge is 7 days (7 * 24 * 3600 = 604800 seconds)
 	expectedMaxAge := 7 * 24 * 3600
 	assert.Equal(t, expectedMaxAge, sessionCookie.MaxAge, "session cookie MaxAge should be 7 days")
+
+	// Also verify the signed session's Exp claim lines up — the cookie MaxAge
+	// and the JWT expiry must agree, otherwise one will outlive the other.
+	claims, err := webapi.VerifySession(sessionCookie.Value, deps.MasterKey)
+	require.NoError(t, err, "session cookie value must verify")
+	ttl := time.Unix(claims.Exp, 0).Sub(time.Now())
+	// Small clock-skew slack — signing happens ~ms before this check.
+	assert.InDelta(t, (7 * 24 * time.Hour).Seconds(), ttl.Seconds(), 5.0,
+		"signed session Exp must match cookie MaxAge within a few seconds")
 }
 
 func TestOAuth_Logout_ClearsSession(t *testing.T) {
