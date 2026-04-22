@@ -157,13 +157,14 @@ cp deploy/params.example.json deploy/params.p7smoke.json
   "contentVersion": "1.0.0.0",
   "parameters": {
     "env":                         { "value": "p7smoke" },
-    "location":                    { "value": "eastus" },
+    "location":                    { "value": "swedencentral" },
     "imageTag":                    { "value": "0.7.0" },
     "githubAppId":                 { "value": "<APP_ID from §2>" },
     "githubAppOAuthClientId":      { "value": "<CLIENT_ID from §2>" },
     "githubAppOAuthClientSecret":  { "value": "<CLIENT_SECRET from §2>" },
     "postgresAdminPassword":       { "value": "<20+ char alphanumeric — no @ : / % # ? & =>" },
     "masterKey":                   { "value": "<output of §4a>" },
+    "githubAppPem":                { "value": "<contents of your GitHub App .pem — paste verbatim; JSON keeps newlines as \\n>" },
     "adminLogins":                 { "value": "<your-github-login>" },
     "viewerLogins":                { "value": "" },
     "ingressExternal":             { "value": true }
@@ -171,8 +172,25 @@ cp deploy/params.example.json deploy/params.p7smoke.json
 }
 ```
 
+`githubAppPem` is easiest to embed via `python3`:
+
+```bash
+python3 -c "
+import json
+with open('deploy/params.p7smoke.json') as f: d = json.load(f)
+with open('/path/to/your-app.private-key.pem') as p: d['parameters']['githubAppPem'] = {'value': p.read()}
+with open('deploy/params.p7smoke.json','w') as f: json.dump(d, f, indent=2)
+"
+```
+
 Param-by-param reality check:
-- `env` — suffix for every resource name; keep it short (≤ 10 chars).
+- `env` — suffix for every resource name; keep it short (≤ 10 chars) and
+  note: Key Vault + Postgres soft-delete retention will pin the name for
+  7 days after teardown, so a re-run needs a new suffix (e.g. `p7smoke2`).
+- `location` — the region your subscription can actually provision
+  **Postgres Flexible Server** in. See the §1 warning on offer
+  restrictions; `swedencentral` works for the Microsoft-internal sub
+  this smoke was run against, `eastus` / `eastus2` are offer-restricted.
 - `imageTag` — whatever you pushed in §3. `latest` works; pinning is better.
 - `githubAppId` / `githubAppOAuthClientId` / `githubAppOAuthClientSecret` —
   from the GitHub App settings page in §2. The client secret is shown once
@@ -181,6 +199,12 @@ Param-by-param reality check:
   character `urlencode` would touch. Alphanumerics are safest.
 - `masterKey` — the base64 string from §4a. Paste verbatim (trailing `=`
   included).
+- `githubAppPem` — the full contents of the `.pem` file from §2 including
+  the `-----BEGIN/END-----` lines. Passed through as a `@secure()` Bicep
+  param so it never prints to stdout. Seeded into Key Vault as secret
+  `github-app-pem`; the serve Container App resolves it at creation time.
+  Leave as `""` only if you plan to `az keyvault secret set` manually
+  before the Container App is deployed (see §4d).
 - `adminLogins` — a **comma-separated string** (not a JSON array). Users in
   this list can mutate everything.
 - `ingressExternal` — **must** be `true` for GitHub's webhook to reach the
@@ -190,19 +214,24 @@ Param-by-param reality check:
 
 ```bash
 az deployment sub create \
-  --location eastus \
+  --location swedencentral \
   --template-file deploy/main.bicep \
   --parameters @deploy/params.p7smoke.json
 ```
 
+(Use the `--location` matching the region in your params file; this flag
+sets where the deployment **record** lives, not the resources — though
+it's simplest to keep them the same.)
+
 Takes ~10 minutes. The Key Vault, Postgres, Container Apps Environment,
-identities, Container App, and the runner Job are all created.
+identities, Container App, and the runner Job are all created. Because
+`keyVault.bicep` pre-seeds the `github-app-pem` secret from the
+`githubAppPem` param, the serve Container App's Key Vault secret
+reference resolves at creation time and no post-deploy upload is needed.
 
-### 4d. Upload the GitHub App private key to Key Vault
+### 4d. (Only if you passed `githubAppPem: ""`) Upload the pem manually
 
-`containerApp.bicep` references a Key Vault secret named `github-app-pem`.
-Key Vault itself is created by the deploy, but the secret is not — the
-Container App reads the pem at process start, so upload it now:
+Skip this section if your params file carried the real pem value in §4b.
 
 ```bash
 KV_NAME=$(az keyvault list \
@@ -216,18 +245,20 @@ az keyvault secret set \
 
 az containerapp revision restart \
   --resource-group rg-cronfoundry-p7smoke \
-  --name api \
+  --name cf-serve-p7smoke \
   --revision "$(az containerapp revision list \
     --resource-group rg-cronfoundry-p7smoke \
-    --name api --query '[0].name' -o tsv)"
+    --name cf-serve-p7smoke --query '[0].name' -o tsv)"
 ```
 
 ### 4e. Record the API FQDN and update the GitHub App
 
+The Bicep names the serve Container App `cf-serve-${env}`:
+
 ```bash
 az containerapp show \
   --resource-group rg-cronfoundry-p7smoke \
-  --name api \
+  --name cf-serve-p7smoke \
   --query properties.configuration.ingress.fqdn -o tsv
 ```
 

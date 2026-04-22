@@ -102,21 +102,22 @@ anonymous pull; if it works you're done) with the GHCR settings URL kept
 as a fallback in case the default changes on a fork, private mirror, or
 future GitHub policy update.
 
-## F7 (pending) — Container App references a KV secret `github-app-pem` that Bicep never seeds
+## F7 — Container App references a KV secret `github-app-pem` that Bicep never seeded
 
-**Severity:** unknown (likely deploy-blocker)
-**Type:** code or doc
+**Severity:** blocker (pre-emptively fixed)
+**Type:** code
 
 `deploy/modules/containerApp.bicep:44` declares a Key-Vault-backed secret
 referencing `${kvUrl}secrets/github-app-pem`. `deploy/modules/keyVault.bicep`
-creates the vault but no secret. Unclear whether Container Apps tolerates a
-missing KV-referenced secret at create time.
+created the vault but not the secret; unclear whether Container Apps
+would tolerate a missing KV-referenced secret at create time.
 
-**Fix:** pending live deploy. If it fails, options:
-1. Doc: split the deploy — deploy KV first with a separate `az deployment
-   group create`, `az keyvault secret set` the pem, then deploy the rest.
-2. Code: accept the pem as a `@secure` Bicep param and have `keyVault.bicep`
-   create the secret before `containerApp.bicep` references it.
+Never actually tested in isolation — resolution was bundled into the F14
+fix. See F14 for the implementation: `keyVault.bicep` now accepts a
+`@secure() githubAppPem` param and creates the secret during deploy when
+non-empty.
+
+**Fix:** code — bundled with F14.
 
 ## F8 — `main` is red from a staticcheck lint error
 
@@ -284,3 +285,47 @@ Runbook §1 / §3 stays region-agnostic. Added a callout in the runbook
 that if an operator's sub is offer-restricted on Postgres, the reliable
 probe is a **sync** `az postgres flexible-server create` (not
 `--no-wait`), because the restriction fires post-submission.
+
+## F14 — Key Vault name collision with soft-deleted vault across region pivots
+
+**Severity:** blocker
+**Type:** operational + doc + code (pre-emptive F7 fix bundled)
+
+Third deploy (in `swedencentral`, post-F13 fix) failed at the KV step:
+
+```
+VaultAlreadyExists: The vault name 'cf-kv-p7smoke' is already in use.
+If the vault is in a recoverable state then the vault will need to be
+purged before reusing the name.
+```
+
+`az keyvault list-deleted` confirmed `cf-kv-p7smoke` soft-deleted in
+`eastus2` from the second attempt, with `purgeProtectionEnabled: true`
+(from the F12 fix) and `scheduledPurgeDate` 7 days out. Purge is
+blocked until then. Postgres made it in though — all other resources
+provisioned in swedencentral, **only** the KV collided.
+
+Root cause chain: F12 enabled purge protection on the KV to satisfy the
+sub policy; F13 forced an RG delete to migrate regions; F13's RG delete
+soft-deleted the eastus2 KV; the soft-deleted KV now owns its globally-
+unique name for 7 days.
+
+**Fix:** operational — `params.p7smoke.json` `env` bumped to `p7smoke2`
+so every resource gets a new name (`cf-kv-p7smoke2`, `cf-pg-p7smoke2`,
+etc.). Runbook `env` callout in §4b updated to spell out the 7-day
+name-lock tradeoff.
+
+Opportunistically bundled a pre-emptive fix for F7 (previously pending):
+`keyVault.bicep` now accepts a `@secure()` `githubAppPem` param and
+creates a `github-app-pem` secret during deploy when the param is
+non-empty. `main.bicep` surfaces the same param and passes it through.
+Consequences:
+- The serve Container App's KV secret reference resolves at creation
+  time — no post-deploy upload step needed for the common path.
+- Runbook §4b picks up a new param slot with a `python3` snippet that
+  inlines the pem contents; §4d is reframed as an "only if you passed
+  empty" fallback.
+- Module default is `''` (empty) with an `if (!empty(...))` guard, so
+  existing callers don't break.
+
+F7 retroactively marked resolved via this bundle.

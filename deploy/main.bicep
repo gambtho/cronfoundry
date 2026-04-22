@@ -15,6 +15,9 @@ param githubAppOAuthClientSecret string
 param postgresAdminPassword string
 @secure()
 param masterKey string
+@secure()
+@description('Contents of the GitHub App private key PEM file. Seeded into Key Vault as secret "github-app-pem". Pass "" to skip (operator must then upload before the Container App is created).')
+param githubAppPem string = ''
 param adminLogins string
 param viewerLogins string = ''
 param ingressExternal bool = false
@@ -61,6 +64,7 @@ module kv 'modules/keyVault.bicep' = {
     // re-deploys with the same vault name must wait out that window or
     // use a different env suffix.
     enablePurgeProtection: true
+    githubAppPem: githubAppPem
   }
 }
 
