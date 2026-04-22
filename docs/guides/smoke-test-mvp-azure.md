@@ -23,6 +23,17 @@ for the audit-verification and push-webhook steps.
 - `az` CLI ≥ 2.60. Verify with `az --version`.
 - Bicep CLI ≥ 0.26. Install once via `az bicep install` (drops the binary
   under `~/.azure/bin/bicep`). Confirm with `az bicep version`.
+- A region where this subscription can actually provision
+  **Azure Database for PostgreSQL — Flexible Server**. Microsoft-internal
+  subscriptions and some commercial subs restrict this offer per region;
+  `az postgres flexible-server list-skus --location <region>` is **not**
+  a reliable test (it surfaces the SKU catalog, not your
+  provisioning rights). The only reliable probe is a *synchronous*
+  `az postgres flexible-server create` — `--no-wait` returns exit 0 even
+  when provisioning later fails with `LocationIsOfferRestricted`. If
+  unsure, start with a known-good region for your sub
+  (e.g., `swedencentral` was the working region for the Microsoft-
+  internal sub used on the initial smoke).
 - A GitHub account that can register a new GitHub App.
 - **One** LLM key from OpenAI, Anthropic, or Azure AI Foundry.
 - A Slack **Incoming Webhook URL** for any channel. Create one at

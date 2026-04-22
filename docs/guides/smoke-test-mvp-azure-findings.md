@@ -245,28 +245,42 @@ tradeoff (soft-deleted vault lingers for `softDeleteRetentionDays`
 out or use a different `env`). The module default stays `false` so
 non-enforcing subs aren't affected.
 
-## F13 — Postgres Flexible Server offer-restricted in `eastus`
+## F13 — Postgres Flexible Server offer-restricted in multiple regions
 
 **Severity:** blocker
 **Type:** operational + doc
 
-Alongside F12, the second deploy also failed with:
+Second deploy failed with:
 
 ```
 LocationIsOfferRestricted: Subscriptions are restricted from
 provisioning in location 'eastus'. Try again in a different location.
 ```
 
-Not a CronFoundry bug — the subscription has Postgres Flexible Server
-offer restrictions for `eastus`. Spot-checked `eastus2`, `westus2`,
-`westus3`, `centralus`, `southcentralus`, `northeurope`, `westeurope`
-with `az postgres flexible-server list-skus` — all return SKUs, so any
-of them works.
+Not a CronFoundry bug — the subscription enforces Postgres Flexible
+Server offer restrictions per-region. Initial spot-check with
+`az postgres flexible-server list-skus` returned SKUs for every
+candidate region, but `list-skus` only reports SKU catalog presence,
+not whether a given subscription can actually provision. The real
+check is an actual create attempt.
 
-**Fix:** operational — switched `params.p7smoke.json` to `eastus2`.
-The existing RG had to be torn down because `main.bicep` creates the
-RG with `location: location` and Azure rejects region changes on an
-existing RG. Teardown + redeploy in `eastus2` is the standard path.
+First fix tried `eastus2` — deploy failed with the same error. Switched
+to parallel probes: launched `az postgres flexible-server create
+--no-wait` in `westus2`, `westus3`, `centralus`, `northeurope`,
+`westeurope`, `swedencentral`. All returned exit 0, but 45 s later none
+of the servers existed — `--no-wait` swallows the downstream async
+provisioning failure (`LocationIsOfferRestricted` fires after
+submission, not at submit time, so CLI exit 0 is misleading).
 
-Runbook §1 / §3 stays region-agnostic; if future runs hit the same
-restriction we'll pick any of the listed working regions.
+Synchronous probe in `swedencentral` succeeded (operator flagged it as
+a known-good region for this sub) — server reached `Ready` state in
+~2 min. Final `params.p7smoke.json` uses `swedencentral`.
+
+**Fix:** operational — `params.p7smoke.json` location set to
+`swedencentral`. Two full RG delete + redeploy cycles consumed on
+this finding (eastus → eastus2 → swedencentral).
+
+Runbook §1 / §3 stays region-agnostic. Added a callout in the runbook
+that if an operator's sub is offer-restricted on Postgres, the reliable
+probe is a **sync** `az postgres flexible-server create` (not
+`--no-wait`), because the restriction fires post-submission.
