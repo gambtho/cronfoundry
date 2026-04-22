@@ -36,6 +36,16 @@ resource pg 'Microsoft.DBforPostgreSQL/flexibleServers@2023-06-01-preview' = {
   }
 }
 
+// When not using VNet integration, allow Azure-internal traffic (Container Apps, etc.)
+resource allowAzure 'Microsoft.DBforPostgreSQL/flexibleServers/firewallRules@2023-06-01-preview' = if (!usePrivateNetwork) {
+  parent: pg
+  name: 'AllowAllAzureServicesAndResourcesWithinAzureIps'
+  properties: {
+    startIpAddress: '0.0.0.0'
+    endIpAddress: '0.0.0.0'
+  }
+}
+
 resource cronfoundryDb 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2023-06-01-preview' = {
   parent: pg
   name: 'cronfoundry'
