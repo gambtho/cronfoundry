@@ -373,3 +373,30 @@ any `v*` tag regardless of base branch. After the image builds,
 `params.p7smoke.json` `imageTag` bumps to `0.7.1` and a second
 `az deployment sub create` is incremental — only the Container App
 revision changes.
+
+## F16 — Postgres Flexible Server has no firewall rules; Container App can't connect
+
+**Severity:** blocker (Container App crash-loops with `dial error: timeout`)
+**Type:** code
+
+Fifth deploy (v0.7.1 with F15 inline-PEM fix) resolved the PEM crash,
+but the serve Container App immediately started failing with:
+
+```
+failed to connect to `user=cfadmin database=cronfoundry`:
+20.91.204.171:5432 (cf-pg-p7smoke2.postgres.database.azure.com):
+dial error: timeout: context deadline exceeded
+```
+
+Root cause: `deploy/modules/postgres.bicep` creates the Flexible Server
+with `publicNetworkAccess: Enabled` (the default when no VNet params are
+passed) but defines **zero firewall rules**. Azure's default-deny means
+all inbound connections are blocked — including from Container Apps in
+the same region.
+
+**Fix:** code — added an
+`AllowAllAzureServicesAndResourcesWithinAzureIps` firewall rule
+(`0.0.0.0` → `0.0.0.0`) conditioned on `!usePrivateNetwork`. When VNet
+integration is used, the rule is skipped (traffic flows through the
+delegated subnet instead). Forced a new Container App revision after
+the incremental redeploy since failed revisions don't auto-recover.
