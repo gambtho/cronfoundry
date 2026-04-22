@@ -97,3 +97,25 @@ WHERE s.enabled = true
   AND s.next_fire_at IS NOT NULL
   AND s.next_fire_at <= now()
 ORDER BY s.next_fire_at ASC;
+
+-- name: GetScheduleAutoPauseConfig :one
+-- Returns the fields evaluateAutoPause needs to decide whether to trigger a
+-- pause and emit audit/run_event rows: org_id (for audit), the per-schedule
+-- threshold override (nullable), and the anti-flap window boundary.
+-- `enabled` is returned for tests/debug; the pause query guards on it
+-- independently via `WHERE enabled = true`.
+SELECT org_id, auto_pause_after, last_enabled_at, enabled
+FROM schedule
+WHERE id = $1;
+
+-- name: AutoPauseSchedule :execrows
+-- Idempotent conditional pause. Returns the number of rows affected so the
+-- caller can distinguish "we paused it" (1) from "someone else already paused
+-- it" (0, in which case the caller must not emit duplicate audit rows).
+UPDATE schedule
+SET enabled           = false,
+    auto_paused_at    = now(),
+    auto_pause_reason = $2,
+    updated_at        = now()
+WHERE id = $1
+  AND enabled = true;

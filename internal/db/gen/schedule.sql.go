@@ -11,6 +11,32 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const autoPauseSchedule = `-- name: AutoPauseSchedule :execrows
+UPDATE schedule
+SET enabled           = false,
+    auto_paused_at    = now(),
+    auto_pause_reason = $2,
+    updated_at        = now()
+WHERE id = $1
+  AND enabled = true
+`
+
+type AutoPauseScheduleParams struct {
+	ID              pgtype.UUID
+	AutoPauseReason *string
+}
+
+// Idempotent conditional pause. Returns the number of rows affected so the
+// caller can distinguish "we paused it" (1) from "someone else already paused
+// it" (0, in which case the caller must not emit duplicate audit rows).
+func (q *Queries) AutoPauseSchedule(ctx context.Context, arg AutoPauseScheduleParams) (int64, error) {
+	result, err := q.db.Exec(ctx, autoPauseSchedule, arg.ID, arg.AutoPauseReason)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const disableMissingSchedules = `-- name: DisableMissingSchedules :exec
 UPDATE schedule
 SET enabled    = false,
@@ -31,6 +57,36 @@ type DisableMissingSchedulesParams struct {
 func (q *Queries) DisableMissingSchedules(ctx context.Context, arg DisableMissingSchedulesParams) error {
 	_, err := q.db.Exec(ctx, disableMissingSchedules, arg.SkillID, arg.Column2)
 	return err
+}
+
+const getScheduleAutoPauseConfig = `-- name: GetScheduleAutoPauseConfig :one
+SELECT org_id, auto_pause_after, last_enabled_at, enabled
+FROM schedule
+WHERE id = $1
+`
+
+type GetScheduleAutoPauseConfigRow struct {
+	OrgID          pgtype.UUID
+	AutoPauseAfter *int32
+	LastEnabledAt  pgtype.Timestamptz
+	Enabled        bool
+}
+
+// Returns the fields evaluateAutoPause needs to decide whether to trigger a
+// pause and emit audit/run_event rows: org_id (for audit), the per-schedule
+// threshold override (nullable), and the anti-flap window boundary.
+// `enabled` is returned for tests/debug; the pause query guards on it
+// independently via `WHERE enabled = true`.
+func (q *Queries) GetScheduleAutoPauseConfig(ctx context.Context, id pgtype.UUID) (GetScheduleAutoPauseConfigRow, error) {
+	row := q.db.QueryRow(ctx, getScheduleAutoPauseConfig, id)
+	var i GetScheduleAutoPauseConfigRow
+	err := row.Scan(
+		&i.OrgID,
+		&i.AutoPauseAfter,
+		&i.LastEnabledAt,
+		&i.Enabled,
+	)
+	return i, err
 }
 
 const getScheduleForTrigger = `-- name: GetScheduleForTrigger :one

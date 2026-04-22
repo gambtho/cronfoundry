@@ -518,6 +518,46 @@ func (q *Queries) ListActiveRunsForSchedule(ctx context.Context, scheduleID pgty
 	return items, nil
 }
 
+const listRecentTerminalScheduledRuns = `-- name: ListRecentTerminalScheduledRuns :many
+SELECT status
+FROM run
+WHERE schedule_id = $1
+  AND fire_reason = 'schedule'
+  AND status IN ('succeeded', 'partial_failure', 'failed')
+  AND started_at >= $2
+ORDER BY started_at DESC
+LIMIT $3
+`
+
+type ListRecentTerminalScheduledRunsParams struct {
+	ScheduleID pgtype.UUID
+	StartedAt  pgtype.Timestamptz
+	Limit      int32
+}
+
+// Used by evaluateAutoPause. Returns the last N terminal scheduled runs for
+// a schedule, within the anti-flap window defined by last_enabled_at.
+// status ordering: newest first. LIMIT is applied by caller via $3.
+func (q *Queries) ListRecentTerminalScheduledRuns(ctx context.Context, arg ListRecentTerminalScheduledRunsParams) ([]string, error) {
+	rows, err := q.db.Query(ctx, listRecentTerminalScheduledRuns, arg.ScheduleID, arg.StartedAt, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var status string
+		if err := rows.Scan(&status); err != nil {
+			return nil, err
+		}
+		items = append(items, status)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRunsForOrg = `-- name: ListRunsForOrg :many
 SELECT r.id,
        r.status,

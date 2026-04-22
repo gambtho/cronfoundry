@@ -206,3 +206,16 @@ JOIN schedule s         ON s.id = r.schedule_id
 JOIN skill sk           ON sk.id = s.skill_id
 JOIN repo_connection rc ON rc.id = sk.repo_id
 WHERE r.id = $1;
+
+-- name: ListRecentTerminalScheduledRuns :many
+-- Used by evaluateAutoPause. Returns the last N terminal scheduled runs for
+-- a schedule, within the anti-flap window defined by last_enabled_at.
+-- status ordering: newest first. LIMIT is applied by caller via $3.
+SELECT status
+FROM run
+WHERE schedule_id = $1
+  AND fire_reason = 'schedule'
+  AND status IN ('succeeded', 'partial_failure', 'failed')
+  AND started_at >= $2
+ORDER BY started_at DESC
+LIMIT $3;
