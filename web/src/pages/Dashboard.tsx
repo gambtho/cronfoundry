@@ -2,6 +2,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { RunStatusBadge } from '../components/RunStatusBadge'
+import { relativeTime } from '../lib/time'
 
 export default function Dashboard() {
   const qc = useQueryClient()
@@ -81,11 +82,18 @@ export default function Dashboard() {
                     Resume
                   </button>
                 )}
-                {!s.enabled && (
+                {!s.enabled && s.auto_paused_at ? (
+                  <span
+                    title={s.auto_pause_reason ?? undefined}
+                    className="text-xs px-2 py-1 rounded bg-amber-900 text-amber-200"
+                  >
+                    Auto-paused · {relativeTime(s.auto_paused_at)}
+                  </span>
+                ) : !s.enabled ? (
                   <span className="text-xs px-2 py-1 rounded bg-gray-800 text-gray-500">
                     Paused
                   </span>
-                )}
+                ) : null}
               </div>
             </div>
           )
