@@ -31,6 +31,7 @@ type Schedule struct {
 	Destinations  []Destination       `json:"destinations"`
 	Writeback     *WritebackConfig    `json:"writeback,omitempty"`
 	Env           map[string]EnvValue `json:"env"`
+	AutoPause     *AutoPauseConfig    `json:"auto_pause,omitempty"`
 }
 
 type Destination struct {
@@ -60,6 +61,12 @@ type WritebackConfig struct {
 	Enabled bool   `json:"enabled"`
 	Path    string `json:"path"`
 	Mode    string `json:"mode"`
+}
+
+// AutoPauseConfig controls the auto-pause-on-consecutive-failures behavior.
+// If nil, the schedule uses the global default (DefaultAutoPauseAfter).
+type AutoPauseConfig struct {
+	After int `json:"after"`
 }
 
 // EnvValue is either a literal string or a `{ secret: name }` reference.
@@ -164,6 +171,10 @@ func (m *Manifest) Validate() error {
 			}
 			if !validOverlap[sch.OverlapPolicy] {
 				return fmt.Errorf("skill %q schedule %q: overlap_policy %q invalid (want: skip|queue|concurrent)", s.Path, sch.Name, sch.OverlapPolicy)
+			}
+			if sch.AutoPause != nil && sch.AutoPause.After < 1 {
+				return fmt.Errorf("skill %q schedule %q: auto_pause.after must be >= 1 (got %d)",
+					s.Path, sch.Name, sch.AutoPause.After)
 			}
 		}
 	}
