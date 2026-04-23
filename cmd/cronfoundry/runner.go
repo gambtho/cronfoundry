@@ -193,7 +193,7 @@ func runRunnerHTTP(ctx context.Context, runIDFlag string) error {
 	//    a free function — we construct via runner.New(Deps{...}).
 	r := runner.New(runner.Deps{
 		Publishers: map[string]publish.Publisher{
-			"github-issue": publish.NewGitHubIssuePublisher("", ""),
+			"github-issue": publish.NewGitHubIssuePublisher("", os.Getenv("GITHUB_TOKEN")),
 			"slack":        publish.NewSlackPublisher(),
 			"discord":      publish.NewDiscordPublisher(),
 			"teams":        publish.NewTeamsPublisher(),

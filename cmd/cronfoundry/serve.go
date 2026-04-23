@@ -233,12 +233,13 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 		return fmt.Errorf("build job dispatcher: %w", err)
 	}
 	schedDeps := scheduler.Deps{
-		Pool:         pool,
-		Signer:       signer,
-		Dispatcher:   dispatcher,
-		APIBaseURL:   "http://" + addr,
-		RunnerAPIURL: runnerAPIURL,
-		RunnerBinary: self,
+		Pool:          pool,
+		Signer:        signer,
+		Dispatcher:    dispatcher,
+		Installations: installs,
+		APIBaseURL:    "http://" + addr,
+		RunnerAPIURL:  runnerAPIURL,
+		RunnerBinary:  self,
 	}
 
 	// --- Signal-aware context ---

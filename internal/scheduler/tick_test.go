@@ -2,6 +2,8 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -36,6 +38,21 @@ type mockHandle struct{}
 func (mockHandle) PID() int    { return 42 }
 func (mockHandle) Wait() error { return nil }
 func (mockHandle) Kill() error { return nil }
+
+// mockInstalls records Token calls; returns a canned token or error.
+type mockInstalls struct {
+	token string
+	err   error
+	calls []int64
+	mu    sync.Mutex
+}
+
+func (m *mockInstalls) Token(_ context.Context, installID int64) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.calls = append(m.calls, installID)
+	return m.token, m.err
+}
 
 func seedDueSchedule(t *testing.T, pool *pgxpool.Pool, overlapPolicy string) pgtype.UUID {
 	t.Helper()
@@ -358,4 +375,238 @@ func TestTick_NoDueSchedules(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 0, stats.Dispatched)
 	assert.Empty(t, mock.calls)
+}
+
+func TestTick_InjectsGitHubToken(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, cleanup := testdb.BootPG(t)
+	defer cleanup()
+
+	seedDueSchedule(t, pool, "skip")
+	mock := &mockDispatcher{}
+	installs := &mockInstalls{token: "ghs_test_token_123"}
+
+	deps := Deps{
+		Pool:          pool,
+		Signer:        newSigner(t),
+		Dispatcher:    mock,
+		Installations: installs,
+		APIBaseURL:    "http://127.0.0.1:8080",
+		RunnerBinary:  "/usr/bin/true",
+	}
+
+	stats, err := Tick(context.Background(), deps)
+	require.NoError(t, err)
+	assert.Equal(t, 1, stats.Dispatched)
+
+	mock.mu.Lock()
+	defer mock.mu.Unlock()
+	require.Len(t, mock.calls, 1)
+
+	var hasGHToken bool
+	for _, e := range mock.calls[0].Env {
+		if e == "GITHUB_TOKEN=ghs_test_token_123" {
+			hasGHToken = true
+		}
+	}
+	assert.True(t, hasGHToken, "GITHUB_TOKEN should be in dispatch env vars; got: %v", mock.calls[0].Env)
+
+	installs.mu.Lock()
+	defer installs.mu.Unlock()
+	assert.Equal(t, []int64{1}, installs.calls, "should have called Token with install_id=1")
+}
+
+func TestTick_DispatchesWithoutTokenOnMintError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, cleanup := testdb.BootPG(t)
+	defer cleanup()
+
+	seedDueSchedule(t, pool, "skip")
+	mock := &mockDispatcher{}
+	installs := &mockInstalls{err: fmt.Errorf("GitHub API down")}
+
+	deps := Deps{
+		Pool:          pool,
+		Signer:        newSigner(t),
+		Dispatcher:    mock,
+		Installations: installs,
+		APIBaseURL:    "http://127.0.0.1:8080",
+		RunnerBinary:  "/usr/bin/true",
+	}
+
+	stats, err := Tick(context.Background(), deps)
+	require.NoError(t, err)
+	assert.Equal(t, 1, stats.Dispatched, "should still dispatch even when token minting fails")
+
+	mock.mu.Lock()
+	defer mock.mu.Unlock()
+	require.Len(t, mock.calls, 1)
+
+	for _, e := range mock.calls[0].Env {
+		assert.False(t, strings.HasPrefix(e, "GITHUB_TOKEN="),
+			"GITHUB_TOKEN should NOT be in env when minting failed; got: %s", e)
+	}
+}
+
+func TestTick_NilInstallationsStillDispatches(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, cleanup := testdb.BootPG(t)
+	defer cleanup()
+
+	seedDueSchedule(t, pool, "skip")
+	mock := &mockDispatcher{}
+
+	deps := Deps{
+		Pool:         pool,
+		Signer:       newSigner(t),
+		Dispatcher:   mock,
+		APIBaseURL:   "http://127.0.0.1:8080",
+		RunnerBinary: "/usr/bin/true",
+	}
+
+	stats, err := Tick(context.Background(), deps)
+	require.NoError(t, err)
+	assert.Equal(t, 1, stats.Dispatched)
+
+	mock.mu.Lock()
+	defer mock.mu.Unlock()
+	require.Len(t, mock.calls, 1)
+	for _, e := range mock.calls[0].Env {
+		assert.False(t, strings.HasPrefix(e, "GITHUB_TOKEN="),
+			"GITHUB_TOKEN should not appear when Installations is nil")
+	}
+}
+
+// seedPendingManualRun creates a schedule with next_fire_at in the future
+// (so processOne won't fire it) and a pending manual run, exercising the
+// dispatchPending path. Returns the run ID.
+func seedPendingManualRun(t *testing.T, pool *pgxpool.Pool) pgtype.UUID {
+	t.Helper()
+	ctx := context.Background()
+	var orgID, repoID, skillID, schedID pgtype.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO organization (name) VALUES ('o') RETURNING id`).Scan(&orgID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO repo_connection (org_id, github_app_install_id, owner, name, default_branch)
+		 VALUES ($1, 1, 'o', 'r', 'main') RETURNING id`, orgID).Scan(&repoID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO skill (org_id, repo_id, path, name, current_sha, frontmatter_json)
+		 VALUES ($1, $2, 'skills/a', 'a', 'sha-1', '{}'::jsonb) RETURNING id`,
+		orgID, repoID).Scan(&skillID))
+	future := time.Now().Add(time.Hour)
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO schedule (org_id, skill_id, name, cron, provider, model, destinations_json, next_fire_at)
+		 VALUES ($1, $2, 's', '* * * * *', 'openai', 'm', '[]'::jsonb, $3) RETURNING id`,
+		orgID, skillID, future).Scan(&schedID))
+	var runID pgtype.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO run (org_id, schedule_id, skill_sha, status, fire_reason, runner_token_hash)
+		 VALUES ($1, $2, 'sha-1', 'pending', 'manual', 'hash-placeholder') RETURNING id`,
+		orgID, schedID).Scan(&runID))
+	return runID
+}
+
+func TestTick_DispatchPending_InjectsGitHubToken(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, cleanup := testdb.BootPG(t)
+	defer cleanup()
+
+	seedPendingManualRun(t, pool)
+	mock := &mockDispatcher{}
+	installs := &mockInstalls{token: "ghs_pending_token"}
+
+	stats, err := Tick(context.Background(), Deps{
+		Pool:          pool,
+		Signer:        newSigner(t),
+		Dispatcher:    mock,
+		Installations: installs,
+		APIBaseURL:    "http://127.0.0.1:8080",
+		RunnerBinary:  "/usr/bin/true",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, stats.Dispatched)
+
+	mock.mu.Lock()
+	defer mock.mu.Unlock()
+	require.Len(t, mock.calls, 1)
+
+	var hasGHToken bool
+	for _, e := range mock.calls[0].Env {
+		if e == "GITHUB_TOKEN=ghs_pending_token" {
+			hasGHToken = true
+		}
+	}
+	assert.True(t, hasGHToken, "GITHUB_TOKEN should be in dispatchPending env; got: %v", mock.calls[0].Env)
+
+	installs.mu.Lock()
+	defer installs.mu.Unlock()
+	assert.Equal(t, []int64{1}, installs.calls)
+}
+
+func TestTick_DispatchPending_NoTokenOnMintError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, cleanup := testdb.BootPG(t)
+	defer cleanup()
+
+	seedPendingManualRun(t, pool)
+	mock := &mockDispatcher{}
+	installs := &mockInstalls{err: fmt.Errorf("GitHub API down")}
+
+	stats, err := Tick(context.Background(), Deps{
+		Pool:          pool,
+		Signer:        newSigner(t),
+		Dispatcher:    mock,
+		Installations: installs,
+		APIBaseURL:    "http://127.0.0.1:8080",
+		RunnerBinary:  "/usr/bin/true",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, stats.Dispatched)
+
+	mock.mu.Lock()
+	defer mock.mu.Unlock()
+	require.Len(t, mock.calls, 1)
+	for _, e := range mock.calls[0].Env {
+		assert.False(t, strings.HasPrefix(e, "GITHUB_TOKEN="),
+			"GITHUB_TOKEN should NOT be in env when minting failed via dispatchPending; got: %s", e)
+	}
+}
+
+func TestTick_DispatchPending_NilInstallations(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, cleanup := testdb.BootPG(t)
+	defer cleanup()
+
+	seedPendingManualRun(t, pool)
+	mock := &mockDispatcher{}
+
+	stats, err := Tick(context.Background(), Deps{
+		Pool:         pool,
+		Signer:       newSigner(t),
+		Dispatcher:   mock,
+		APIBaseURL:   "http://127.0.0.1:8080",
+		RunnerBinary: "/usr/bin/true",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, stats.Dispatched)
+
+	mock.mu.Lock()
+	defer mock.mu.Unlock()
+	require.Len(t, mock.calls, 1)
+	for _, e := range mock.calls[0].Env {
+		assert.False(t, strings.HasPrefix(e, "GITHUB_TOKEN="),
+			"GITHUB_TOKEN should not appear when Installations is nil via dispatchPending")
+	}
 }

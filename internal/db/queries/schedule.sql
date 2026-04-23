@@ -94,10 +94,13 @@ WHERE s.id = $1;
 -- name: ListDueSchedulesWithSha :many
 -- Like ListDueSchedules but joins the skill to include current_sha so
 -- the scheduler can set it on the new run row without a second query.
+-- Also joins repo_connection for the installation ID needed at dispatch.
 SELECT s.*,
-       sk.current_sha AS skill_sha
+       sk.current_sha AS skill_sha,
+       rc.github_app_install_id AS install_id
 FROM schedule s
 JOIN skill sk ON sk.id = s.skill_id
+JOIN repo_connection rc ON rc.id = sk.repo_id
 WHERE s.enabled = true
   AND s.next_fire_at IS NOT NULL
   AND s.next_fire_at <= now()

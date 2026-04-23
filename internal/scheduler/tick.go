@@ -18,14 +18,20 @@ import (
 	"github.com/gambtho/cronfoundry/internal/token"
 )
 
+// InstallationTokenProvider mints short-lived GitHub installation tokens.
+type InstallationTokenProvider interface {
+	Token(ctx context.Context, installID int64) (string, error)
+}
+
 // Deps bundles the scheduler's collaborators.
 type Deps struct {
-	Pool         *pgxpool.Pool
-	Signer       *token.Signer
-	Dispatcher   cloud.JobDispatcher
-	APIBaseURL   string // e.g. "http://127.0.0.1:8080"
-	RunnerAPIURL string // external URL the runner uses to reach serve; falls back to APIBaseURL
-	RunnerBinary string // absolute path; typically os.Executable()
+	Pool          *pgxpool.Pool
+	Signer        *token.Signer
+	Dispatcher    cloud.JobDispatcher
+	Installations InstallationTokenProvider // nil = no GitHub token injection
+	APIBaseURL    string                    // e.g. "http://127.0.0.1:8080"
+	RunnerAPIURL  string                    // external URL the runner uses to reach serve; falls back to APIBaseURL
+	RunnerBinary  string                    // absolute path; typically os.Executable()
 }
 
 // Stats summarizes one Tick's effects.
@@ -175,6 +181,7 @@ func processOne(
 		OrgID:      sched.OrgID,
 		TimeoutSec: sched.TimeoutSec,
 		SecretRefs: config.CollectSecretRefs(sched.DestinationsJson, sched.EnvJson, sched.LlmSecretRef),
+		InstallID:  sched.InstallID,
 	}); err != nil {
 		return err
 	}
@@ -191,6 +198,7 @@ type dispatchArgs struct {
 	OrgID      pgtype.UUID
 	TimeoutSec int32
 	SecretRefs []string
+	InstallID  int64
 }
 
 // dispatchRun signs a JWT for the run, persists its hash, dispatches the
@@ -224,14 +232,32 @@ func dispatchRun(ctx context.Context, deps Deps, args dispatchArgs) error {
 			"api_base_url", runnerURL)
 	}
 
+	var githubToken string
+	if deps.Installations != nil && args.InstallID != 0 {
+		gtok, err := deps.Installations.Token(ctx, args.InstallID)
+		if err != nil {
+			slog.Warn("scheduler: mint GitHub token failed (dispatch continues without GITHUB_TOKEN)",
+				"run_id", uuid.UUID(args.RunID.Bytes).String(),
+				"install_id", args.InstallID,
+				"err", err)
+		} else {
+			githubToken = gtok
+		}
+	}
+
+	env := []string{
+		"CRONFOUNDRY_API_URL=" + runnerURL,
+		"CRONFOUNDRY_RUN_ID=" + uuid.UUID(args.RunID.Bytes).String(),
+		"CRONFOUNDRY_RUN_TOKEN=" + tok,
+	}
+	if githubToken != "" {
+		env = append(env, "GITHUB_TOKEN="+githubToken)
+	}
+
 	spec := cloud.DispatchRequest{
 		BinaryPath: deps.RunnerBinary,
 		Args:       []string{"runner", "--run-id", uuid.UUID(args.RunID.Bytes).String()},
-		Env: []string{
-			"CRONFOUNDRY_API_URL=" + runnerURL,
-			"CRONFOUNDRY_RUN_ID=" + uuid.UUID(args.RunID.Bytes).String(),
-			"CRONFOUNDRY_RUN_TOKEN=" + tok,
-		},
+		Env:        env,
 	}
 	h, err := deps.Dispatcher.Dispatch(ctx, spec)
 	if err != nil {
@@ -266,9 +292,12 @@ func dispatchRun(ctx context.Context, deps Deps, args dispatchArgs) error {
 func dispatchPending(ctx context.Context, deps Deps, stats *Stats) error {
 	rows, err := deps.Pool.Query(ctx, `
 		SELECT r.id, r.org_id,
-		       s.timeout_sec, s.destinations_json, s.env_json, s.llm_secret_ref
+		       s.timeout_sec, s.destinations_json, s.env_json, s.llm_secret_ref,
+		       rc.github_app_install_id
 		FROM run r
 		JOIN schedule s ON s.id = r.schedule_id
+		JOIN skill sk ON sk.id = s.skill_id
+		JOIN repo_connection rc ON rc.id = sk.repo_id
 		WHERE r.status = 'pending'
 		  AND s.enabled = true
 		  AND (
@@ -297,13 +326,14 @@ func dispatchPending(ctx context.Context, deps Deps, stats *Stats) error {
 		OrgID      pgtype.UUID
 		TimeoutSec int32
 		SecretRefs []string
+		InstallID  int64
 	}
 	var pending []pendingRow
 	for rows.Next() {
 		var r pendingRow
 		var destsJSON, envJSON []byte
 		var llmRef *string
-		if err := rows.Scan(&r.ID, &r.OrgID, &r.TimeoutSec, &destsJSON, &envJSON, &llmRef); err != nil {
+		if err := rows.Scan(&r.ID, &r.OrgID, &r.TimeoutSec, &destsJSON, &envJSON, &llmRef, &r.InstallID); err != nil {
 			slog.Error("scheduler: dispatchPending: scan failed", "err", err)
 			continue
 		}
@@ -320,6 +350,7 @@ func dispatchPending(ctx context.Context, deps Deps, stats *Stats) error {
 			OrgID:      r.OrgID,
 			TimeoutSec: r.TimeoutSec,
 			SecretRefs: r.SecretRefs,
+			InstallID:  r.InstallID,
 		}); err != nil {
 			slog.Error("scheduler: dispatchPending: dispatch failed",
 				"run_id", uuid.UUID(r.ID.Bytes).String(),
