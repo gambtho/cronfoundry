@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -89,4 +90,50 @@ func TestOpenAI_Chat_RetriesOn500UpTo3Times(t *testing.T) {
 	// Spec: max 3 retries → 1 initial + 3 retries = 4 attempts total.
 	assert.Equal(t, int32(4), atomic.LoadInt32(&attempts),
 		"expected 1 initial + 3 retries = 4 total attempts")
+}
+
+func TestOpenAI_ChatTurn_ReturnsToolCalls(t *testing.T) {
+	srv := startOpenAIFixture(t, fixtureOpenAIToolUse)
+
+	p := NewOpenAI(srv.URL)
+	tcp, ok := p.(ToolCapableProvider)
+	require.True(t, ok)
+
+	tools := []ToolDef{{
+		Name:        "get_weather",
+		Description: "return current weather",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}}}`),
+	}}
+	tr, err := tcp.ChatTurn(
+		context.Background(),
+		[]Message{{Role: RoleUser, Content: "what's the weather in SF?"}},
+		tools,
+		CallOptions{Model: "gpt-5.1", APIKey: "test", MaxTokens: 1024},
+		func(StreamChunk) {},
+	)
+	require.NoError(t, err)
+	require.Len(t, tr.ToolUses, 1)
+	assert.Equal(t, "get_weather", tr.ToolUses[0].Name)
+	assert.Equal(t, "call_abc", tr.ToolUses[0].ID)
+	assert.JSONEq(t, `{"city":"SF"}`, string(tr.ToolUses[0].Input))
+	assert.Equal(t, "tool_calls", tr.StopReason)
+	assert.Equal(t, 20, tr.Usage.InputTokens)
+	assert.Equal(t, 15, tr.Usage.OutputTokens)
+}
+
+func TestOpenAI_ChatTurn_TextOnly(t *testing.T) {
+	srv := startOpenAIFixture(t, fixtureOpenAITextOnly)
+
+	p := NewOpenAI(srv.URL).(ToolCapableProvider)
+	tr, err := p.ChatTurn(
+		context.Background(),
+		[]Message{{Role: RoleUser, Content: "hi"}},
+		nil,
+		CallOptions{Model: "gpt-5.1", APIKey: "test", MaxTokens: 100},
+		func(StreamChunk) {},
+	)
+	require.NoError(t, err)
+	assert.Empty(t, tr.ToolUses)
+	assert.Equal(t, "stop", tr.StopReason)
+	assert.Equal(t, "Hello!", tr.Text)
 }
