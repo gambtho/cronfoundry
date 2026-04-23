@@ -440,7 +440,106 @@ skills:
 	}
 }
 
-func TestDestination_ShouldPublish(t *testing.T) {	cases := []struct {
+func TestHTTPDest_Validation(t *testing.T) {
+	tests := []struct {
+		name    string
+		yaml    string
+		wantErr string
+	}{
+		{
+			name: "valid minimal",
+			yaml: `version: 1
+skills:
+  - path: skills/test.md
+    schedules:
+      - name: s
+        cron: "0 * * * *"
+        provider: openai
+        model: gpt-4o
+        destinations:
+          - http:
+              url: https://example.com/hook`,
+		},
+		{
+			name:    "missing url",
+			wantErr: "url required",
+			yaml: `version: 1
+skills:
+  - path: skills/test.md
+    schedules:
+      - name: s
+        cron: "0 * * * *"
+        provider: openai
+        model: gpt-4o
+        destinations:
+          - http: {}`,
+		},
+		{
+			name:    "invalid method",
+			wantErr: "unsupported method",
+			yaml: `version: 1
+skills:
+  - path: skills/test.md
+    schedules:
+      - name: s
+        cron: "0 * * * *"
+        provider: openai
+        model: gpt-4o
+        destinations:
+          - http:
+              url: https://example.com/hook
+              method: CONNECT`,
+		},
+		{
+			name:    "invalid url scheme",
+			wantErr: "invalid or unsupported URL scheme",
+			yaml: `version: 1
+skills:
+  - path: skills/test.md
+    schedules:
+      - name: s
+        cron: "0 * * * *"
+        provider: openai
+        model: gpt-4o
+        destinations:
+          - http:
+              url: ftp://example.com/hook`,
+		},
+		{
+			name:    "url with empty host",
+			wantErr: "url must include a host",
+			yaml: `version: 1
+skills:
+  - path: skills/test.md
+    schedules:
+      - name: s
+        cron: "0 * * * *"
+        provider: openai
+        model: gpt-4o
+        destinations:
+          - http:
+              url: http:///path`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m, err := ParseManifest([]byte(tt.yaml))
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				assert.NoError(t, m.Validate())
+			} else {
+				if err == nil {
+					err = m.Validate()
+				}
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestDestination_ShouldPublish(t *testing.T) {
+	cases := []struct {
 		when      string
 		succeeded bool
 		want      bool
@@ -460,5 +559,235 @@ func TestDestination_ShouldPublish(t *testing.T) {	cases := []struct {
 		if got != c.want {
 			t.Errorf("when=%q succeeded=%v: want %v, got %v", c.when, c.succeeded, c.want, got)
 		}
+	}
+}
+
+func TestEmailDest_Validation(t *testing.T) {
+	tests := []struct {
+		name    string
+		yaml    string
+		wantErr string
+	}{
+		{
+			name: "valid minimal",
+			yaml: `version: 1
+skills:
+  - path: skills/test.md
+    schedules:
+      - name: s
+        cron: "0 * * * *"
+        provider: openai
+        model: gpt-4o
+        destinations:
+          - email:
+              smtp_host: smtp.example.com
+              username_secret: user
+              password_secret: pass
+              from: bot@example.com
+              to: [team@example.com]`,
+		},
+		{
+			name:    "missing smtp_host",
+			wantErr: "smtp_host required",
+			yaml: `version: 1
+skills:
+  - path: skills/test.md
+    schedules:
+      - name: s
+        cron: "0 * * * *"
+        provider: openai
+        model: gpt-4o
+        destinations:
+          - email:
+              username_secret: user
+              password_secret: pass
+              from: bot@example.com
+              to: [team@example.com]`,
+		},
+		{
+			name:    "empty to",
+			wantErr: "to must have at least one address",
+			yaml: `version: 1
+skills:
+  - path: skills/test.md
+    schedules:
+      - name: s
+        cron: "0 * * * *"
+        provider: openai
+        model: gpt-4o
+        destinations:
+          - email:
+              smtp_host: smtp.example.com
+              username_secret: user
+              password_secret: pass
+              from: bot@example.com
+              to: []`,
+		},
+		{
+			name:    "invalid format",
+			wantErr: "format must be",
+			yaml: `version: 1
+skills:
+  - path: skills/test.md
+    schedules:
+      - name: s
+        cron: "0 * * * *"
+        provider: openai
+        model: gpt-4o
+        destinations:
+          - email:
+              smtp_host: smtp.example.com
+              username_secret: user
+              password_secret: pass
+              from: bot@example.com
+              to: [team@example.com]
+              format: markdown`,
+		},
+		{
+			name:    "missing username_secret",
+			wantErr: "username_secret required",
+			yaml: `version: 1
+skills:
+  - path: skills/test.md
+    schedules:
+      - name: s
+        cron: "0 * * * *"
+        provider: openai
+        model: gpt-4o
+        destinations:
+          - email:
+              smtp_host: smtp.example.com
+              password_secret: pass
+              from: bot@example.com
+              to: [team@example.com]`,
+		},
+		{
+			name:    "missing password_secret",
+			wantErr: "password_secret required",
+			yaml: `version: 1
+skills:
+  - path: skills/test.md
+    schedules:
+      - name: s
+        cron: "0 * * * *"
+        provider: openai
+        model: gpt-4o
+        destinations:
+          - email:
+              smtp_host: smtp.example.com
+              username_secret: user
+              from: bot@example.com
+              to: [team@example.com]`,
+		},
+		{
+			name:    "missing from",
+			wantErr: "from required",
+			yaml: `version: 1
+skills:
+  - path: skills/test.md
+    schedules:
+      - name: s
+        cron: "0 * * * *"
+        provider: openai
+        model: gpt-4o
+        destinations:
+          - email:
+              smtp_host: smtp.example.com
+              username_secret: user
+              password_secret: pass
+              to: [team@example.com]`,
+		},
+		{
+			name:    "invalid smtp_port",
+			wantErr: "smtp_port must be 1-65535",
+			yaml: `version: 1
+skills:
+  - path: skills/test.md
+    schedules:
+      - name: s
+        cron: "0 * * * *"
+        provider: openai
+        model: gpt-4o
+        destinations:
+          - email:
+              smtp_host: smtp.example.com
+              smtp_port: 99999
+              username_secret: user
+              password_secret: pass
+              from: bot@example.com
+              to: [team@example.com]`,
+		},
+		{
+			name: "smtp_port boundary 1",
+			yaml: `version: 1
+skills:
+  - path: skills/test.md
+    schedules:
+      - name: s
+        cron: "0 * * * *"
+        provider: openai
+        model: gpt-4o
+        destinations:
+          - email:
+              smtp_host: smtp.example.com
+              smtp_port: 1
+              username_secret: user
+              password_secret: pass
+              from: bot@example.com
+              to: [team@example.com]`,
+		},
+		{
+			name: "smtp_port boundary 65535",
+			yaml: `version: 1
+skills:
+  - path: skills/test.md
+    schedules:
+      - name: s
+        cron: "0 * * * *"
+        provider: openai
+        model: gpt-4o
+        destinations:
+          - email:
+              smtp_host: smtp.example.com
+              smtp_port: 65535
+              username_secret: user
+              password_secret: pass
+              from: bot@example.com
+              to: [team@example.com]`,
+		},
+		{
+			name:    "to contains empty address",
+			wantErr: "to contains empty address",
+			yaml: `version: 1
+skills:
+  - path: skills/test.md
+    schedules:
+      - name: s
+        cron: "0 * * * *"
+        provider: openai
+        model: gpt-4o
+        destinations:
+          - email:
+              smtp_host: smtp.example.com
+              username_secret: user
+              password_secret: pass
+              from: bot@example.com
+              to: [""]`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m, err := ParseManifest([]byte(tt.yaml))
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				assert.NoError(t, m.Validate())
+			} else {
+				if err == nil {
+					err = m.Validate()
+				}
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+			}
+		})
 	}
 }

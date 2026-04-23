@@ -6,6 +6,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/url"
+	"strings"
 
 	"sigs.k8s.io/yaml"
 )
@@ -42,6 +45,8 @@ type Destination struct {
 	Slack       *WebhookDest     `json:"slack,omitempty"`
 	Discord     *WebhookDest     `json:"discord,omitempty"`
 	Teams       *WebhookDest     `json:"teams,omitempty"`
+	HTTP        *HTTPDest        `json:"http,omitempty"`
+	Email       *EmailDest       `json:"email,omitempty"`
 	// When controls which run outcomes trigger this destination.
 	// Valid values: "always" (default), "on_success", "on_failure".
 	When string `json:"when,omitempty"`
@@ -57,6 +62,66 @@ func (d Destination) ShouldPublish(runSucceeded bool) bool {
 	default: // "always" or empty
 		return true
 	}
+}
+
+// Validate returns an error if the destination config is invalid.
+func (d Destination) Validate() error {
+	if d.When != "" {
+		switch d.When {
+		case "always", "on_success", "on_failure":
+		default:
+			return fmt.Errorf("destination: invalid when value %q (must be \"always\", \"on_success\", or \"on_failure\")", d.When)
+		}
+	}
+	if d.HTTP != nil {
+		if d.HTTP.URL == "" {
+			return fmt.Errorf("http destination: url required")
+		}
+		parsed, err := url.ParseRequestURI(d.HTTP.URL)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			return fmt.Errorf("http destination: invalid or unsupported URL scheme %q (must be http or https)", d.HTTP.URL)
+		}
+		if parsed.Host == "" {
+			return fmt.Errorf("http destination: url must include a host")
+		}
+		if d.HTTP.Method != "" {
+			switch d.HTTP.Method {
+			case http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+			default:
+				return fmt.Errorf("http destination: unsupported method %q", d.HTTP.Method)
+			}
+		}
+	}
+	if d.Email != nil {
+		e := d.Email
+		if e.SMTPHost == "" {
+			return fmt.Errorf("email destination: smtp_host required")
+		}
+		if e.UsernameSecret == "" {
+			return fmt.Errorf("email destination: username_secret required")
+		}
+		if e.PasswordSecret == "" {
+			return fmt.Errorf("email destination: password_secret required")
+		}
+		if e.From == "" {
+			return fmt.Errorf("email destination: from required")
+		}
+		if len(e.To) == 0 {
+			return fmt.Errorf("email destination: to must have at least one address")
+		}
+		for _, addr := range e.To {
+			if strings.TrimSpace(addr) == "" {
+				return fmt.Errorf("email destination: to contains empty address")
+			}
+		}
+		if e.SMTPPort != 0 && (e.SMTPPort < 1 || e.SMTPPort > 65535) {
+			return fmt.Errorf("email destination: smtp_port must be 1-65535 (got %d)", e.SMTPPort)
+		}
+		if e.Format != "" && e.Format != "html" && e.Format != "text" {
+			return fmt.Errorf("email destination: format must be \"html\" or \"text\" (got %q)", e.Format)
+		}
+	}
+	return nil
 }
 
 type GitHubIssueDest struct {
@@ -76,6 +141,41 @@ type WebhookDest struct {
 	Username string `json:"username,omitempty"`
 	Format   string `json:"format,omitempty"` // "blocks" (Slack default), "text", "card" (Teams)
 	Output   string `json:"output,omitempty"` // named output block to use; empty = full output
+}
+
+type HTTPDest struct {
+	URL          string            `json:"url"`
+	Method       string            `json:"method,omitempty"` // default "POST"
+	Secret       string            `json:"secret,omitempty"` // logical secret name; sent as Bearer token
+	Headers      map[string]string `json:"headers,omitempty"`
+	BodyTemplate string            `json:"body_template,omitempty"` // Go template; default sends {"output":"<output>"}
+	Output       string            `json:"output,omitempty"`
+}
+
+type EmailDest struct {
+	SMTPHost       string   `json:"smtp_host"`
+	SMTPPort       int      `json:"smtp_port,omitempty"` // default 587
+	UsernameSecret string   `json:"username_secret"`
+	PasswordSecret string   `json:"password_secret"`
+	From           string   `json:"from"`
+	To             []string `json:"to"`
+	Subject        string   `json:"subject,omitempty"` // template.Render template; default below
+	Format         string   `json:"format,omitempty"`  // "html" (default) or "text"
+	Output         string   `json:"output,omitempty"`  // named output block to use; empty = full output
+}
+
+func (e *EmailDest) EffectiveSMTPPort() int {
+	if e.SMTPPort != 0 {
+		return e.SMTPPort
+	}
+	return 587
+}
+
+func (e *EmailDest) EffectiveFormat() string {
+	if e.Format != "" {
+		return e.Format
+	}
+	return "html"
 }
 
 type WritebackConfig struct {
@@ -202,6 +302,11 @@ func (m *Manifest) Validate() error {
 			if sch.AutoPause != nil && sch.AutoPause.After < 1 {
 				return fmt.Errorf("skill %q schedule %q: auto_pause.after must be >= 1 (got %d)",
 					s.Path, sch.Name, sch.AutoPause.After)
+			}
+			for _, dest := range sch.Destinations {
+				if err := dest.Validate(); err != nil {
+					return fmt.Errorf("skill %q schedule %q: destination: %w", s.Path, sch.Name, err)
+				}
 			}
 		}
 	}
