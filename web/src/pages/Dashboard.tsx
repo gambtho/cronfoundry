@@ -59,6 +59,16 @@ export default function Dashboard() {
                   Next: {new Date(s.next_fire_at).toLocaleString()}
                 </div>
               )}
+              {s.mcp_servers?.length > 0 && (
+                <div className="mt-2">
+                  <span
+                    className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs bg-indigo-900 text-indigo-200"
+                    title={s.mcp_servers.map(m => m.name).join(', ')}
+                  >
+                    🔧 {s.mcp_servers.length} tool{s.mcp_servers.length !== 1 ? 's' : ''}
+                  </span>
+                </div>
+              )}
               <div className="mt-3 flex gap-2">
                 <button
                   onClick={() => runNow.mutate(s.id)}
