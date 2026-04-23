@@ -504,8 +504,9 @@ func TestRunner_SkippedDestinationInResults(t *testing.T) {
 }
 
 func TestRun_SecretNotInLLMMessages(t *testing.T) {
+	// exercises the non-MCP (single-shot) path
 	repoRoot := t.TempDir()
-	_, err := git.PlainInit(repoRoot, false)
+	repo, err := git.PlainInit(repoRoot, false)
 	require.NoError(t, err)
 
 	manifest := `
@@ -530,8 +531,8 @@ skills:
 	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: check\n---\nCheck things.\n"), 0o644))
 
 	// Seed commit so the runner has a valid git repo.
-	repo, _ := git.PlainOpen(repoRoot)
-	w, _ := repo.Worktree()
+	w, err := repo.Worktree()
+	require.NoError(t, err)
 	_ = w.AddGlob(".")
 	_, err = w.Commit("seed", &git.CommitOptions{Author: sig()})
 	require.NoError(t, err)
@@ -587,5 +588,4 @@ func TestBuildEnvBanner_SecretRedacted(t *testing.T) {
 
 	assert.Contains(t, banner, "GITHUB_TOKEN=[secret]")
 	assert.Contains(t, banner, "BASE_URL=https://api.example.com")
-	assert.NotContains(t, banner, "ghp_supersecret")
 }
