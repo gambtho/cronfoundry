@@ -126,6 +126,11 @@ func RegisterRoutes(mux *http.ServeMux, deps Deps) {
 	wh := &webhookHandler{deps: deps, secret: deps.WebhookSecret, syncer: deps.Syncer}
 	mux.Handle("POST /webhook/github", wh)
 
+	// Copilot Enterprise device flow (admin-only)
+	cph := &copilotConnectHandler{deps: deps}
+	mux.Handle("POST /api/copilot/connect", adminOnly(http.HandlerFunc(cph.startFlow)))
+	mux.Handle("GET /api/copilot/connect/{device_code}/poll", adminOnly(http.HandlerFunc(cph.poll)))
+
 	// SPA catch-all — must be last
 	mux.Handle("/", staticHandler())
 }
