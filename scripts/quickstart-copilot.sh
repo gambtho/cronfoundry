@@ -195,3 +195,134 @@ if [[ -z "${CF_PG_PASSWORD:-}" ]]; then
   save CF_PG_PASSWORD "$CF_PG_PASSWORD"
 fi
 ok "Postgres password generated (saved to state file)"
+
+# ── Step 13: build params file ────────────────────────────────────────────────
+header "[step 13/17] Build params file"
+PARAMS_FILE="deploy/params.quickstart-${CF_ENV}.json"
+if [[ ! -f "$PARAMS_FILE" ]]; then
+  ADMIN_LOGIN=$(git config user.name 2>/dev/null || echo "admin")
+  python3 - "$CF_GITHUB_PEM_PATH" "$PARAMS_FILE" \
+    "$CF_ENV" "$CF_REGION" "$CF_IMAGE_TAG" \
+    "$CF_GITHUB_APP_ID" "$CF_GITHUB_CLIENT_ID" "$CF_GITHUB_CLIENT_SECRET" \
+    "$CF_PG_PASSWORD" "$CF_MASTER_KEY" "$ADMIN_LOGIN" << 'PYEOF'
+import json, sys
+pem_path, out_path, env, region, tag, app_id, client_id, client_secret, pg_pw, master_key, admin = sys.argv[1:]
+with open(pem_path) as pf:
+    pem = pf.read()
+params = {
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "env":                        {"value": env},
+    "location":                   {"value": region},
+    "imageTag":                   {"value": tag},
+    "githubAppId":                {"value": app_id},
+    "githubAppOAuthClientId":     {"value": client_id},
+    "githubAppOAuthClientSecret": {"value": client_secret},
+    "postgresAdminPassword":      {"value": pg_pw},
+    "masterKey":                  {"value": master_key},
+    "adminLogins":                {"value": admin},
+    "viewerLogins":               {"value": ""},
+    "ingressExternal":            {"value": True},
+    "githubAppPem":               {"value": pem},
+  }
+}
+with open(out_path, "w") as f:
+    json.dump(params, f, indent=2)
+print(f"Wrote {out_path}")
+PYEOF
+fi
+ok "Params file: $PARAMS_FILE"
+
+# ── Step 14: deploy ───────────────────────────────────────────────────────────
+header "[step 14/17] Deploy to Azure (~10 min)"
+if [[ "$DRY_RUN" == "true" ]]; then
+  warn "--dry-run: skipping az deployment sub create"
+else
+  az deployment sub create \
+    --location "$CF_REGION" \
+    --template-file deploy/main.bicep \
+    --parameters "@$PARAMS_FILE"
+fi
+
+CF_FQDN=$(az containerapp show \
+  --resource-group "rg-cronfoundry-${CF_ENV}" \
+  --name "cf-serve-${CF_ENV}" \
+  --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null || echo "")
+save CF_FQDN "$CF_FQDN"
+ok "Deployed. FQDN: $CF_FQDN"
+
+# ── Step 15: admin init ───────────────────────────────────────────────────────
+header "[step 15/17] Initialize database"
+if [[ "$DRY_RUN" != "true" ]]; then
+  # WSL2-safe: use broad rule -- WSL2 NAT may present a different source IP to Azure
+  az postgres flexible-server firewall-rule create \
+    --resource-group "rg-cronfoundry-${CF_ENV}" \
+    --name "cf-pg-${CF_ENV}" \
+    --rule-name AllowOperator \
+    --start-ip-address "0.0.0.0" \
+    --end-ip-address "255.255.255.255" 2>/dev/null || true
+
+  CF_DB_URL="postgres://cfadmin:${CF_PG_PASSWORD}@cf-pg-${CF_ENV}.postgres.database.azure.com:5432/cronfoundry?sslmode=require"
+
+  make build 2>/dev/null || go build -o cronfoundry ./cmd/cronfoundry
+
+  CRONFOUNDRY_DATABASE_URL="$CF_DB_URL" \
+  CRONFOUNDRY_MASTER_KEY="$CF_MASTER_KEY" \
+  ./cronfoundry admin init
+
+  RESTART_TS=$(date +%s)
+  az containerapp update \
+    --resource-group "rg-cronfoundry-${CF_ENV}" \
+    --name "cf-serve-${CF_ENV}" \
+    --set-env-vars "RESTART_TRIGGER=${RESTART_TS}" >/dev/null
+
+  info "Waiting for Container App to become healthy..."
+  HEALTH="unknown"
+  for i in $(seq 1 12); do
+    HEALTH=$(az containerapp revision list \
+      --resource-group "rg-cronfoundry-${CF_ENV}" \
+      --name "cf-serve-${CF_ENV}" \
+      --query '[?properties.trafficWeight>`0`].properties.healthState' \
+      -o tsv 2>/dev/null | head -1 || echo "unknown")
+    [[ "$HEALTH" == "Healthy" ]] && break
+    sleep 10
+  done
+  ok "Container App health: $HEALTH"
+fi
+
+# ── Step 16: update GitHub App URLs ──────────────────────────────────────────
+header "[step 16/17] Update GitHub App URLs"
+echo ""
+echo "  Go to your GitHub App settings and update these three URLs:"
+echo ""
+echo "  Homepage URL:  https://${CF_FQDN}"
+echo "  Callback URL:  https://${CF_FQDN}/oauth/callback"
+echo "  Webhook URL:   https://${CF_FQDN}/webhook/github"
+echo ""
+read -rp "Press Enter once you have updated the GitHub App URLs..."
+
+# ── Step 17: UI checklist ─────────────────────────────────────────────────────
+header "[step 17/17] Complete setup in the web UI"
+echo ""
+echo "  Open: https://${CF_FQDN}/"
+echo ""
+echo "  a) Log in via GitHub"
+echo "  b) Providers -> GitHub Copilot Enterprise -> Connect"
+echo "     Enter a prefix (e.g. 'copilot'), open the verification URL,"
+echo "     enter the code shown, and authorize in your browser."
+echo "  c) Repos -> Connect repo -> paste '${CF_SKILL_REPO}' and installation ID '${CF_INSTALLATION_ID}'"
+echo "  d) Secrets -> Add 'github_webhook_secret' (the value from your GitHub App webhook config)"
+echo "  e) Push a cronfoundry.yaml to your skill repo using:"
+echo "       provider: copilot-enterprise"
+echo "       copilot_prefix: <prefix from step b>"
+echo ""
+echo "  Full guide: $GUIDE_URL"
+echo ""
+
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "  CronFoundry deployed successfully!"
+echo "  URL:         https://${CF_FQDN}/"
+echo "  State file:  $STATE_FILE"
+echo "  Guide:       $GUIDE_URL"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
