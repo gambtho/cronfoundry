@@ -220,6 +220,8 @@ func dispatchRun(ctx context.Context, deps Deps, args dispatchArgs) error {
 	runnerURL := deps.RunnerAPIURL
 	if runnerURL == "" {
 		runnerURL = deps.APIBaseURL
+		slog.Warn("scheduler: RunnerAPIURL not set, falling back to APIBaseURL — will fail if runners run in separate containers",
+			"api_base_url", runnerURL)
 	}
 
 	spec := cloud.DispatchSpec{

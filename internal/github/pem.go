@@ -22,6 +22,9 @@ func ReadPEM(value string) ([]byte, error) {
 	}
 	b, err := os.ReadFile(value)
 	if err != nil {
+		if !strings.Contains(value, string(os.PathSeparator)) && len(value) > 100 {
+			return nil, fmt.Errorf("read PEM file %q: %w (hint: value looks like PEM content but is missing -----BEGIN header)", value, err)
+		}
 		return nil, fmt.Errorf("read PEM file %q: %w", value, err)
 	}
 	return b, nil

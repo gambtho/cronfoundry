@@ -15,17 +15,25 @@ type ContainerAppsJobDispatcher struct {
 	image         string
 }
 
+// DispatcherConfig holds the parameters for a ContainerAppsJobDispatcher.
+type DispatcherConfig struct {
+	Client        ARMJobsClient
+	ResourceGroup string
+	JobName       string
+	Image         string
+}
+
 // NewContainerAppsJobDispatcher returns a dispatcher targeting the named Container Apps Job.
-// It panics if client is nil.
-func NewContainerAppsJobDispatcher(client ARMJobsClient, resourceGroup, jobName, image string) *ContainerAppsJobDispatcher {
-	if client == nil {
+// It panics if Client is nil.
+func NewContainerAppsJobDispatcher(cfg DispatcherConfig) *ContainerAppsJobDispatcher {
+	if cfg.Client == nil {
 		panic("cloud/azure: NewContainerAppsJobDispatcher: client must not be nil")
 	}
 	return &ContainerAppsJobDispatcher{
-		client:        client,
-		resourceGroup: resourceGroup,
-		jobName:       jobName,
-		image:         image,
+		client:        cfg.Client,
+		resourceGroup: cfg.ResourceGroup,
+		jobName:       cfg.JobName,
+		image:         cfg.Image,
 	}
 }
 

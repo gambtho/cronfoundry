@@ -311,6 +311,9 @@ func buildJobDispatcher() (cloud.JobDispatcher, error) {
 		}
 		return cloud.NewSubprocessDispatcher(), nil
 	}
+	if image == "" {
+		return nil, fmt.Errorf("AZURE_CAE_JOB_IMAGE is required when Azure dispatcher is configured")
+	}
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
 		return nil, fmt.Errorf("azure credential: %w", err)
@@ -319,7 +322,12 @@ func buildJobDispatcher() (cloud.JobDispatcher, error) {
 	if err != nil {
 		return nil, fmt.Errorf("arm jobs client: %w", err)
 	}
-	return cloudazure.NewContainerAppsJobDispatcher(armClient, rg, jobName, image), nil
+	return cloudazure.NewContainerAppsJobDispatcher(cloudazure.DispatcherConfig{
+		Client:        armClient,
+		ResourceGroup: rg,
+		JobName:       jobName,
+		Image:         image,
+	}), nil
 }
 
 // buildSecretStore returns a KeyVaultStore when AZURE_KEYVAULT_URL is set;
