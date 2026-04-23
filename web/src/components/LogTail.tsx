@@ -135,6 +135,7 @@ function formatMCPEvent(ev: RunEvent): string | null {
 
 function LogRow({ ev }: { ev: RunEvent }) {
   const [expanded, setExpanded] = useState(false)
+  const mcpLabel = ev.event_type.startsWith('mcp.') ? formatMCPEvent(ev) : null
   return (
     <div
       onClick={() => setExpanded(v => !v)}
@@ -159,9 +160,7 @@ function LogRow({ ev }: { ev: RunEvent }) {
           name={eventName(ev.payload_json)}
         </span>
       )}
-      {ev.event_type.startsWith('mcp.') && formatMCPEvent(ev) && (
-        <span className="text-indigo-200 ml-2">{formatMCPEvent(ev)}</span>
-      )}
+      {mcpLabel && <span className="text-indigo-200 ml-2">{mcpLabel}</span>}
       {expanded && (
         <pre
           onClick={e => e.stopPropagation()}
