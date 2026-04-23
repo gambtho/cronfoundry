@@ -70,6 +70,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'AZURE_SUBSCRIPTION_ID', value: azureSubscriptionId }
             { name: 'AZURE_CAE_RESOURCE_GROUP', value: azureResourceGroup }
             { name: 'AZURE_CAE_JOB_NAME', value: azureCaeJobName }
+            { name: 'AZURE_CAE_JOB_IMAGE', value: 'ghcr.io/gambtho/cronfoundry:${imageTag}' }
             { name: 'AZURE_CLIENT_ID', value: cfServeClientId }
             { name: 'DISPATCHER', value: 'azure' }
             { name: 'SECRET_STORE', value: 'keyvault' }

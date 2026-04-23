@@ -299,6 +299,7 @@ func buildJobDispatcher() (cloud.JobDispatcher, error) {
 	rg := os.Getenv("AZURE_CAE_RESOURCE_GROUP")
 	jobName := os.Getenv("AZURE_CAE_JOB_NAME")
 	subID := os.Getenv("AZURE_SUBSCRIPTION_ID")
+	image := os.Getenv("AZURE_CAE_JOB_IMAGE")
 	if rg == "" || jobName == "" || subID == "" {
 		if rg != "" || jobName != "" || subID != "" {
 			slog.Warn("serve: partial Azure dispatcher config — falling back to subprocess",
@@ -316,7 +317,7 @@ func buildJobDispatcher() (cloud.JobDispatcher, error) {
 	if err != nil {
 		return nil, fmt.Errorf("arm jobs client: %w", err)
 	}
-	return cloudazure.NewContainerAppsJobDispatcher(armClient, rg, jobName), nil
+	return cloudazure.NewContainerAppsJobDispatcher(armClient, rg, jobName, image), nil
 }
 
 // buildSecretStore returns a KeyVaultStore when AZURE_KEYVAULT_URL is set;

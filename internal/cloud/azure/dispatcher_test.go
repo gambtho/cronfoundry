@@ -30,7 +30,7 @@ func (f *fakeARMClient) BeginStartExecution(ctx context.Context, resourceGroup, 
 
 func TestContainerAppsJobDispatcher_DispatchCreatesExecution(t *testing.T) {
 	fake := &fakeARMClient{}
-	d := cloudazure.NewContainerAppsJobDispatcher(fake, "rg-test", "cronfoundry-runner")
+	d := cloudazure.NewContainerAppsJobDispatcher(fake, "rg-test", "cronfoundry-runner", "ghcr.io/test/img:latest")
 
 	spec := cloud.DispatchSpec{
 		BinaryPath: "/usr/local/bin/cronfoundry",
@@ -51,7 +51,7 @@ func TestContainerAppsJobDispatcher_DispatchCreatesExecution(t *testing.T) {
 
 func TestContainerAppsJobDispatcher_HandleWait_NotImplemented(t *testing.T) {
 	fake := &fakeARMClient{}
-	d := cloudazure.NewContainerAppsJobDispatcher(fake, "rg-test", "cronfoundry-runner")
+	d := cloudazure.NewContainerAppsJobDispatcher(fake, "rg-test", "cronfoundry-runner", "ghcr.io/test/img:latest")
 	spec := cloud.DispatchSpec{BinaryPath: "/usr/local/bin/cronfoundry", Args: []string{"runner"}}
 	h, err := d.Dispatch(context.Background(), spec)
 	require.NoError(t, err)
@@ -61,7 +61,7 @@ func TestContainerAppsJobDispatcher_HandleWait_NotImplemented(t *testing.T) {
 
 func TestContainerAppsJobDispatcher_HandleKill_NotImplemented(t *testing.T) {
 	fake := &fakeARMClient{}
-	d := cloudazure.NewContainerAppsJobDispatcher(fake, "rg-test", "cronfoundry-runner")
+	d := cloudazure.NewContainerAppsJobDispatcher(fake, "rg-test", "cronfoundry-runner", "ghcr.io/test/img:latest")
 	spec := cloud.DispatchSpec{BinaryPath: "/usr/local/bin/cronfoundry", Args: []string{"runner"}}
 	h, err := d.Dispatch(context.Background(), spec)
 	require.NoError(t, err)
@@ -71,7 +71,7 @@ func TestContainerAppsJobDispatcher_HandleKill_NotImplemented(t *testing.T) {
 
 func TestContainerAppsJobDispatcher_DispatchReturnsError(t *testing.T) {
 	fake := &fakeARMClient{err: errors.New("azure: quota exceeded")}
-	d := cloudazure.NewContainerAppsJobDispatcher(fake, "rg-test", "cronfoundry-runner")
+	d := cloudazure.NewContainerAppsJobDispatcher(fake, "rg-test", "cronfoundry-runner", "ghcr.io/test/img:latest")
 	spec := cloud.DispatchSpec{BinaryPath: "/usr/local/bin/cronfoundry", Args: []string{"runner"}}
 	_, err := d.Dispatch(context.Background(), spec)
 	require.Error(t, err)

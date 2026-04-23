@@ -12,8 +12,9 @@ type JobExecution struct {
 
 // JobExecutionTemplate is the minimal shape passed to the ARM API.
 type JobExecutionTemplate struct {
-	ContainerArgs []string
-	Env           []string
+	ContainerImage string
+	ContainerArgs  []string
+	Env            []string
 }
 
 // ARMJobsClient is the testability seam over armappcontainers job execution.
