@@ -603,3 +603,76 @@ subscription with no code changes.
 - [ ] GitHub issue — F24 (no GITHUB_TOKEN)
 - [ ] `memory.md` writeback — F24 (no GITHUB_TOKEN)
 - [x] All Azure resources deleted (`az group delete --name rg-cronfoundry-p8smoke --yes --no-wait`)
+
+---
+
+## Session 3 — p9smoke (v0.7.5)
+
+| Session | Value |
+|---|---|
+| Started | 2026-04-23 |
+| Operator | `gambtho` (via Claude Code) |
+| Azure subscription | `d0ecd0d2-779b-4fd0-8f04-d46d07f05703` |
+| Resource group | `rg-cronfoundry-p9smoke` |
+| Image tag | `0.7.5` |
+| Region | `swedencentral` |
+| Result | **PASS** (with known F24 `partial_failure`) |
+
+No new code blockers found. One doc/operational issue discovered (F25).
+
+### F25 — Runbook §6 `cronfoundry.yaml` uses provider-prefixed model name
+
+**Severity:** blocker (runs fail with 404 from Anthropic API)
+**Type:** doc
+
+The runbook §6 example sets `model: gpt-4o-mini` for OpenAI, but when
+using Anthropic the natural pattern from the task prompt was
+`model: anthropic/claude-haiku-4-5-20251001`. The runner passes the
+model name verbatim to the provider SDK, and Anthropic's Messages API
+returns `404 Not Found: model: anthropic/claude-haiku-4-5-20251001`.
+The correct value is `claude-haiku-4-5-20251001` (no provider prefix).
+
+Two runs failed before this was caught; the third run succeeded after
+fixing the model name in `cronfoundry.yaml`.
+
+**Fix:** doc — clarify in §6 that `model` must be the bare model ID
+as accepted by the provider's API (e.g., `claude-haiku-4-5-20251001`
+not `anthropic/claude-haiku-4-5-20251001`). The `provider` field already
+selects the SDK; the model field should not repeat it.
+
+### Observations
+
+1. **Postgres firewall IP mismatch from WSL2 (repeat of Session 2).**
+   Same workaround: broad `0.0.0.0–255.255.255.255` firewall rule.
+
+2. **GitHub App webhook URL stale from prior session.** The webhook
+   URL still pointed to the p8smoke FQDN (now deleted). Fixed via
+   `PATCH /app/hook/config` with JWT auth. The GitHub settings page
+   update only changed homepage/callback URLs, not the webhook URL
+   which lives under a separate "Webhook" section.
+
+3. **Webhook secret not set on container app.** The initial deploy
+   does not set `CRONFOUNDRY_GITHUB_WEBHOOK_SECRET`, so webhook
+   deliveries return 503. Required a manual `az containerapp update
+   --set-env-vars` to set the secret, plus a webhook secret reset on
+   the GitHub App side via API.
+
+4. **`llm_secret_ref` wiped on each YAML sync.** After the model-name
+   fix push triggered a webhook sync, the manually-set `llm_secret_ref`
+   was cleared. Had to re-set it via `psql UPDATE` before the next
+   run-now. This is a known gap (YAML sync doesn't carry
+   `llm_secret_ref`).
+
+5. **No `auth.login` audit row.** Session forged via HMAC-SHA256 (same
+   as Session 2). All other audit rows present.
+
+### Pass/Fail Checklist
+
+- [x] Run reaches `partial_failure` with only F24 as the failure reason
+- [x] `tokens_in=39`, `tokens_out=88` populated in finalize event
+- [x] Dashboard shows 3 runs (2 failed from F25, 1 `partial_failure`)
+- [x] Audit log: `secret.create` (llm-key), `repo.connect`, 3× `schedule.run_now`
+- [ ] Slack message — not tested (no Slack destination in this config)
+- [ ] GitHub issue — F24 (no GITHUB_TOKEN)
+- [ ] `memory.md` writeback — F24 (no GITHUB_TOKEN)
+- [x] All Azure resources deleted (see below)
