@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/gambtho/cronfoundry/internal/audit"
+	"github.com/gambtho/cronfoundry/internal/config"
 	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
 )
 
@@ -32,15 +33,17 @@ type scheduleDTO struct {
 	Enabled         bool    `json:"enabled"`
 	Provider        string  `json:"provider"`
 	Model           string  `json:"model"`
-	NextFireAt      *string `json:"next_fire_at"` // ISO 8601; nil if NULL
-	AutoPauseAfter  *int32  `json:"auto_pause_after"`
-	AutoPausedAt    *string `json:"auto_paused_at"` // ISO 8601; nil if NULL
-	AutoPauseReason *string `json:"auto_pause_reason"`
-	LastEnabledAt   string  `json:"last_enabled_at"` // ISO 8601; NOT NULL
-	SkillPath       string  `json:"skill_path"`
-	SkillName       string  `json:"skill_name"`
-	Owner           string  `json:"owner"`
-	RepoName        string  `json:"repo_name"`
+	NextFireAt      *string            `json:"next_fire_at"` // ISO 8601; nil if NULL
+	AutoPauseAfter  *int32             `json:"auto_pause_after"`
+	AutoPausedAt    *string            `json:"auto_paused_at"` // ISO 8601; nil if NULL
+	AutoPauseReason *string            `json:"auto_pause_reason"`
+	LastEnabledAt   string             `json:"last_enabled_at"` // ISO 8601; NOT NULL
+	SkillPath       string             `json:"skill_path"`
+	SkillName       string             `json:"skill_name"`
+	Owner           string             `json:"owner"`
+	RepoName        string             `json:"repo_name"`
+	MaxTurns        *int32             `json:"max_turns"`
+	MCPServers      []config.MCPServer `json:"mcp_servers"`
 }
 
 // scheduleRowToDTO converts a sqlc row (pgtype-laden) into the wire shape.
@@ -73,7 +76,24 @@ func scheduleRowToDTO(r dbgen.ListSchedulesByOrgRow) scheduleDTO {
 		SkillName:       r.SkillName,
 		Owner:           r.Owner,
 		RepoName:        r.RepoName,
+		MaxTurns:        r.MaxTurns,
+		MCPServers:      mcpServers(r.SkillFrontmatterJson),
 	}
+}
+
+func mcpServers(frontmatterJSON []byte) []config.MCPServer {
+	if len(frontmatterJSON) == 0 {
+		return []config.MCPServer{}
+	}
+	var fm config.SkillFrontmatter
+	if err := json.Unmarshal(frontmatterJSON, &fm); err != nil {
+		slog.Warn("scheduleRowToDTO: failed to unmarshal skill frontmatter", "err", err)
+		return []config.MCPServer{}
+	}
+	if fm.MCPServers == nil {
+		return []config.MCPServer{}
+	}
+	return fm.MCPServers
 }
 
 type schedulesHandler struct{ deps Deps }

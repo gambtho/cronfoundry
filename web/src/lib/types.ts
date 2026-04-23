@@ -24,6 +24,12 @@ export interface Skill {
   repo_name: string
 }
 
+export interface MCPServer {
+  name: string
+  command: string
+  args: string[]
+}
+
 export interface Schedule {
   id: string
   skill_id: string
@@ -44,6 +50,8 @@ export interface Schedule {
   skill_name: string
   owner: string
   repo_name: string
+  max_turns: number | null
+  mcp_servers: MCPServer[]
 }
 
 export type RunStatus = 'pending' | 'running' | 'succeeded' | 'partial_failure' | 'failed'

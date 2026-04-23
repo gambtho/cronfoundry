@@ -271,7 +271,7 @@ func (q *Queries) ListDueSchedulesWithSha(ctx context.Context) ([]ListDueSchedul
 }
 
 const listSchedulesByOrg = `-- name: ListSchedulesByOrg :many
-SELECT s.id, s.org_id, s.skill_id, s.name, s.cron, s.timezone, s.overlap_policy, s.timeout_sec, s.enabled, s.provider, s.model, s.llm_secret_ref, s.llm_endpoint, s.llm_deployment, s.destinations_json, s.writeback_json, s.env_json, s.auto_pause_after, s.auto_paused_at, s.auto_pause_reason, s.last_enabled_at, s.mcp_env_json, s.max_turns, s.next_fire_at, s.created_at, s.updated_at, sk.path AS skill_path, sk.name AS skill_name, rc.owner, rc.name AS repo_name
+SELECT s.id, s.org_id, s.skill_id, s.name, s.cron, s.timezone, s.overlap_policy, s.timeout_sec, s.enabled, s.provider, s.model, s.llm_secret_ref, s.llm_endpoint, s.llm_deployment, s.destinations_json, s.writeback_json, s.env_json, s.auto_pause_after, s.auto_paused_at, s.auto_pause_reason, s.last_enabled_at, s.mcp_env_json, s.max_turns, s.next_fire_at, s.created_at, s.updated_at, sk.path AS skill_path, sk.name AS skill_name, sk.frontmatter_json AS skill_frontmatter_json, rc.owner, rc.name AS repo_name
 FROM schedule s
 JOIN skill sk ON sk.id = s.skill_id
 JOIN repo_connection rc ON rc.id = sk.repo_id
@@ -280,36 +280,37 @@ ORDER BY rc.owner, rc.name, sk.path, s.name
 `
 
 type ListSchedulesByOrgRow struct {
-	ID               pgtype.UUID
-	OrgID            pgtype.UUID
-	SkillID          pgtype.UUID
-	Name             string
-	Cron             string
-	Timezone         string
-	OverlapPolicy    string
-	TimeoutSec       int32
-	Enabled          bool
-	Provider         string
-	Model            string
-	LlmSecretRef     *string
-	LlmEndpoint      *string
-	LlmDeployment    *string
-	DestinationsJson []byte
-	WritebackJson    []byte
-	EnvJson          []byte
-	AutoPauseAfter   *int32
-	AutoPausedAt     pgtype.Timestamptz
-	AutoPauseReason  *string
-	LastEnabledAt    pgtype.Timestamptz
-	McpEnvJson       []byte
-	MaxTurns         *int32
-	NextFireAt       pgtype.Timestamptz
-	CreatedAt        pgtype.Timestamptz
-	UpdatedAt        pgtype.Timestamptz
-	SkillPath        string
-	SkillName        string
-	Owner            string
-	RepoName         string
+	ID                   pgtype.UUID
+	OrgID                pgtype.UUID
+	SkillID              pgtype.UUID
+	Name                 string
+	Cron                 string
+	Timezone             string
+	OverlapPolicy        string
+	TimeoutSec           int32
+	Enabled              bool
+	Provider             string
+	Model                string
+	LlmSecretRef         *string
+	LlmEndpoint          *string
+	LlmDeployment        *string
+	DestinationsJson     []byte
+	WritebackJson        []byte
+	EnvJson              []byte
+	AutoPauseAfter       *int32
+	AutoPausedAt         pgtype.Timestamptz
+	AutoPauseReason      *string
+	LastEnabledAt        pgtype.Timestamptz
+	McpEnvJson           []byte
+	MaxTurns             *int32
+	NextFireAt           pgtype.Timestamptz
+	CreatedAt            pgtype.Timestamptz
+	UpdatedAt            pgtype.Timestamptz
+	SkillPath            string
+	SkillName            string
+	SkillFrontmatterJson []byte
+	Owner                string
+	RepoName             string
 }
 
 func (q *Queries) ListSchedulesByOrg(ctx context.Context, orgID pgtype.UUID) ([]ListSchedulesByOrgRow, error) {
@@ -350,6 +351,7 @@ func (q *Queries) ListSchedulesByOrg(ctx context.Context, orgID pgtype.UUID) ([]
 			&i.UpdatedAt,
 			&i.SkillPath,
 			&i.SkillName,
+			&i.SkillFrontmatterJson,
 			&i.Owner,
 			&i.RepoName,
 		); err != nil {

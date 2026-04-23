@@ -103,6 +103,7 @@ function eventColorClass(ev: RunEvent): string {
   if (ev.event_type === 'secret.denied') return 'text-yellow-400 font-semibold'
   if (ev.event_type === 'secret.fetched') return 'text-emerald-500'
   if (ev.event_type === 'manifest.set') return 'text-sky-400'
+  if (ev.event_type.startsWith('mcp.')) return 'text-indigo-300'
   if (ev.level === 'error') return 'text-red-400'
   return 'text-gray-200'
 }
@@ -114,8 +115,27 @@ function eventName(payload: unknown): string | null {
   return typeof v === 'string' ? v : null
 }
 
+function formatMCPEvent(ev: RunEvent): string | null {
+  const p = ev.payload_json as Record<string, unknown> | null
+  switch (ev.event_type) {
+    case 'mcp.turn.start':
+      return `Turn ${p?.turn ?? '?'}`
+    case 'mcp.tool.call.ok':
+      return `${p?.tool ?? '?'} · ${p?.duration_ms ?? '?'}ms · ok`
+    case 'mcp.tool.call.fail':
+      return `${p?.tool ?? '?'} · error`
+    case 'mcp.tool.call.timeout':
+      return `${p?.tool ?? p?.error ?? '?'} · timeout`
+    case 'mcp.server.start.ok':
+      return `MCP server ${p?.server ?? '?'} ready (${p?.tool_count ?? 0} tools)`
+    default:
+      return null
+  }
+}
+
 function LogRow({ ev }: { ev: RunEvent }) {
   const [expanded, setExpanded] = useState(false)
+  const mcpLabel = ev.event_type.startsWith('mcp.') ? formatMCPEvent(ev) : null
   return (
     <div
       onClick={() => setExpanded(v => !v)}
@@ -140,6 +160,7 @@ function LogRow({ ev }: { ev: RunEvent }) {
           name={eventName(ev.payload_json)}
         </span>
       )}
+      {mcpLabel && <span className="text-indigo-200 ml-2">{mcpLabel}</span>}
       {expanded && (
         <pre
           onClick={e => e.stopPropagation()}
