@@ -7,8 +7,9 @@ import (
 
 // NewProvider returns a default-configured provider by its config name.
 // For testing with mock endpoints, call NewOpenAI/NewAnthropic directly.
-// CRONFOUNDRY_OPENAI_BASE_URL and CRONFOUNDRY_ANTHROPIC_BASE_URL override
-// the respective API endpoints (useful in tests and local development).
+// CRONFOUNDRY_OPENAI_BASE_URL, CRONFOUNDRY_ANTHROPIC_BASE_URL, and
+// CRONFOUNDRY_OPENROUTER_BASE_URL override the respective API endpoints
+// (useful in tests and local development).
 func NewProvider(name string) (Provider, error) {
 	switch name {
 	case "openai":
@@ -17,7 +18,13 @@ func NewProvider(name string) (Provider, error) {
 		return NewAnthropic(os.Getenv("CRONFOUNDRY_ANTHROPIC_BASE_URL")), nil
 	case "azure-foundry":
 		return NewAzureFoundry(), nil
+	case "openrouter":
+		base := os.Getenv("CRONFOUNDRY_OPENROUTER_BASE_URL")
+		if base == "" {
+			base = "https://openrouter.ai/api/v1"
+		}
+		return NewOpenAI(base), nil
 	default:
-		return nil, fmt.Errorf("unknown provider %q (supported: openai, anthropic, azure-foundry)", name)
+		return nil, fmt.Errorf("unknown provider %q (supported: openai, anthropic, azure-foundry, openrouter)", name)
 	}
 }
