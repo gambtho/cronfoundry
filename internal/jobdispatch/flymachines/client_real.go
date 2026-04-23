@@ -74,7 +74,7 @@ func (c *RealFlyClient) CreateMachine(ctx context.Context, req CreateMachineRequ
 	if err != nil {
 		return fmt.Errorf("flymachines: POST machines: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 300 {
 		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return fmt.Errorf("flymachines: POST machines: status %d: %s", resp.StatusCode, strings.TrimSpace(string(errBody)))
