@@ -38,6 +38,37 @@ func (p *slackPub) Publish(ctx context.Context, dest config.Destination, output 
 	if d.Text != "" {
 		text, _ = template.Render(d.Text, tctx)
 	}
-	text = ensureLen(text, slackDefaultMaxChars)
-	return postJSON(ctx, p.http, p.Type(), url, map[string]any{"text": text})
+
+	if d.Format == "text" {
+		text = ensureLen(text, slackDefaultMaxChars)
+		return postJSON(ctx, p.http, p.Type(), url, map[string]any{"text": text})
+	}
+
+	// Default: Block Kit
+	header := tctx.Skill.Name
+	if tctx.RunDate != "" {
+		header += " · " + tctx.RunDate
+	}
+	var blocks []map[string]any
+	if header != "" {
+		blocks = append(blocks, map[string]any{
+			"type": "header",
+			"text": map[string]any{"type": "plain_text", "text": ensureLen(header, 150)},
+		})
+	}
+	const blockMaxRunes = 3000
+	runes := []rune(text)
+	for len(runes) > 0 {
+		end := blockMaxRunes
+		if end > len(runes) {
+			end = len(runes)
+		}
+		chunk := string(runes[:end])
+		runes = runes[end:]
+		blocks = append(blocks, map[string]any{
+			"type": "section",
+			"text": map[string]any{"type": "mrkdwn", "text": chunk},
+		})
+	}
+	return postJSON(ctx, p.http, p.Type(), url, map[string]any{"blocks": blocks})
 }

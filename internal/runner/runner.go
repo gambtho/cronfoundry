@@ -341,13 +341,27 @@ func (r *Runner) Run(ctx context.Context, in RunInput) (RunResult, error) {
 		Schedule:  template.Meta{Name: sch.Name},
 		Skill:     template.Meta{Name: skill.Frontmatter.Name},
 	}
+	outputBlocks, remaining := memory.ExtractOutputBlocks(published)
 	dispatcher := &publish.Dispatcher{Publishers: r.deps.Publishers}
-	pubResults := dispatcher.Dispatch(ctx, sch.Destinations, published, tctx, in.Secrets)
+	pubResults := dispatcher.Dispatch(ctx, sch.Destinations, func(dest config.Destination) string {
+		outputName := ""
+		switch {
+		case dest.Slack != nil:
+			outputName = dest.Slack.Output
+		case dest.Discord != nil:
+			outputName = dest.Discord.Output
+		case dest.Teams != nil:
+			outputName = dest.Teams.Output
+		case dest.GitHubIssue != nil:
+			outputName = dest.GitHubIssue.Output
+		}
+		return selectOutputForDest(outputName, outputBlocks, remaining)
+	}, tctx, in.Secrets, true)
 	result.PublishResults = pubResults
 
 	allOK := true
 	for _, pr := range pubResults {
-		if !pr.OK {
+		if !pr.OK && !pr.Skipped {
 			allOK = false
 		}
 	}
@@ -368,6 +382,7 @@ func (r *Runner) Run(ctx context.Context, in RunInput) (RunResult, error) {
 		})
 		if err != nil {
 			writebackOK = false
+			slog.Error("writeback commit failed", "err", err, "path", sch.Writeback.Path, "run_id", runID)
 		} else {
 			result.WritebackSHA = sha
 			switch {
@@ -378,6 +393,7 @@ func (r *Runner) Run(ctx context.Context, in RunInput) (RunResult, error) {
 			default:
 				if err := writeback.New().Push(in.RepoRoot, "origin", in.GitHubUsername, in.GitHubToken); err != nil {
 					writebackOK = false
+					slog.Error("writeback push failed", "err", err, "path", sch.Writeback.Path, "run_id", runID, "sha", sha)
 				}
 			}
 		}
@@ -474,4 +490,16 @@ func toMCPCalls(in []llm.ToolUse) []mcp.ToolUse {
 		out[i] = mcp.ToolUse{ID: t.ID, Name: t.Name, Input: t.Input}
 	}
 	return out
+}
+
+// selectOutputForDest returns the named output block if name is non-empty and
+// present in blocks; otherwise returns fallback.
+func selectOutputForDest(name string, blocks map[string]string, fallback string) string {
+	if name == "" {
+		return fallback
+	}
+	if v, ok := blocks[name]; ok {
+		return v
+	}
+	return fallback
 }

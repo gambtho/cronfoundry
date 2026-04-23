@@ -11,10 +11,12 @@ import (
 
 // Result is the outcome of a single publish attempt.
 type Result struct {
-	Type   string // "github-issue" | "slack" | "discord" | "teams"
-	OK     bool
-	Err    error  // non-nil when OK == false
-	Detail string // optional context (issue URL, HTTP status, etc.)
+	Type       string // "github-issue" | "slack" | "discord" | "teams"
+	OK         bool
+	Skipped    bool   // true when the destination's when-condition was not met
+	SkipReason string // human-readable explanation when Skipped==true
+	Err        error  // non-nil when OK == false
+	Detail     string // optional context (issue URL, HTTP status, etc.)
 }
 
 // Publisher publishes a rendered output to a single destination.

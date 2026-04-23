@@ -91,6 +91,8 @@ func RegisterRoutes(mux *http.ServeMux, deps Deps) {
 	mux.Handle("POST /api/schedules/{id}/pause", adminOnly(http.HandlerFunc(sch.pause)))
 	mux.Handle("POST /api/schedules/{id}/resume", adminOnly(http.HandlerFunc(sch.resume)))
 	mux.Handle("POST /api/schedules/{id}/run-now", adminOnly(http.HandlerFunc(sch.runNow)))
+	mux.Handle("PATCH /api/schedules/{id}/overrides", adminOnly(http.HandlerFunc(sch.patchOverrides)))
+	mux.Handle("DELETE /api/schedules/{id}/overrides", adminOnly(http.HandlerFunc(sch.deleteOverrides)))
 
 	// Runs
 	rnh := &runsHandler{deps: deps}

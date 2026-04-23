@@ -1,8 +1,10 @@
 // web/src/pages/Dashboard.tsx
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { RunStatusBadge } from '../components/RunStatusBadge'
 import { relativeTime } from '../lib/time'
+import { ScheduleOverrideForm } from '../components/ScheduleOverrideForm'
 
 export default function Dashboard() {
   const qc = useQueryClient()
@@ -30,6 +32,8 @@ export default function Dashboard() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['runs'] }),
   })
 
+  const [editingSchedule, setEditingSchedule] = useState<typeof schedules[0] | null>(null)
+
   const lastRunBySchedule = Object.fromEntries(runs.map(r => [r.schedule_name, r]))
 
   if (isLoading) return <div className="text-gray-400">Loading…</div>
@@ -51,6 +55,11 @@ export default function Dashboard() {
                   <div className="text-xs text-gray-500 mt-1">
                     {s.cron} ({s.timezone})
                   </div>
+                  {s.has_ui_overrides && (
+                    <span className="inline-flex items-center rounded px-1.5 py-0.5 text-xs bg-yellow-900 text-yellow-200 mt-1">
+                      UI overrides active
+                    </span>
+                  )}
                 </div>
                 {lastRun && <RunStatusBadge status={lastRun.status} />}
               </div>
@@ -76,6 +85,12 @@ export default function Dashboard() {
                   className="text-xs px-2 py-1 rounded bg-indigo-700 hover:bg-indigo-600 text-white disabled:opacity-50"
                 >
                   Run now
+                </button>
+                <button
+                  onClick={() => setEditingSchedule(s)}
+                  className="text-xs px-2 py-1 rounded border border-gray-600 text-gray-300 hover:bg-gray-800"
+                >
+                  Edit
                 </button>
                 {s.enabled ? (
                   <button
@@ -109,6 +124,12 @@ export default function Dashboard() {
           )
         })}
       </div>
+      {editingSchedule && (
+        <ScheduleOverrideForm
+          schedule={editingSchedule}
+          onClose={() => setEditingSchedule(null)}
+        />
+      )}
     </div>
   )
 }

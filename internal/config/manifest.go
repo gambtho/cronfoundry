@@ -41,6 +41,21 @@ type Destination struct {
 	Slack       *WebhookDest     `json:"slack,omitempty"`
 	Discord     *WebhookDest     `json:"discord,omitempty"`
 	Teams       *WebhookDest     `json:"teams,omitempty"`
+	// When controls which run outcomes trigger this destination.
+	// Valid values: "always" (default), "on_success", "on_failure".
+	When string `json:"when,omitempty"`
+}
+
+// ShouldPublish returns true when the destination should fire given runSucceeded.
+func (d Destination) ShouldPublish(runSucceeded bool) bool {
+	switch d.When {
+	case "on_success":
+		return runSucceeded
+	case "on_failure":
+		return !runSucceeded
+	default: // "always" or empty
+		return true
+	}
 }
 
 type GitHubIssueDest struct {
@@ -49,6 +64,7 @@ type GitHubIssueDest struct {
 	Body      string   `json:"body,omitempty"`
 	Labels    []string `json:"labels,omitempty"`
 	Assignees []string `json:"assignees,omitempty"`
+	Output    string   `json:"output,omitempty"` // named output block to use; empty = full output
 }
 
 type WebhookDest struct {
@@ -57,6 +73,8 @@ type WebhookDest struct {
 	Content  string `json:"content,omitempty"`
 	Title    string `json:"title,omitempty"`
 	Username string `json:"username,omitempty"`
+	Format   string `json:"format,omitempty"` // "blocks" (Slack default), "text", "card" (Teams)
+	Output   string `json:"output,omitempty"` // named output block to use; empty = full output
 }
 
 type WritebackConfig struct {

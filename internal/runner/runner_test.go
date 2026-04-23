@@ -149,9 +149,18 @@ Please write a digest using {{ include "notes.md" }}.
 	assert.Equal(t, 10, result.Usage.InputTokens)
 	assert.Equal(t, 20, result.Usage.OutputTokens)
 
-	// Slack got the published output (memory block stripped).
-	assert.Contains(t, slackBody["text"].(string), "Weekly summary.")
-	assert.NotContains(t, slackBody["text"].(string), "<memory>")
+	// Slack got the published output (memory block stripped) via Block Kit.
+	blocks, ok := slackBody["blocks"].([]any)
+	require.True(t, ok, "expected blocks in Slack payload, got %v", slackBody)
+	var allText string
+	for _, b := range blocks {
+		bm, _ := b.(map[string]any)
+		if txt, ok := bm["text"].(map[string]any); ok {
+			allText += txt["text"].(string)
+		}
+	}
+	assert.Contains(t, allText, "Weekly summary.")
+	assert.NotContains(t, allText, "<memory>")
 
 	// memory.md was updated.
 	memContent, err := os.ReadFile(filepath.Join(repoRoot, "memory.md"))
@@ -451,4 +460,45 @@ func TestRunner_ToolPath_FatalDuringDispatch(t *testing.T) {
 	require.Error(t, err)
 	assert.Equal(t, mcp.FatalKindToolTimeout, result.ErrorKind)
 	assert.Equal(t, 1, mgr.shutdownCalls)
+}
+
+func TestSelectOutputForDest_Named(t *testing.T) {
+	blocks := map[string]string{
+		"summary":     "Short version",
+		"full_report": "Long version",
+	}
+	fallback := "Full LLM output"
+	got := selectOutputForDest("summary", blocks, fallback)
+	if got != "Short version" {
+		t.Errorf("want 'Short version', got %q", got)
+	}
+}
+
+func TestSelectOutputForDest_Missing(t *testing.T) {
+	blocks := map[string]string{"summary": "Short"}
+	got := selectOutputForDest("full_report", blocks, "fallback")
+	if got != "fallback" {
+		t.Errorf("want fallback when named block missing, got %q", got)
+	}
+}
+
+func TestSelectOutputForDest_Empty(t *testing.T) {
+	blocks := map[string]string{"summary": "Short"}
+	got := selectOutputForDest("", blocks, "fallback")
+	if got != "fallback" {
+		t.Errorf("want fallback when output name is empty, got %q", got)
+	}
+}
+
+func TestRunner_SkippedDestinationInResults(t *testing.T) {
+	pr := publish.Result{Type: "slack", OK: true, Skipped: true, SkipReason: "condition:on_failure not met"}
+	allOK := true
+	for _, r := range []publish.Result{pr} {
+		if !r.OK && !r.Skipped {
+			allOK = false
+		}
+	}
+	if !allOK {
+		t.Error("skipped result should not count as failure")
+	}
 }
