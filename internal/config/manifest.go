@@ -98,8 +98,8 @@ type WebhookDest struct {
 
 type HTTPDest struct {
 	URL          string            `json:"url"`
-	Method       string            `json:"method,omitempty"`        // default "POST"
-	Secret       string            `json:"secret,omitempty"`        // logical secret name; sent as Bearer token
+	Method       string            `json:"method,omitempty"` // default "POST"
+	Secret       string            `json:"secret,omitempty"` // logical secret name; sent as Bearer token
 	Headers      map[string]string `json:"headers,omitempty"`
 	BodyTemplate string            `json:"body_template,omitempty"` // Go template; default sends {"output":"<output>"}
 	Output       string            `json:"output,omitempty"`
