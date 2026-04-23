@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"net/http"
 	"strings"
@@ -73,4 +74,21 @@ func requireBearer(signer *token.Signer, pool *pgxpool.Pool) func(http.Handler) 
 func ClaimsFromContext(ctx context.Context) token.RunClaims {
 	c, _ := ctx.Value(claimsKey).(token.RunClaims)
 	return c
+}
+
+// requireBearerOrAPIKey is like requireBearer but also accepts an X-Runner-Key
+// header when runnerAPIKey is non-empty. Use for deployments (e.g. Fly.io)
+// that have no managed identity service. When runnerAPIKey is empty, only the
+// Bearer path is active (identical behavior to requireBearer).
+func requireBearerOrAPIKey(signer *token.Signer, pool *pgxpool.Pool, runnerAPIKey string) func(http.Handler) http.Handler {
+	bearerMiddleware := requireBearer(signer, pool)
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if runnerAPIKey != "" && subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Runner-Key")), []byte(runnerAPIKey)) == 1 {
+				next.ServeHTTP(w, r)
+				return
+			}
+			bearerMiddleware(next).ServeHTTP(w, r)
+		})
+	}
 }

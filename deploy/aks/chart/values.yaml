@@ -1,0 +1,24 @@
+image:
+  api: ghcr.io/cronfoundry/cronfoundry
+  tag: latest
+
+runner:
+  namespace: cronfoundry
+  image: ghcr.io/cronfoundry/cronfoundry
+  tag: latest
+  serviceAccount: cf-runner
+
+workloadIdentity:
+  clientId: ""   # Azure AD managed identity client ID for cf-runner
+
+env:
+  DATABASE_URL: ""
+  CRONFOUNDRY_MASTER_KEY: ""
+  CRONFOUNDRY_GITHUB_APP_ID: ""
+  CRONFOUNDRY_GITHUB_APP_PEM: ""
+  CRONFOUNDRY_GITHUB_OAUTH_CLIENT_ID: ""
+  CRONFOUNDRY_GITHUB_OAUTH_CLIENT_SECRET: ""
+  CRONFOUNDRY_GITHUB_WEBHOOK_SECRET: ""
+  CRONFOUNDRY_ADMIN_LOGINS: ""
+  AZURE_KEYVAULT_URL: ""
+  AZURE_CAE_JOB_IMAGE: ""

@@ -20,12 +20,13 @@ type Deps struct {
 	Signer        *token.Signer
 	Secrets       secretstore.SecretStore
 	Installations *github.InstallationCache
+	RunnerAPIKey  string // optional; when set, X-Runner-Key is accepted on /internal routes
 }
 
 // RegisterRoutes registers all /internal/* routes on mux.
 // The caller is responsible for the /healthz route and http.Server construction.
 func RegisterRoutes(mux *http.ServeMux, deps Deps) {
-	auth := requireBearer(deps.Signer, deps.Pool)
+	auth := requireBearerOrAPIKey(deps.Signer, deps.Pool, deps.RunnerAPIKey)
 
 	mux.Handle("GET /internal/runs/{id}/context", auth(runContextHandler{deps}))
 	mux.Handle("GET /internal/secrets", auth(secretsHandler{deps}))

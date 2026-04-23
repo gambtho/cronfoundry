@@ -37,7 +37,7 @@ func TestContainerAppsJobDispatcher_DispatchCreatesExecution(t *testing.T) {
 		Image:         "ghcr.io/test/img:latest",
 	})
 
-	spec := cloud.DispatchSpec{
+	spec := cloud.DispatchRequest{
 		BinaryPath: "/usr/local/bin/cronfoundry",
 		Args:       []string{"runner"},
 		Env:        []string{"RUN_ID=abc123"},
@@ -63,7 +63,7 @@ func TestContainerAppsJobDispatcher_HandleWait_NotImplemented(t *testing.T) {
 		JobName:       "cronfoundry-runner",
 		Image:         "ghcr.io/test/img:latest",
 	})
-	spec := cloud.DispatchSpec{BinaryPath: "/usr/local/bin/cronfoundry", Args: []string{"runner"}}
+	spec := cloud.DispatchRequest{BinaryPath: "/usr/local/bin/cronfoundry", Args: []string{"runner"}}
 	h, err := d.Dispatch(context.Background(), spec)
 	require.NoError(t, err)
 	require.Error(t, h.Wait())
@@ -78,7 +78,7 @@ func TestContainerAppsJobDispatcher_HandleKill_NotImplemented(t *testing.T) {
 		JobName:       "cronfoundry-runner",
 		Image:         "ghcr.io/test/img:latest",
 	})
-	spec := cloud.DispatchSpec{BinaryPath: "/usr/local/bin/cronfoundry", Args: []string{"runner"}}
+	spec := cloud.DispatchRequest{BinaryPath: "/usr/local/bin/cronfoundry", Args: []string{"runner"}}
 	h, err := d.Dispatch(context.Background(), spec)
 	require.NoError(t, err)
 	require.Error(t, h.Kill())
@@ -93,7 +93,7 @@ func TestContainerAppsJobDispatcher_DispatchReturnsError(t *testing.T) {
 		JobName:       "cronfoundry-runner",
 		Image:         "ghcr.io/test/img:latest",
 	})
-	spec := cloud.DispatchSpec{BinaryPath: "/usr/local/bin/cronfoundry", Args: []string{"runner"}}
+	spec := cloud.DispatchRequest{BinaryPath: "/usr/local/bin/cronfoundry", Args: []string{"runner"}}
 	_, err := d.Dispatch(context.Background(), spec)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "cronfoundry-runner")

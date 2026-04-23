@@ -26,7 +26,7 @@ func TestSubprocessDispatcher_RunsAndWaits(t *testing.T) {
 	require.NoError(t, err)
 
 	d := NewSubprocessDispatcher()
-	h, err := d.Dispatch(context.Background(), DispatchSpec{BinaryPath: bin})
+	h, err := d.Dispatch(context.Background(), DispatchRequest{BinaryPath: bin})
 	require.NoError(t, err)
 	require.Positive(t, h.PID())
 	require.NoError(t, h.Wait())
@@ -38,7 +38,7 @@ func TestSubprocessDispatcher_NonZeroExitSurfacesError(t *testing.T) {
 	require.NoError(t, err)
 
 	d := NewSubprocessDispatcher()
-	h, err := d.Dispatch(context.Background(), DispatchSpec{BinaryPath: bin})
+	h, err := d.Dispatch(context.Background(), DispatchRequest{BinaryPath: bin})
 	require.NoError(t, err)
 	err = h.Wait()
 	require.Error(t, err)
@@ -50,7 +50,7 @@ func TestSubprocessDispatcher_KillTerminates(t *testing.T) {
 	require.NoError(t, err)
 
 	d := NewSubprocessDispatcher()
-	h, err := d.Dispatch(context.Background(), DispatchSpec{
+	h, err := d.Dispatch(context.Background(), DispatchRequest{
 		BinaryPath: bin,
 		Args:       []string{"10"},
 	})
@@ -70,7 +70,7 @@ func TestSubprocessDispatcher_PropagatesEnv(t *testing.T) {
 	require.NoError(t, err)
 
 	d := NewSubprocessDispatcher()
-	h, err := d.Dispatch(context.Background(), DispatchSpec{
+	h, err := d.Dispatch(context.Background(), DispatchRequest{
 		BinaryPath: sh,
 		Args:       []string{"-c", `test "$CRONFOUNDRY_T5_TEST" = "hello"`},
 		Env:        []string{"CRONFOUNDRY_T5_TEST=hello"},
@@ -79,7 +79,7 @@ func TestSubprocessDispatcher_PropagatesEnv(t *testing.T) {
 	require.NoError(t, h.Wait())
 
 	// Negative: spec without the env should fail the test command.
-	h2, err := d.Dispatch(context.Background(), DispatchSpec{
+	h2, err := d.Dispatch(context.Background(), DispatchRequest{
 		BinaryPath: sh,
 		Args:       []string{"-c", `test "$CRONFOUNDRY_T5_TEST" = "hello"`},
 	})
@@ -89,7 +89,7 @@ func TestSubprocessDispatcher_PropagatesEnv(t *testing.T) {
 
 func TestSubprocessDispatcher_BadBinary(t *testing.T) {
 	d := NewSubprocessDispatcher()
-	_, err := d.Dispatch(context.Background(), DispatchSpec{
+	_, err := d.Dispatch(context.Background(), DispatchRequest{
 		BinaryPath: "/nonexistent/path/definitely/not/here",
 	})
 	require.Error(t, err)

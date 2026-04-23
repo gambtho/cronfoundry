@@ -7,8 +7,8 @@ import (
 	"context"
 )
 
-// DispatchSpec describes a single job to run.
-type DispatchSpec struct {
+// DispatchRequest describes a single job to run.
+type DispatchRequest struct {
 	// BinaryPath is the absolute path to the runner binary to execute.
 	BinaryPath string
 	// Args are passed positionally after the binary path.
@@ -34,5 +34,5 @@ type Handle interface {
 
 // JobDispatcher dispatches one-shot jobs and returns a Handle for supervision.
 type JobDispatcher interface {
-	Dispatch(ctx context.Context, spec DispatchSpec) (Handle, error)
+	Dispatch(ctx context.Context, spec DispatchRequest) (Handle, error)
 }

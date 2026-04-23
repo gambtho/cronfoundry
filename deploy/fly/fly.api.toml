@@ -1,0 +1,34 @@
+app = "cronfoundry-api"
+primary_region = "iad"
+
+[build]
+  image = "ghcr.io/cronfoundry/cronfoundry:latest"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1
+
+# Required environment variables — set via: flyctl secrets set KEY=value
+# DATABASE_URL
+# CRONFOUNDRY_MASTER_KEY          (32-byte hex key for Postgres secret store)
+# CRONFOUNDRY_RUNNER_API_KEY      (high-entropy random string shared with runner)
+# CRONFOUNDRY_GITHUB_APP_ID
+# CRONFOUNDRY_GITHUB_APP_PEM      (contents of the GitHub App private key PEM)
+# CRONFOUNDRY_GITHUB_OAUTH_CLIENT_ID
+# CRONFOUNDRY_GITHUB_OAUTH_CLIENT_SECRET
+# CRONFOUNDRY_GITHUB_WEBHOOK_SECRET
+# CRONFOUNDRY_ADMIN_LOGINS        (comma-separated GitHub logins)
+# FLY_RUNNER_APP                  (= "cronfoundry-runner")
+# FLY_RUNNER_IMAGE                (= "registry.fly.io/cronfoundry-runner:vX.Y.Z")
+# FLY_API_TOKEN
+
+[env]
+  CF_SERVE_ADDR = "0.0.0.0:8080"

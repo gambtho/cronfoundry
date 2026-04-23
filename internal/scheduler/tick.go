@@ -224,7 +224,7 @@ func dispatchRun(ctx context.Context, deps Deps, args dispatchArgs) error {
 			"api_base_url", runnerURL)
 	}
 
-	spec := cloud.DispatchSpec{
+	spec := cloud.DispatchRequest{
 		BinaryPath: deps.RunnerBinary,
 		Args:       []string{"runner", "--run-id", uuid.UUID(args.RunID.Bytes).String()},
 		Env: []string{
