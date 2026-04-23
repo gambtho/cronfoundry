@@ -1,6 +1,9 @@
 package webapi
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"log/slog"
+)
 
 // UIOverrides is the subset of schedule fields editable via the UI.
 // Pointer fields: nil means "not overridden".
@@ -15,7 +18,11 @@ type UIOverrides struct {
 // applied. HasUIOverrides is set when at least one field is overridden.
 func applyUIOverrides(dto scheduleDTO, raw []byte) scheduleDTO {
 	var ov UIOverrides
-	if err := json.Unmarshal(raw, &ov); err != nil || ov == (UIOverrides{}) {
+	if err := json.Unmarshal(raw, &ov); err != nil {
+		slog.Error("applyUIOverrides: corrupt ui_overrides_json — overrides suppressed", "schedule_id", dto.ID, "err", err)
+		return dto
+	}
+	if ov == (UIOverrides{}) {
 		return dto
 	}
 	if ov.Cron != nil {

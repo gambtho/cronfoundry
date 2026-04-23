@@ -341,7 +341,7 @@ func (r *Runner) Run(ctx context.Context, in RunInput) (RunResult, error) {
 		Schedule:  template.Meta{Name: sch.Name},
 		Skill:     template.Meta{Name: skill.Frontmatter.Name},
 	}
-	outputBlocks, _ := memory.ExtractOutputBlocks(published)
+	outputBlocks, remaining := memory.ExtractOutputBlocks(published)
 	dispatcher := &publish.Dispatcher{Publishers: r.deps.Publishers}
 	pubResults := dispatcher.Dispatch(ctx, sch.Destinations, func(dest config.Destination) string {
 		outputName := ""
@@ -355,7 +355,7 @@ func (r *Runner) Run(ctx context.Context, in RunInput) (RunResult, error) {
 		case dest.GitHubIssue != nil:
 			outputName = dest.GitHubIssue.Output
 		}
-		return selectOutputForDest(outputName, outputBlocks, published)
+		return selectOutputForDest(outputName, outputBlocks, remaining)
 	}, tctx, in.Secrets, true)
 	result.PublishResults = pubResults
 
@@ -382,6 +382,7 @@ func (r *Runner) Run(ctx context.Context, in RunInput) (RunResult, error) {
 		})
 		if err != nil {
 			writebackOK = false
+			slog.Error("writeback commit failed", "err", err, "path", sch.Writeback.Path, "run_id", runID)
 		} else {
 			result.WritebackSHA = sha
 			switch {
@@ -392,6 +393,7 @@ func (r *Runner) Run(ctx context.Context, in RunInput) (RunResult, error) {
 			default:
 				if err := writeback.New().Push(in.RepoRoot, "origin", in.GitHubUsername, in.GitHubToken); err != nil {
 					writebackOK = false
+					slog.Error("writeback push failed", "err", err, "path", sch.Writeback.Path, "run_id", runID, "sha", sha)
 				}
 			}
 		}
