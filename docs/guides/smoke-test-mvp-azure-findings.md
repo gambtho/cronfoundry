@@ -528,3 +528,24 @@ endpoint's loopback guard rejects non-local requests.
 internal self-calls) and `RunnerAPIURL` (external FQDN, for dispatch
 env var). `CRONFOUNDRY_API_BASE_URL` now only populates `RunnerAPIURL`.
 Requires v0.7.5 image tag + redeploy.
+
+## F24 — Runner has no GitHub token for issue publishing
+
+**Severity:** medium (run completes with `partial_failure`)
+**Type:** infra gap
+
+The runner container has no `GITHUB_TOKEN` env var. The `publish`
+step for `github-issue` destinations fails:
+
+```
+github-issue: no GitHub token available (set GITHUB_TOKEN)
+```
+
+The LLM invocation succeeds (input_tokens=39, output_tokens=75),
+but the GitHub issue destination cannot publish. The runner needs
+an installation token derived from the GitHub App PEM — either
+fetched at runtime via the serve API or injected as an env var
+during dispatch.
+
+**Fix:** deferred — requires design decision on how the runner
+obtains a short-lived GitHub installation token.
