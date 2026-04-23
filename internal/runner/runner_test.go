@@ -502,3 +502,90 @@ func TestRunner_SkippedDestinationInResults(t *testing.T) {
 		t.Error("skipped result should not count as failure")
 	}
 }
+
+func TestRun_SecretNotInLLMMessages(t *testing.T) {
+	// exercises the non-MCP (single-shot) path
+	repoRoot := t.TempDir()
+	repo, err := git.PlainInit(repoRoot, false)
+	require.NoError(t, err)
+
+	manifest := `
+version: 1
+skills:
+  - path: skills/check
+    schedules:
+      - name: daily
+        cron: "0 9 * * *"
+        provider: fake
+        model: fake-model
+        destinations:
+          - slack:
+              secret: slack_url
+        env:
+          API_KEY:
+            secret: my_api_key
+`
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "cronfoundry.yaml"), []byte(manifest), 0o644))
+	skillDir := filepath.Join(repoRoot, "skills/check")
+	require.NoError(t, os.MkdirAll(skillDir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("---\nname: check\n---\nCheck things.\n"), 0o644))
+
+	// Seed commit so the runner has a valid git repo.
+	w, err := repo.Worktree()
+	require.NoError(t, err)
+	_ = w.AddGlob(".")
+	_, err = w.Commit("seed", &git.CommitOptions{Author: sig()})
+	require.NoError(t, err)
+
+	slackCalled := false
+	slackSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		slackCalled = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer slackSrv.Close()
+
+	fake := &fakeProvider{response: "all good"}
+	r := New(Deps{
+		ProviderFactory: func(_ string) (llm.Provider, error) { return fake, nil },
+		Publishers:      map[string]publish.Publisher{"slack": publish.NewSlackPublisher()},
+	})
+
+	result, err := r.Run(context.Background(), RunInput{
+		RepoRoot:     repoRoot,
+		ManifestPath: "cronfoundry.yaml",
+		SkillPath:    "skills/check",
+		ScheduleName: "daily",
+		Secrets: secrets.New(map[string]string{
+			"CRONFOUNDRY_SECRET_MY_API_KEY": "super-secret-value",
+			"CRONFOUNDRY_SECRET_SLACK_URL":  slackSrv.URL,
+		}),
+		LLMAPIKey: "sk-test",
+		DryRun:    false,
+		SkipPush:  true,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, StatusSucceeded, result.Status)
+	assert.True(t, slackCalled)
+
+	for _, msg := range fake.received {
+		assert.NotContains(t, msg.Content, "super-secret-value",
+			"secret value must not appear in LLM messages")
+	}
+	var allContent string
+	for _, msg := range fake.received {
+		allContent += msg.Content + "\n"
+	}
+	assert.Contains(t, allContent, "API_KEY=[secret]")
+}
+
+func TestBuildEnvBanner_SecretRedacted(t *testing.T) {
+	env := map[string]config.EnvValue{
+		"GITHUB_TOKEN": {Secret: "github_pat"},
+		"BASE_URL":     {Literal: "https://api.example.com"},
+	}
+
+	banner := buildEnvBanner(env)
+
+	assert.Contains(t, banner, "GITHUB_TOKEN=[secret]")
+	assert.Contains(t, banner, "BASE_URL=https://api.example.com")
+}
