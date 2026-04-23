@@ -425,3 +425,37 @@ configuration to `UUID-OSSP,CITEXT` via a
 Runbook §4c gains a note that `admin init` must be run after the first
 deploy to migrate the schema and seed the org — `serve` does not
 auto-migrate.
+
+## F18 — Key Vault role too restrictive for secret writes
+
+**Severity:** blocker (secret creation via web UI returns 500)
+**Type:** code
+
+Creating a secret via `POST /api/secrets` returned
+`{"error":"failed to create secret","code":"internal"}`. The serve
+Container App's managed identity had **Key Vault Secrets User**
+(`4633458b-17de-408a-b874-0445c86b69e6`) — read-only. The Azure KV
+secret store needs write access to create/rotate secrets.
+
+**Fix:** code — `keyVault.bicep` role upgraded to **Key Vault Secrets
+Officer** (`b86a8fe4-44ce-4948-aee5-eccb2c155cd7`).
+
+## F19 — Serve identity lacks permission to start runner job
+
+**Severity:** blocker (scheduler tick always 403)
+**Type:** code
+
+Every 30 s the scheduler tried to dispatch the pending run and got:
+
+```
+AuthorizationFailed: … does not have authorization to perform action
+'Microsoft.App/jobs/start/action' over scope …/jobs/cf-runner-p7smoke2
+```
+
+The Bicep had no role assignment granting the serve identity permission
+to start the Container Apps Job.
+
+**Fix:** code — added `deploy/modules/roleAssignment.bicep` (generic
+RBAC module) and a `serveJobStartRole` call in `main.bicep` granting
+**Contributor** on the resource group to the serve principal. Contributor
+includes `Microsoft.App/jobs/start/action`.
