@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gambtho/cronfoundry/internal/config"
@@ -13,13 +14,13 @@ import (
 )
 
 type httpPub struct {
-	client *http.Client
+	http *http.Client
 }
 
 // NewHTTPPublisher returns a Publisher that POSTs (or uses the configured method)
 // to an arbitrary HTTP endpoint.
 func NewHTTPPublisher() Publisher {
-	return &httpPub{client: &http.Client{Timeout: 30 * time.Second}}
+	return &httpPub{http: &http.Client{Timeout: 30 * time.Second}}
 }
 
 func (p *httpPub) Type() string { return "http" }
@@ -36,8 +37,10 @@ func (p *httpPub) Publish(ctx context.Context, dest config.Destination, output s
 	}
 
 	var bodyBytes []byte
+	var warns []string
 	if d.BodyTemplate != "" {
-		rendered, _ := template.Render(d.BodyTemplate, tctx)
+		rendered, w := template.Render(d.BodyTemplate, tctx)
+		warns = w
 		bodyBytes = []byte(rendered)
 	} else {
 		b, err := json.Marshal(map[string]string{"output": output})
@@ -63,13 +66,17 @@ func (p *httpPub) Publish(ctx context.Context, dest config.Destination, output s
 		req.Header.Set("Authorization", "Bearer "+tok)
 	}
 
-	resp, err := p.client.Do(req)
+	resp, err := p.http.Do(req)
 	if err != nil {
 		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("http: %w", err)}
 	}
 	_ = resp.Body.Close()
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		return Result{Type: p.Type(), OK: true, Detail: fmt.Sprintf("http %d", resp.StatusCode)}
+		detail := fmt.Sprintf("http %d", resp.StatusCode)
+		if len(warns) > 0 {
+			detail += "; template warnings: " + strings.Join(warns, ", ")
+		}
+		return Result{Type: p.Type(), OK: true, Detail: detail}
 	}
 	return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("http: status %d", resp.StatusCode), Detail: fmt.Sprintf("http %d", resp.StatusCode)}
 }
