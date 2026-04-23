@@ -139,7 +139,21 @@ type EmailDest struct {
 	To             []string `json:"to"`
 	Subject        string   `json:"subject,omitempty"` // template.Render template; default below
 	Format         string   `json:"format,omitempty"`  // "html" (default) or "text"
-	Output         string   `json:"output,omitempty"`
+	Output         string   `json:"output,omitempty"`  // named output block to use; empty = full output
+}
+
+func (e *EmailDest) EffectiveSMTPPort() int {
+	if e.SMTPPort != 0 {
+		return e.SMTPPort
+	}
+	return 587
+}
+
+func (e *EmailDest) EffectiveFormat() string {
+	if e.Format != "" {
+		return e.Format
+	}
+	return "html"
 }
 
 type WritebackConfig struct {

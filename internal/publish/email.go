@@ -48,17 +48,13 @@ func (p *emailPub) Publish(ctx context.Context, dest config.Destination, output 
 		detail = "template warnings: " + strings.Join(warns, ", ")
 	}
 
-	format := d.Format
-	if format == "" {
-		format = "html"
-	}
+	format := d.EffectiveFormat()
+	port := d.EffectiveSMTPPort()
 
-	port := d.SMTPPort
-	if port == 0 {
-		port = 587
+	body, err := buildEmail(d.From, d.To, renderedSubj, output, format, tctx)
+	if err != nil {
+		return Result{Type: p.Type(), OK: false, Err: err}
 	}
-
-	body := buildEmail(d.From, d.To, renderedSubj, output, format, tctx)
 	addr := fmt.Sprintf("%s:%d", d.SMTPHost, port)
 	auth := smtp.PlainAuth("", username, password, d.SMTPHost)
 
@@ -70,7 +66,7 @@ func (p *emailPub) Publish(ctx context.Context, dest config.Destination, output 
 	return Result{Type: p.Type(), OK: true, Detail: detail}
 }
 
-func buildEmail(from string, to []string, subject, output, format string, tctx template.Context) []byte {
+func buildEmail(from string, to []string, subject, output, format string, tctx template.Context) ([]byte, error) {
 	var buf bytes.Buffer
 
 	// Write common headers
@@ -90,25 +86,40 @@ func buildEmail(from string, to []string, subject, output, format string, tctx t
 		// text/plain part
 		th := make(textproto.MIMEHeader)
 		th.Set("Content-Type", "text/plain; charset=utf-8")
-		pw, _ := mw.CreatePart(th)
-		_, _ = pw.Write([]byte(output))
+		th.Set("Content-Transfer-Encoding", "8bit")
+		pw, err := mw.CreatePart(th)
+		if err != nil {
+			return nil, fmt.Errorf("email: build plain part: %w", err)
+		}
+		if _, err := pw.Write([]byte(output)); err != nil {
+			return nil, fmt.Errorf("email: write plain part: %w", err)
+		}
 
 		// text/html part
 		hh := make(textproto.MIMEHeader)
 		hh.Set("Content-Type", "text/html; charset=utf-8")
-		hw, _ := mw.CreatePart(hh)
-		fmt.Fprintf(hw, "<html><body style=\"font-family:sans-serif;\"><h2>%s</h2><p>%s</p><pre style=\"white-space:pre-wrap;\">%s</pre></body></html>",
+		hh.Set("Content-Transfer-Encoding", "8bit")
+		hw, err := mw.CreatePart(hh)
+		if err != nil {
+			return nil, fmt.Errorf("email: build html part: %w", err)
+		}
+		if _, err := fmt.Fprintf(hw, "<html><body style=\"font-family:sans-serif;\"><h2>%s</h2><p>%s</p><pre style=\"white-space:pre-wrap;\">%s</pre></body></html>",
 			html.EscapeString(tctx.Skill.Name),
 			html.EscapeString(tctx.RunDate),
-			html.EscapeString(output))
+			html.EscapeString(output)); err != nil {
+			return nil, fmt.Errorf("email: write html part: %w", err)
+		}
 
-		mw.Close()
+		if err := mw.Close(); err != nil {
+			return nil, fmt.Errorf("email: close multipart writer: %w", err)
+		}
 		buf.Write(bodyBuf.Bytes())
 	} else {
 		fmt.Fprintf(&buf, "Content-Type: text/plain; charset=utf-8\r\n")
+		fmt.Fprintf(&buf, "Content-Transfer-Encoding: 8bit\r\n")
 		fmt.Fprintf(&buf, "\r\n")
-		buf.WriteString(output)
+		_, _ = buf.WriteString(output)
 	}
 
-	return buf.Bytes()
+	return buf.Bytes(), nil
 }

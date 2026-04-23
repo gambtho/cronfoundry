@@ -110,9 +110,16 @@ func fakeSMTPAuthFail(t *testing.T) string {
 	return ln.Addr().String()
 }
 
-func destFromAddr(addr, format, subject string) config.Destination {
-	host, portStr, _ := net.SplitHostPort(addr)
-	port, _ := strconv.Atoi(portStr)
+func destFromAddr(t *testing.T, addr, format, subject string) config.Destination {
+	t.Helper()
+	host, portStr, err := net.SplitHostPort(addr)
+	if err != nil {
+		t.Fatalf("destFromAddr: split host/port %q: %v", addr, err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		t.Fatalf("destFromAddr: parse port %q: %v", portStr, err)
+	}
 	return config.Destination{
 		Email: &config.EmailDest{
 			SMTPHost:       host,
@@ -130,7 +137,7 @@ func destFromAddr(addr, format, subject string) config.Destination {
 func TestEmailPublisher_PlainText(t *testing.T) {
 	addr, dataCh := fakeSMTP(t)
 	pub := NewEmailPublisher()
-	dest := destFromAddr(addr, "text", "Test Subject")
+	dest := destFromAddr(t, addr, "text", "Test Subject")
 	tctx := template.Context{Skill: template.Meta{Name: "MySkill"}, RunDate: "2026-04-23"}
 	secrets := mapSecrets{"user_secret": "user@example.com", "pass_secret": "secret"}
 	res := pub.Publish(context.Background(), dest, "hello world", tctx, secrets)
@@ -146,7 +153,7 @@ func TestEmailPublisher_PlainText(t *testing.T) {
 func TestEmailPublisher_HTMLFormat(t *testing.T) {
 	addr, dataCh := fakeSMTP(t)
 	pub := NewEmailPublisher()
-	dest := destFromAddr(addr, "html", "Test Subject")
+	dest := destFromAddr(t, addr, "html", "Test Subject")
 	tctx := template.Context{Skill: template.Meta{Name: "MySkill"}, RunDate: "2026-04-23"}
 	secrets := mapSecrets{"user_secret": "user@example.com", "pass_secret": "secret"}
 	res := pub.Publish(context.Background(), dest, "hello world", tctx, secrets)
@@ -168,7 +175,7 @@ func TestEmailPublisher_HTMLFormat(t *testing.T) {
 func TestEmailPublisher_SubjectTemplate(t *testing.T) {
 	addr, dataCh := fakeSMTP(t)
 	pub := NewEmailPublisher()
-	dest := destFromAddr(addr, "text", "{{ skill.name }} digest")
+	dest := destFromAddr(t, addr, "text", "{{ skill.name }} digest")
 	tctx := template.Context{Skill: template.Meta{Name: "MySkill"}, RunDate: "2026-04-23"}
 	secrets := mapSecrets{"user_secret": "user@example.com", "pass_secret": "secret"}
 	res := pub.Publish(context.Background(), dest, "hello", tctx, secrets)
@@ -184,7 +191,7 @@ func TestEmailPublisher_SubjectTemplate(t *testing.T) {
 func TestEmailPublisher_AuthFailure(t *testing.T) {
 	addr := fakeSMTPAuthFail(t)
 	pub := NewEmailPublisher()
-	dest := destFromAddr(addr, "text", "Test")
+	dest := destFromAddr(t, addr, "text", "Test")
 	tctx := template.Context{Skill: template.Meta{Name: "MySkill"}, RunDate: "2026-04-23"}
 	secrets := mapSecrets{"user_secret": "user@example.com", "pass_secret": "secret"}
 	res := pub.Publish(context.Background(), dest, "hello", tctx, secrets)
@@ -193,5 +200,58 @@ func TestEmailPublisher_AuthFailure(t *testing.T) {
 	}
 	if res.Err == nil {
 		t.Fatal("expected non-nil Err for auth failure")
+	}
+}
+
+func TestEmailPublisher_SubjectNonASCII(t *testing.T) {
+	addr, dataCh := fakeSMTP(t)
+	pub := NewEmailPublisher()
+	dest := destFromAddr(t, addr, "text", "Alert — système")
+	tctx := template.Context{Skill: template.Meta{Name: "MySkill"}, RunDate: "2026-04-23"}
+	secrets := mapSecrets{"user_secret": "user@example.com", "pass_secret": "secret"}
+	res := pub.Publish(context.Background(), dest, "body", tctx, secrets)
+	if !res.OK {
+		t.Fatalf("expected OK, got err: %v", res.Err)
+	}
+	data := <-dataCh
+	if !strings.Contains(data, "=?utf-8?") {
+		t.Errorf("expected Q-encoded subject for non-ASCII, got:\n%s", data)
+	}
+}
+
+func TestEmailPublisher_DefaultSubject(t *testing.T) {
+	addr, dataCh := fakeSMTP(t)
+	pub := NewEmailPublisher()
+	// Subject="" triggers the default "{{ skill.name }}: run {{ run.date }}" template
+	dest := destFromAddr(t, addr, "text", "")
+	tctx := template.Context{Skill: template.Meta{Name: "MySkill"}, RunDate: "2026-04-23"}
+	secrets := mapSecrets{"user_secret": "user@example.com", "pass_secret": "secret"}
+	res := pub.Publish(context.Background(), dest, "body", tctx, secrets)
+	if !res.OK {
+		t.Fatalf("expected OK, got err: %v", res.Err)
+	}
+	data := <-dataCh
+	if !strings.Contains(data, "MySkill") {
+		t.Errorf("expected skill name in default subject, got:\n%s", data)
+	}
+	if !strings.Contains(data, "2026-04-23") {
+		t.Errorf("expected run date in default subject, got:\n%s", data)
+	}
+}
+
+func TestEmailPublisher_DefaultFormat(t *testing.T) {
+	addr, dataCh := fakeSMTP(t)
+	pub := NewEmailPublisher()
+	// Format="" should default to html → multipart/alternative
+	dest := destFromAddr(t, addr, "", "Test")
+	tctx := template.Context{Skill: template.Meta{Name: "MySkill"}, RunDate: "2026-04-23"}
+	secrets := mapSecrets{"user_secret": "user@example.com", "pass_secret": "secret"}
+	res := pub.Publish(context.Background(), dest, "body", tctx, secrets)
+	if !res.OK {
+		t.Fatalf("expected OK, got err: %v", res.Err)
+	}
+	data := <-dataCh
+	if !strings.Contains(data, "multipart/alternative") {
+		t.Errorf("expected multipart/alternative for default format, got:\n%s", data)
 	}
 }
