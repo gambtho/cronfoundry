@@ -52,6 +52,7 @@ export interface Schedule {
   repo_name: string
   max_turns: number | null
   mcp_servers: MCPServer[]
+  has_ui_overrides: boolean
 }
 
 export type RunStatus = 'pending' | 'running' | 'succeeded' | 'partial_failure' | 'failed'
