@@ -369,8 +369,42 @@ skills:
 	assert.Contains(t, valErr.Error(), "max_turns must be between 0 and 2147483647")
 }
 
-func TestDestination_ShouldPublish(t *testing.T) {
-	cases := []struct {
+func TestManifest_ParseDestWithOutputAndFormat(t *testing.T) {
+	y := `
+version: 1
+skills:
+  - path: skills/test
+    schedules:
+      - name: s1
+        cron: "0 9 * * MON"
+        provider: openai
+        model: gpt-4
+        destinations:
+          - slack:
+              secret: sw
+              format: blocks
+              output: summary
+          - github-issue:
+              repo: o/r
+              output: full_report
+`
+	m, err := ParseManifest([]byte(y))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dests := m.Skills[0].Schedules[0].Destinations
+	if dests[0].Slack.Format != "blocks" {
+		t.Errorf("format: want blocks, got %q", dests[0].Slack.Format)
+	}
+	if dests[0].Slack.Output != "summary" {
+		t.Errorf("slack output: want summary, got %q", dests[0].Slack.Output)
+	}
+	if dests[1].GitHubIssue.Output != "full_report" {
+		t.Errorf("github output: want full_report, got %q", dests[1].GitHubIssue.Output)
+	}
+}
+
+func TestDestination_ShouldPublish(t *testing.T) {	cases := []struct {
 		when      string
 		succeeded bool
 		want      bool

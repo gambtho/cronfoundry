@@ -64,6 +64,7 @@ type GitHubIssueDest struct {
 	Body      string   `json:"body,omitempty"`
 	Labels    []string `json:"labels,omitempty"`
 	Assignees []string `json:"assignees,omitempty"`
+	Output    string   `json:"output,omitempty"` // named output block to use; empty = full output
 }
 
 type WebhookDest struct {
@@ -72,6 +73,8 @@ type WebhookDest struct {
 	Content  string `json:"content,omitempty"`
 	Title    string `json:"title,omitempty"`
 	Username string `json:"username,omitempty"`
+	Format   string `json:"format,omitempty"` // "blocks" (Slack default), "text", "card" (Teams)
+	Output   string `json:"output,omitempty"` // named output block to use; empty = full output
 }
 
 type WritebackConfig struct {
