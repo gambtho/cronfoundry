@@ -54,7 +54,11 @@ func (p *httpPub) Publish(ctx context.Context, dest config.Destination, output s
 	if err != nil {
 		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("http: build request: %w", err)}
 	}
-	req.Header.Set("Content-Type", "application/json")
+	// Only default Content-Type to application/json for the default JSON envelope;
+	// when a body_template is set the caller controls the content type via headers.
+	if d.BodyTemplate == "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	for k, v := range d.Headers {
 		req.Header.Set(k, v)
 	}
@@ -70,6 +74,13 @@ func (p *httpPub) Publish(ctx context.Context, dest config.Destination, output s
 	if err != nil {
 		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("http: %w", err)}
 	}
+	// Drain a bounded prefix before closing so the connection can be reused.
+	var snippet string
+	buf := make([]byte, 1024)
+	n, _ := resp.Body.Read(buf)
+	if n > 0 {
+		snippet = strings.TrimSpace(string(buf[:n]))
+	}
 	_ = resp.Body.Close()
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		detail := fmt.Sprintf("http %d", resp.StatusCode)
@@ -78,5 +89,9 @@ func (p *httpPub) Publish(ctx context.Context, dest config.Destination, output s
 		}
 		return Result{Type: p.Type(), OK: true, Detail: detail}
 	}
-	return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("http: status %d", resp.StatusCode), Detail: fmt.Sprintf("http %d", resp.StatusCode)}
+	detail := fmt.Sprintf("http %d", resp.StatusCode)
+	if snippet != "" {
+		detail += ": " + snippet
+	}
+	return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("http: status %d", resp.StatusCode), Detail: detail}
 }

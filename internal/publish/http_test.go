@@ -105,6 +105,23 @@ func TestHTTP_Publish_NonOK(t *testing.T) {
 	res := p.Publish(context.Background(), dest, "x", template.Context{}, mapSecrets{})
 
 	assert.False(t, res.OK)
+	assert.NotNil(t, res.Err)
+	assert.Contains(t, res.Detail, "http 500")
+}
+
+func TestHTTP_Publish_SecretResolveFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	p := NewHTTPPublisher()
+	dest := config.Destination{HTTP: &config.HTTPDest{URL: srv.URL, Secret: "missing"}}
+	res := p.Publish(context.Background(), dest, "x", template.Context{}, mapSecrets{})
+
+	assert.False(t, res.OK)
+	require.NotNil(t, res.Err)
+	assert.Contains(t, res.Err.Error(), "http: resolve secret")
 }
 
 func TestHTTP_Publish_CustomMethod(t *testing.T) {

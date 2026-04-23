@@ -30,8 +30,10 @@ schema changes — destinations live in `destinations_json` already.
 
 ## Implementation Order
 
-**PR 1 — Custom HTTP** (simpler, validates the plumbing pattern)  
-**PR 2 — Email** (builds on the proven pattern, adds SMTP complexity)
+Both destinations were shipped in a single PR (#28) with staged commits:
+custom HTTP plumbing first (config struct, publisher, dispatcher wiring), followed
+by Email / SMTP config, publisher, and tests. The staged-commit approach preserved
+reviewability without requiring two separate PRs.
 
 ---
 

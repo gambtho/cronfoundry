@@ -22,14 +22,14 @@ func fakeSMTP(t *testing.T) (string, <-chan string) {
 	}
 	ch := make(chan string, 1)
 	go func() {
-		defer ln.Close()
+		defer func() { _ = ln.Close() }()
 		conn, err := ln.Accept()
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		r := bufio.NewReader(conn)
-		conn.Write([]byte("220 fake ESMTP\r\n"))
+		_, _ = conn.Write([]byte("220 fake ESMTP\r\n"))
 		var dataBody strings.Builder
 		for {
 			line, err := r.ReadString('\n')
@@ -39,15 +39,15 @@ func fakeSMTP(t *testing.T) (string, <-chan string) {
 			upper := strings.ToUpper(strings.TrimSpace(line))
 			switch {
 			case strings.HasPrefix(upper, "EHLO"):
-				conn.Write([]byte("250-fake\r\n250 AUTH PLAIN\r\n"))
+				_, _ = conn.Write([]byte("250-fake\r\n250 AUTH PLAIN\r\n"))
 			case strings.HasPrefix(upper, "AUTH PLAIN"):
-				conn.Write([]byte("235 ok\r\n"))
+				_, _ = conn.Write([]byte("235 ok\r\n"))
 			case strings.HasPrefix(upper, "MAIL FROM"):
-				conn.Write([]byte("250 ok\r\n"))
+				_, _ = conn.Write([]byte("250 ok\r\n"))
 			case strings.HasPrefix(upper, "RCPT TO"):
-				conn.Write([]byte("250 ok\r\n"))
+				_, _ = conn.Write([]byte("250 ok\r\n"))
 			case upper == "DATA":
-				conn.Write([]byte("354 go\r\n"))
+				_, _ = conn.Write([]byte("354 go\r\n"))
 				// read until \r\n.\r\n
 				for {
 					dline, err := r.ReadString('\n')
@@ -59,15 +59,15 @@ func fakeSMTP(t *testing.T) (string, <-chan string) {
 					}
 					dataBody.WriteString(dline)
 				}
-				conn.Write([]byte("250 ok\r\n"))
+				_, _ = conn.Write([]byte("250 ok\r\n"))
 				ch <- dataBody.String()
 			case upper == "QUIT":
-				conn.Write([]byte("221 bye\r\n"))
+				_, _ = conn.Write([]byte("221 bye\r\n"))
 				return
 			}
 		}
 	}()
-	t.Cleanup(func() { ln.Close() })
+	t.Cleanup(func() { _ = ln.Close() })
 	return ln.Addr().String(), ch
 }
 
@@ -79,14 +79,14 @@ func fakeSMTPAuthFail(t *testing.T) string {
 		t.Fatalf("fakeSMTPAuthFail listen: %v", err)
 	}
 	go func() {
-		defer ln.Close()
+		defer func() { _ = ln.Close() }()
 		conn, err := ln.Accept()
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		r := bufio.NewReader(conn)
-		conn.Write([]byte("220 fake ESMTP\r\n"))
+		_, _ = conn.Write([]byte("220 fake ESMTP\r\n"))
 		for {
 			line, err := r.ReadString('\n')
 			if err != nil {
@@ -95,18 +95,18 @@ func fakeSMTPAuthFail(t *testing.T) string {
 			upper := strings.ToUpper(strings.TrimSpace(line))
 			switch {
 			case strings.HasPrefix(upper, "EHLO"):
-				conn.Write([]byte("250-fake\r\n250 AUTH PLAIN\r\n"))
+				_, _ = conn.Write([]byte("250-fake\r\n250 AUTH PLAIN\r\n"))
 			case strings.HasPrefix(upper, "AUTH PLAIN"):
-				conn.Write([]byte("535 auth failed\r\n"))
-				conn.Close()
+				_, _ = conn.Write([]byte("535 auth failed\r\n"))
+				_ = conn.Close()
 				return
 			case upper == "QUIT":
-				conn.Write([]byte("221 bye\r\n"))
+				_, _ = conn.Write([]byte("221 bye\r\n"))
 				return
 			}
 		}
 	}()
-	t.Cleanup(func() { ln.Close() })
+	t.Cleanup(func() { _ = ln.Close() })
 	return ln.Addr().String()
 }
 

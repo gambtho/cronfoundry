@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 
 	"sigs.k8s.io/yaml"
 )
@@ -66,6 +67,10 @@ func (d Destination) Validate() error {
 	if d.HTTP != nil {
 		if d.HTTP.URL == "" {
 			return fmt.Errorf("http destination: url required")
+		}
+		parsed, err := url.ParseRequestURI(d.HTTP.URL)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			return fmt.Errorf("http destination: invalid or unsupported URL scheme %q (must be http or https)", d.HTTP.URL)
 		}
 		if d.HTTP.Method != "" {
 			switch d.HTTP.Method {
