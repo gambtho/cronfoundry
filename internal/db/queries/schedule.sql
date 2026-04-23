@@ -140,3 +140,6 @@ SET ui_overrides_json = '{}'::jsonb,
 WHERE id = $1
   AND org_id = $2
 RETURNING *;
+
+-- name: GetScheduleByID :one
+SELECT * FROM schedule WHERE id = $1 LIMIT 1;

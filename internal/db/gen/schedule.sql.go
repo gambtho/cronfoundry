@@ -138,6 +138,45 @@ func (q *Queries) GetScheduleAutoPauseConfig(ctx context.Context, id pgtype.UUID
 	return i, err
 }
 
+const getScheduleByID = `-- name: GetScheduleByID :one
+SELECT id, org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec, enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment, destinations_json, writeback_json, env_json, auto_pause_after, auto_paused_at, auto_pause_reason, last_enabled_at, mcp_env_json, max_turns, copilot_token_refs_json, next_fire_at, created_at, updated_at FROM schedule WHERE id = $1 LIMIT 1
+`
+
+func (q *Queries) GetScheduleByID(ctx context.Context, id pgtype.UUID) (Schedule, error) {
+	row := q.db.QueryRow(ctx, getScheduleByID, id)
+	var i Schedule
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.SkillID,
+		&i.Name,
+		&i.Cron,
+		&i.Timezone,
+		&i.OverlapPolicy,
+		&i.TimeoutSec,
+		&i.Enabled,
+		&i.Provider,
+		&i.Model,
+		&i.LlmSecretRef,
+		&i.LlmEndpoint,
+		&i.LlmDeployment,
+		&i.DestinationsJson,
+		&i.WritebackJson,
+		&i.EnvJson,
+		&i.AutoPauseAfter,
+		&i.AutoPausedAt,
+		&i.AutoPauseReason,
+		&i.LastEnabledAt,
+		&i.McpEnvJson,
+		&i.MaxTurns,
+		&i.CopilotTokenRefsJson,
+		&i.NextFireAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getScheduleForTrigger = `-- name: GetScheduleForTrigger :one
 SELECT s.id       AS schedule_id,
        s.org_id,
