@@ -160,7 +160,11 @@ func UpsertSkillsAndSchedules(
 
 			var copilotRefsJSON []byte
 			if sch.Provider == "copilot-enterprise" && sch.CopilotPrefix != "" {
-				copilotRefsJSON, _ = json.Marshal(map[string]string{"prefix": sch.CopilotPrefix})
+				// Schema mirrors webapi.CopilotTokenRefsJSON{Prefix}; keep in sync if fields are added.
+				copilotRefsJSON, err = json.Marshal(map[string]string{"prefix": sch.CopilotPrefix})
+				if err != nil {
+					return fmt.Errorf("sync: marshal copilot refs for %q/%q: %w", entry.Path, sch.Name, err)
+				}
 			}
 
 			if _, err := q.UpsertSchedule(ctx, dbgen.UpsertScheduleParams{

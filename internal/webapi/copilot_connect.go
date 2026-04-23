@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +24,7 @@ type copilotConnectResponse struct {
 type copilotDeviceState struct {
 	prefix    string
 	expiresAt time.Time
+	// interval is intentionally omitted; the UI is responsible for its own polling cadence.
 }
 
 type copilotConnectHandler struct {
@@ -45,9 +47,13 @@ func (h *copilotConnectHandler) startFlow(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	body := strings.NewReader("client_id=cronfoundry&scope=copilot")
-	httpReq, _ := http.NewRequestWithContext(r.Context(),
+	body := strings.NewReader("client_id=" + copilotClientID + "&scope=copilot")
+	httpReq, err := http.NewRequestWithContext(r.Context(),
 		http.MethodPost, h.githubBase()+"/login/device/code", body)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to build GitHub request", "internal")
+		return
+	}
 	httpReq.Header.Set("Accept", "application/json")
 	httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
@@ -73,6 +79,15 @@ func (h *copilotConnectHandler) startFlow(w http.ResponseWriter, r *http.Request
 		expiresAt: time.Now().Add(time.Duration(ghResp.ExpiresIn) * time.Second),
 	}
 	h.mu.Unlock()
+
+	// Evict the flow entry once the device code expires, in case the user
+	// never calls poll (browser closed, network drop, etc.).
+	deviceCode := ghResp.DeviceCode
+	time.AfterFunc(time.Duration(ghResp.ExpiresIn+5)*time.Second, func() {
+		h.mu.Lock()
+		delete(h.flows, deviceCode)
+		h.mu.Unlock()
+	})
 
 	writeJSON(w, http.StatusOK, copilotConnectResponse{
 		DeviceCode:      ghResp.DeviceCode,
@@ -101,10 +116,18 @@ func (h *copilotConnectHandler) poll(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body := strings.NewReader(
-		"client_id=cronfoundry&device_code=" + deviceCode + "&grant_type=urn:ietf:params:oauth:grant-type:device_code")
-	req, _ := http.NewRequestWithContext(r.Context(),
-		http.MethodPost, h.githubBase()+"/login/oauth/access_token", body)
+	params := url.Values{
+		"client_id":   {copilotClientID},
+		"device_code": {deviceCode},
+		"grant_type":  {"urn:ietf:params:oauth:grant-type:device_code"},
+	}
+	req, err := http.NewRequestWithContext(r.Context(),
+		http.MethodPost, h.githubBase()+"/login/oauth/access_token",
+		strings.NewReader(params.Encode()))
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to build GitHub request", "internal")
+		return
+	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
@@ -125,6 +148,8 @@ func (h *copilotConnectHandler) poll(w http.ResponseWriter, r *http.Request) {
 	case "":
 		// success — fall through
 	case "authorization_pending", "slow_down":
+		// slow_down means GitHub wants us to back off; we return pending and rely
+		// on the UI's fixed 5-second cadence (acceptable at current scale).
 		writeJSON(w, http.StatusOK, map[string]any{"status": "pending"})
 		return
 	default:

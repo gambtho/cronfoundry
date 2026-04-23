@@ -136,6 +136,9 @@ func runRunnerHTTP(ctx context.Context, runIDFlag string) error {
 		if err != nil {
 			return failRun(ctx, client, runID, "copilot_token_refresh", err)
 		}
+		if copilotToken.AccessToken == "" {
+			return failRun(ctx, client, runID, "copilot_token_refresh", fmt.Errorf("received empty access_token"))
+		}
 		llmAPIKey = copilotToken.AccessToken
 	}
 
@@ -478,14 +481,14 @@ func (c *apiClient) PostWritebackPush(ctx context.Context, runID, commitSHA, rep
 	return c.do(ctx, http.MethodPost, "/internal/runs/"+url.PathEscape(runID)+"/writeback-push", body, nil)
 }
 
-// CopilotTokenResponse is returned by GET /internal/runs/{id}/copilot-token.
-type CopilotTokenResponse struct {
+// copilotTokenResponse is returned by GET /internal/runs/{id}/copilot-token.
+type copilotTokenResponse struct {
 	AccessToken string `json:"access_token"`
 	ExpiresAt   string `json:"expires_at"`
 }
 
-func (c *apiClient) GetCopilotToken(ctx context.Context, runID string) (*CopilotTokenResponse, error) {
-	var out CopilotTokenResponse
+func (c *apiClient) GetCopilotToken(ctx context.Context, runID string) (*copilotTokenResponse, error) {
+	var out copilotTokenResponse
 	if err := c.do(ctx, http.MethodGet, "/internal/runs/"+url.PathEscape(runID)+"/copilot-token", nil, &out); err != nil {
 		return nil, err
 	}

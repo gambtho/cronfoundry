@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -62,6 +64,7 @@ func (h *copilotTokenHandler) get(w http.ResponseWriter, r *http.Request) {
 
 	accessToken, expiresAt, err := ResolveCopilotToken(r.Context(), h.deps.Secrets, refs.Prefix, nil)
 	if err != nil {
+		slog.Error("copilot token resolve failed", "run_id", r.PathValue("id"), "error", err)
 		writeErr(w, http.StatusServiceUnavailable, "copilot token refresh failed", "copilot_token_refresh")
 		return
 	}
@@ -84,7 +87,10 @@ func ResolveCopilotToken(ctx context.Context, store secretstore.SecretStore, pre
 		return "", time.Time{}, fmt.Errorf("read expiry: %w", err)
 	}
 
-	expiryUnix, _ := strconv.ParseInt(expiryStr, 10, 64)
+	expiryUnix, err := strconv.ParseInt(expiryStr, 10, 64)
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("parse expiry %q: %w", expiryStr, err)
+	}
 	expiry := time.Unix(expiryUnix, 0)
 
 	if time.Until(expiry) >= 60*time.Second {
@@ -106,8 +112,15 @@ func ResolveCopilotToken(ctx context.Context, store secretstore.SecretStore, pre
 		tokenURL = strings.TrimRight(*githubOverrideURL, "/") + "/login/oauth/access_token"
 	}
 
-	body := strings.NewReader("client_id=cronfoundry&grant_type=refresh_token&refresh_token=" + refreshTok)
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, body)
+	params := url.Values{
+		"client_id":     {copilotClientID},
+		"grant_type":    {"refresh_token"},
+		"refresh_token": {refreshTok},
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, strings.NewReader(params.Encode()))
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("build refresh request: %w", err)
+	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
@@ -122,8 +135,11 @@ func ResolveCopilotToken(ctx context.Context, store secretstore.SecretStore, pre
 	}
 
 	var tokenResp githubTokenResponse
-	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil || tokenResp.AccessToken == "" {
-		return "", time.Time{}, fmt.Errorf("refresh: invalid response from GitHub")
+	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+		return "", time.Time{}, fmt.Errorf("refresh: malformed JSON from GitHub: %w", err)
+	}
+	if tokenResp.AccessToken == "" {
+		return "", time.Time{}, fmt.Errorf("refresh: GitHub returned no access_token (refresh token may be expired)")
 	}
 
 	newExpiry := time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)

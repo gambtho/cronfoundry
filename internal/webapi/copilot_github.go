@@ -1,5 +1,9 @@
 package webapi
 
+// copilotClientID is the OAuth client identifier sent in all GitHub device-flow
+// and token-refresh requests. Must match the registered GitHub OAuth App.
+const copilotClientID = "cronfoundry"
+
 // githubDeviceCodeResponse is the JSON from POST /login/device/code.
 type githubDeviceCodeResponse struct {
 	DeviceCode      string `json:"device_code"`
