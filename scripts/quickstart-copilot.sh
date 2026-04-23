@@ -59,3 +59,31 @@ fi
 ok "bicep $BICEP_VER"
 
 ok "All prerequisites satisfied"
+
+# ── Step 2: az login ──────────────────────────────────────────────────────────
+header "[step 2/17] Azure login"
+if az account show &>/dev/null; then
+  CURRENT_ACCOUNT=$(az account show --query '[name, id]' -o tsv | tr '\t' ' / ')
+  ok "Already logged in: $CURRENT_ACCOUNT"
+else
+  info "Running az login..."
+  az login
+fi
+
+# ── Step 3: subscription ──────────────────────────────────────────────────────
+header "[step 3/17] Select subscription"
+if [[ -z "${CF_SUBSCRIPTION_ID:-}" ]]; then
+  az account list --query '[].{Name:name, ID:id}' -o table
+  read -rp "Enter subscription ID or name: " CF_SUBSCRIPTION_ID
+  az account set --subscription "$CF_SUBSCRIPTION_ID"
+  save CF_SUBSCRIPTION_ID "$CF_SUBSCRIPTION_ID"
+fi
+ok "Subscription: $CF_SUBSCRIPTION_ID"
+
+# ── Step 4: clone check ───────────────────────────────────────────────────────
+header "[step 4/17] Verify cronfoundry clone"
+if [[ ! -f "deploy/main.bicep" ]]; then
+  die "Run this script from inside a cronfoundry clone.\n  git clone https://github.com/gambtho/cronfoundry && cd cronfoundry\nSee §4 of $GUIDE_URL"
+fi
+REPO_ROOT=$(git rev-parse --show-toplevel)
+ok "Repo root: $REPO_ROOT"
