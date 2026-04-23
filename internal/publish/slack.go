@@ -56,15 +56,15 @@ func (p *slackPub) Publish(ctx context.Context, dest config.Destination, output 
 			"text": map[string]any{"type": "plain_text", "text": ensureLen(header, 150)},
 		})
 	}
-	const blockMax = 3000
-	for len(text) > 0 {
-		chunk := text
-		if len(chunk) > blockMax {
-			chunk = text[:blockMax]
-			text = text[blockMax:]
-		} else {
-			text = ""
+	const blockMaxRunes = 3000
+	runes := []rune(text)
+	for len(runes) > 0 {
+		end := blockMaxRunes
+		if end > len(runes) {
+			end = len(runes)
 		}
+		chunk := string(runes[:end])
+		runes = runes[end:]
 		blocks = append(blocks, map[string]any{
 			"type": "section",
 			"text": map[string]any{"type": "mrkdwn", "text": chunk},
