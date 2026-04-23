@@ -422,15 +422,11 @@ func buildEnvBanner(env map[string]config.EnvValue, s *secrets.Resolver) (string
 	sortStrings(keys)
 	for _, k := range keys {
 		v := env[k]
-		val := v.Literal
 		if v.Secret != "" {
-			resolved, err := s.Get(v.Secret)
-			if err != nil {
-				return "", fmt.Errorf("env %s: %w", k, err)
-			}
-			val = resolved
+			fmt.Fprintf(&b, "%s=[secret]\n", k)
+			continue
 		}
-		fmt.Fprintf(&b, "%s=%s\n", k, val)
+		fmt.Fprintf(&b, "%s=%s\n", k, v.Literal)
 	}
 	b.WriteString("</env>")
 	return b.String(), nil

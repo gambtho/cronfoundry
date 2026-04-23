@@ -502,3 +502,20 @@ func TestRunner_SkippedDestinationInResults(t *testing.T) {
 		t.Error("skipped result should not count as failure")
 	}
 }
+
+func TestBuildEnvBanner_SecretRedacted(t *testing.T) {
+	env := map[string]config.EnvValue{
+		"GITHUB_TOKEN": {Secret: "github_pat"},
+		"BASE_URL":     {Literal: "https://api.example.com"},
+	}
+	r := secrets.New(map[string]string{
+		"CRONFOUNDRY_SECRET_GITHUB_PAT": "ghp_supersecret",
+	})
+
+	banner, err := buildEnvBanner(env, r)
+	require.NoError(t, err)
+
+	assert.Contains(t, banner, "GITHUB_TOKEN=[secret]")
+	assert.Contains(t, banner, "BASE_URL=https://api.example.com")
+	assert.NotContains(t, banner, "ghp_supersecret")
+}
