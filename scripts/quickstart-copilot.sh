@@ -126,3 +126,72 @@ if [[ -z "${CF_GITHUB_PEM_PATH:-}" ]]; then
   save CF_GITHUB_PEM_PATH "$CF_GITHUB_PEM_PATH"
 fi
 ok "GitHub App credentials collected"
+
+# ── Step 6: skill repo ────────────────────────────────────────────────────────
+header "[step 6/17] Skill repo"
+if [[ -z "${CF_SKILL_REPO:-}" ]]; then
+  read -rp "Skill repo (owner/repo, e.g. acme/cronfoundry-skills): " CF_SKILL_REPO
+  save CF_SKILL_REPO "$CF_SKILL_REPO"
+fi
+if [[ -z "${CF_INSTALLATION_ID:-}" ]]; then
+  read -rp "GitHub App Installation ID (number from the install URL): " CF_INSTALLATION_ID
+  save CF_INSTALLATION_ID "$CF_INSTALLATION_ID"
+fi
+ok "Skill repo: $CF_SKILL_REPO (installation $CF_INSTALLATION_ID)"
+
+# ── Step 7: reports repo ──────────────────────────────────────────────────────
+header "[step 7/17] Reports repo"
+if [[ -z "${CF_REPORTS_REPO:-}" ]]; then
+  read -rp "Reports repo (owner/repo, e.g. acme/cronfoundry-reports): " CF_REPORTS_REPO
+  save CF_REPORTS_REPO "$CF_REPORTS_REPO"
+fi
+ok "Reports repo: $CF_REPORTS_REPO"
+
+# ── Step 8: master key ────────────────────────────────────────────────────────
+header "[step 8/17] Generate master key"
+if [[ -z "${CF_MASTER_KEY:-}" ]]; then
+  CF_MASTER_KEY=$(openssl rand -base64 32)
+  save CF_MASTER_KEY "$CF_MASTER_KEY"
+  warn "SAVE THIS KEY -- if lost, encrypted secrets are unrecoverable."
+  echo "  Master key: $CF_MASTER_KEY"
+fi
+ok "Master key ready"
+
+# ── Step 9: env suffix ────────────────────────────────────────────────────────
+header "[step 9/17] Environment suffix"
+if [[ -z "${CF_ENV:-}" ]]; then
+  read -rp "Env suffix (<=10 chars, default: copilot1): " CF_ENV
+  CF_ENV="${CF_ENV:-copilot1}"
+  save CF_ENV "$CF_ENV"
+fi
+warn "Key Vault soft-delete retains the name 'cf-kv-${CF_ENV}' for 7 days after teardown."
+warn "Re-runs after teardown need a new suffix (e.g. copilot2)."
+ok "Env: $CF_ENV"
+
+# ── Step 10: region ───────────────────────────────────────────────────────────
+header "[step 10/17] Region"
+if [[ -z "${CF_REGION:-}" ]]; then
+  read -rp "Azure region (default: swedencentral): " CF_REGION
+  CF_REGION="${CF_REGION:-swedencentral}"
+  save CF_REGION "$CF_REGION"
+fi
+info "Note: Postgres Flexible Server offer restrictions vary by subscription."
+info "swedencentral is known-good for Microsoft-internal subs. See §10 of $GUIDE_URL"
+ok "Region: $CF_REGION"
+
+# ── Step 11: image tag ────────────────────────────────────────────────────────
+header "[step 11/17] Image tag"
+if [[ -z "${CF_IMAGE_TAG:-}" ]]; then
+  CF_IMAGE_TAG=$(curl -fsSL "https://api.github.com/repos/gambtho/cronfoundry/releases/latest" \
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'].lstrip('v'))" 2>/dev/null || echo "latest")
+  save CF_IMAGE_TAG "$CF_IMAGE_TAG"
+fi
+ok "Image tag: $CF_IMAGE_TAG"
+
+# ── Step 12: postgres password ────────────────────────────────────────────────
+header "[step 12/17] Generate Postgres password"
+if [[ -z "${CF_PG_PASSWORD:-}" ]]; then
+  CF_PG_PASSWORD=$(openssl rand -base64 18 | tr -dc 'A-Za-z0-9' | head -c24)
+  save CF_PG_PASSWORD "$CF_PG_PASSWORD"
+fi
+ok "Postgres password generated (saved to state file)"
