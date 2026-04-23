@@ -478,3 +478,24 @@ DNS-1123 label.
 
 **Fix:** code — set `Name: &"runner"` on the container. Requires
 v0.7.2 image tag + redeploy.
+
+## F21 — Job execution template missing container image
+
+**Severity:** blocker (dispatch returns 400 after F20 fix)
+**Type:** code + infra
+
+After deploying v0.7.2 (F20 fix), dispatch returned:
+
+```
+ContainerAppImageRequired: Container with name 'runner' must have an
+'Image' property specified.
+```
+
+When overriding the Container Apps Job execution template, Azure
+requires re-specifying the `Image` even though the job definition
+already sets it. `toARMTemplate()` did not populate `Image`.
+
+**Fix:** code — added `ContainerImage` to `JobExecutionTemplate`,
+set `Image` on `JobExecutionContainer` in `toARMTemplate()`. Added
+`AZURE_CAE_JOB_IMAGE` env var to `containerApp.bicep` and read in
+`serve.go`. Requires v0.7.3 image tag + redeploy.
