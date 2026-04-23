@@ -181,6 +181,7 @@ func processOne(
 		OrgID:      sched.OrgID,
 		TimeoutSec: sched.TimeoutSec,
 		SecretRefs: config.CollectSecretRefs(sched.DestinationsJson, sched.EnvJson, sched.LlmSecretRef),
+		InstallID:  sched.InstallID,
 	}); err != nil {
 		return err
 	}
@@ -197,6 +198,7 @@ type dispatchArgs struct {
 	OrgID      pgtype.UUID
 	TimeoutSec int32
 	SecretRefs []string
+	InstallID  int64
 }
 
 // dispatchRun signs a JWT for the run, persists its hash, dispatches the
@@ -272,9 +274,12 @@ func dispatchRun(ctx context.Context, deps Deps, args dispatchArgs) error {
 func dispatchPending(ctx context.Context, deps Deps, stats *Stats) error {
 	rows, err := deps.Pool.Query(ctx, `
 		SELECT r.id, r.org_id,
-		       s.timeout_sec, s.destinations_json, s.env_json, s.llm_secret_ref
+		       s.timeout_sec, s.destinations_json, s.env_json, s.llm_secret_ref,
+		       rc.github_app_install_id
 		FROM run r
 		JOIN schedule s ON s.id = r.schedule_id
+		JOIN skill sk ON sk.id = s.skill_id
+		JOIN repo_connection rc ON rc.id = sk.repo_id
 		WHERE r.status = 'pending'
 		  AND s.enabled = true
 		  AND (
@@ -303,17 +308,20 @@ func dispatchPending(ctx context.Context, deps Deps, stats *Stats) error {
 		OrgID      pgtype.UUID
 		TimeoutSec int32
 		SecretRefs []string
+		InstallID  int64
 	}
 	var pending []pendingRow
 	for rows.Next() {
 		var r pendingRow
 		var destsJSON, envJSON []byte
 		var llmRef *string
-		if err := rows.Scan(&r.ID, &r.OrgID, &r.TimeoutSec, &destsJSON, &envJSON, &llmRef); err != nil {
+		var installID int64
+		if err := rows.Scan(&r.ID, &r.OrgID, &r.TimeoutSec, &destsJSON, &envJSON, &llmRef, &installID); err != nil {
 			slog.Error("scheduler: dispatchPending: scan failed", "err", err)
 			continue
 		}
 		r.SecretRefs = config.CollectSecretRefs(destsJSON, envJSON, llmRef)
+		r.InstallID = installID
 		pending = append(pending, r)
 	}
 	if err := rows.Err(); err != nil {
@@ -326,6 +334,7 @@ func dispatchPending(ctx context.Context, deps Deps, stats *Stats) error {
 			OrgID:      r.OrgID,
 			TimeoutSec: r.TimeoutSec,
 			SecretRefs: r.SecretRefs,
+			InstallID:  r.InstallID,
 		}); err != nil {
 			slog.Error("scheduler: dispatchPending: dispatch failed",
 				"run_id", uuid.UUID(r.ID.Bytes).String(),

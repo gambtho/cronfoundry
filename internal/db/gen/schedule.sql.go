@@ -272,9 +272,11 @@ func (q *Queries) ListDueSchedules(ctx context.Context) ([]Schedule, error) {
 
 const listDueSchedulesWithSha = `-- name: ListDueSchedulesWithSha :many
 SELECT s.id, s.org_id, s.skill_id, s.name, s.cron, s.timezone, s.overlap_policy, s.timeout_sec, s.enabled, s.provider, s.model, s.llm_secret_ref, s.llm_endpoint, s.llm_deployment, s.destinations_json, s.writeback_json, s.env_json, s.auto_pause_after, s.auto_paused_at, s.auto_pause_reason, s.last_enabled_at, s.mcp_env_json, s.ui_overrides_json, s.max_turns, s.copilot_token_refs_json, s.next_fire_at, s.created_at, s.updated_at,
-       sk.current_sha AS skill_sha
+       sk.current_sha AS skill_sha,
+       rc.github_app_install_id AS install_id
 FROM schedule s
 JOIN skill sk ON sk.id = s.skill_id
+JOIN repo_connection rc ON rc.id = sk.repo_id
 WHERE s.enabled = true
   AND s.next_fire_at IS NOT NULL
   AND s.next_fire_at <= now()
@@ -311,10 +313,12 @@ type ListDueSchedulesWithShaRow struct {
 	CreatedAt        pgtype.Timestamptz
 	UpdatedAt        pgtype.Timestamptz
 	SkillSha         string
+	InstallID        int64
 }
 
 // Like ListDueSchedules but joins the skill to include current_sha so
 // the scheduler can set it on the new run row without a second query.
+// Also joins repo_connection for the installation ID needed at dispatch.
 func (q *Queries) ListDueSchedulesWithSha(ctx context.Context) ([]ListDueSchedulesWithShaRow, error) {
 	rows, err := q.db.Query(ctx, listDueSchedulesWithSha)
 	if err != nil {
@@ -354,6 +358,7 @@ func (q *Queries) ListDueSchedulesWithSha(ctx context.Context) ([]ListDueSchedul
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.SkillSha,
+			&i.InstallID,
 		); err != nil {
 			return nil, err
 		}
