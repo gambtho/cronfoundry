@@ -30,7 +30,7 @@ type SkillWritebackFrontmatter struct {
 type MCPServer struct {
 	Name    string   `json:"name"`
 	Command string   `json:"command"`
-	Args    []string `json:"args,omitempty"`
+	Args    []string `json:"args"`
 }
 
 var fence = []byte("---")

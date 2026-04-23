@@ -84,9 +84,20 @@ type RunResult struct {
 	FinishedAt     time.Time
 }
 
+// EventType identifies a structured runner event.
+type EventType string
+
+const (
+	EventMCPServerStartOK  EventType = "mcp.server.start.ok"
+	EventMCPTurnStart      EventType = "mcp.turn.start"
+	EventMCPToolCallOK     EventType = "mcp.tool.call.ok"
+	EventMCPToolCallFail   EventType = "mcp.tool.call.fail"
+	EventMCPToolCallTimeout EventType = "mcp.tool.call.timeout"
+)
+
 // RunEvent is a structured event the runner emits during execution.
 type RunEvent struct {
-	Type    string
+	Type    EventType
 	Payload map[string]any
 }
 
@@ -203,13 +214,16 @@ func (r *Runner) Run(ctx context.Context, in RunInput) (RunResult, error) {
 		defer mgr.Shutdown()
 
 		for _, s := range in.MCPServers {
-			env := resolveServerEnv(s.Name, in.MCPEnv, in.Secrets)
+			env, err := resolveServerEnv(s.Name, in.MCPEnv, in.Secrets)
+			if err != nil {
+				return failWithKind(&result, "mcp_env_resolve", err, r.deps.Now)
+			}
 			if err := mgr.Start(s.Name, s.Command, s.Args, env); err != nil {
 				return failWithKind(&result, "mcp_server_start_failed", err, r.deps.Now)
 			}
 			toolCount := len(mgr.Tools(s.Name))
 			r.deps.EventSink(RunEvent{
-				Type:    "mcp.server.start.ok",
+				Type:    EventMCPServerStartOK,
 				Payload: map[string]any{"server": s.Name, "tool_count": toolCount},
 			})
 		}
@@ -236,7 +250,7 @@ func (r *Runner) Run(ctx context.Context, in RunInput) (RunResult, error) {
 
 		for turn := 1; turn <= maxTurns; turn++ {
 			r.deps.EventSink(RunEvent{
-				Type:    "mcp.turn.start",
+				Type:    EventMCPTurnStart,
 				Payload: map[string]any{"turn": turn},
 			})
 			tr, err := toolProvider.ChatTurn(ctx, messages, tools, llm.CallOptions{
@@ -269,18 +283,19 @@ func (r *Runner) Run(ctx context.Context, in RunInput) (RunResult, error) {
 			}
 			results, fatal := mgr.DispatchAll(ctx, mcpCalls, perToolTimeout)
 			if fatal != nil {
-				if fatal.Kind == "mcp_tool_timeout" {
-					r.deps.EventSink(RunEvent{
-						Type:    "mcp.tool.call.timeout",
-						Payload: map[string]any{"error": fatal.Err.Error()},
-					})
-				}
+				// Emit an event for every fatal kind so the UI log shows what happened
+				// before the run terminates. Timeout and server crash are the two most
+				// common; the event type carries the kind for forward-compat.
+				r.deps.EventSink(RunEvent{
+					Type:    "mcp.fatal." + EventType(fatal.Kind),
+					Payload: map[string]any{"error": fatal.Err.Error()},
+				})
 				return failWithKind(&result, fatal.Kind, fatal.Err, r.deps.Now)
 			}
 			for _, cr := range results {
-				evType := "mcp.tool.call.ok"
+				evType := EventMCPToolCallOK
 				if cr.IsError {
-					evType = "mcp.tool.call.fail"
+					evType = EventMCPToolCallFail
 				}
 				r.deps.EventSink(RunEvent{
 					Type: evType,
@@ -433,22 +448,23 @@ func resolveMaxTurns(fromSchedule, fromSkill int) int {
 	return DefaultMaxTurns
 }
 
-func resolveServerEnv(name string, mcpEnv map[string]map[string]config.EnvValue, s *secrets.Resolver) []string {
+func resolveServerEnv(name string, mcpEnv map[string]map[string]config.EnvValue, s *secrets.Resolver) ([]string, error) {
 	if mcpEnv == nil {
-		return nil
+		return nil, nil
 	}
 	var env []string
 	for k, v := range mcpEnv[name] {
 		if v.Secret != "" && s != nil {
 			val, err := s.Get(v.Secret)
-			if err == nil {
-				env = append(env, k+"="+val)
+			if err != nil {
+				return nil, fmt.Errorf("mcp server %s env %s: %w", name, k, err)
 			}
+			env = append(env, k+"="+val)
 		} else {
 			env = append(env, k+"="+v.Literal)
 		}
 	}
-	return env
+	return env, nil
 }
 
 func toMCPCalls(in []llm.ToolUse) []mcp.ToolUse {

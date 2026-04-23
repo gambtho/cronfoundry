@@ -185,15 +185,20 @@ func runRunnerHTTP(ctx context.Context, runIDFlag string) error {
 			"teams":        publish.NewTeamsPublisher(),
 		},
 		EventSink: func(e runner.RunEvent) {
-			_ = client.PostEvents(ctx, runID, []event{{
-				Type:    e.Type,
+			if err := client.PostEvents(ctx, runID, []event{{
+				Type:    string(e.Type),
 				Level:   "info",
 				Payload: e.Payload,
-			}})
+			}}); err != nil {
+				slog.Warn("post mcp event failed", "run_id", runID, "event_type", e.Type, "err", err)
+			}
 		},
 	})
 
-	mcpServers, mcpEnv, maxTurns := parseMCPConfig(runCtx)
+	mcpServers, mcpEnv, maxTurns, err := parseMCPConfig(runCtx)
+	if err != nil {
+		return failRun(ctx, client, runID, "config_parse", err)
+	}
 
 	result, runErr := r.Run(ctx, runner.RunInput{
 		RepoRoot:      cloneDir,
@@ -499,17 +504,21 @@ func (c *apiClient) do(ctx context.Context, method, path string, body, decodeInt
 	return nil
 }
 
-func parseMCPConfig(rc runContext) ([]config.MCPServer, map[string]map[string]config.EnvValue, int) {
+func parseMCPConfig(rc runContext) ([]config.MCPServer, map[string]map[string]config.EnvValue, int, error) {
 	var fm struct {
 		MCPServers []config.MCPServer `json:"mcp_servers"`
 	}
 	if len(rc.Frontmatter) > 0 {
-		_ = json.Unmarshal(rc.Frontmatter, &fm)
+		if err := json.Unmarshal(rc.Frontmatter, &fm); err != nil {
+			return nil, nil, 0, fmt.Errorf("unmarshal frontmatter: %w", err)
+		}
 	}
 
 	var mcpEnv map[string]map[string]config.EnvValue
 	if len(rc.MCPEnv) > 0 {
-		_ = json.Unmarshal(rc.MCPEnv, &mcpEnv)
+		if err := json.Unmarshal(rc.MCPEnv, &mcpEnv); err != nil {
+			return nil, nil, 0, fmt.Errorf("unmarshal mcp_env: %w", err)
+		}
 	}
 
 	var maxTurns int
@@ -517,5 +526,5 @@ func parseMCPConfig(rc runContext) ([]config.MCPServer, map[string]map[string]co
 		maxTurns = int(*rc.MaxTurns)
 	}
 
-	return fm.MCPServers, mcpEnv, maxTurns
+	return fm.MCPServers, mcpEnv, maxTurns, nil
 }

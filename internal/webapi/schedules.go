@@ -22,10 +22,61 @@ var runNowClient = &http.Client{Timeout: 30 * time.Second}
 
 type schedulesHandler struct{ deps Deps }
 
+// scheduleListItem is the explicit wire shape for GET /api/schedules.
+// An explicit struct (rather than embedding the sqlc row) prevents raw []byte
+// columns and pgtype fields from leaking into the JSON response.
 type scheduleListItem struct {
-	dbgen.ListSchedulesByOrgRow
-	MCPServers []config.MCPServer `json:"mcp_servers"`
-	MaxTurns   *int32             `json:"max_turns"`
+	ID            string             `json:"id"`
+	SkillID       string             `json:"skill_id"`
+	Name          string             `json:"name"`
+	Cron          string             `json:"cron"`
+	Timezone      string             `json:"timezone"`
+	OverlapPolicy string             `json:"overlap_policy"`
+	TimeoutSec    int32              `json:"timeout_sec"`
+	Enabled       bool               `json:"enabled"`
+	Provider      string             `json:"provider"`
+	Model         string             `json:"model"`
+	NextFireAt    *string            `json:"next_fire_at"`
+	SkillPath     string             `json:"skill_path"`
+	SkillName     string             `json:"skill_name"`
+	Owner         string             `json:"owner"`
+	RepoName      string             `json:"repo_name"`
+	MaxTurns      *int32             `json:"max_turns"`
+	MCPServers    []config.MCPServer `json:"mcp_servers"`
+}
+
+func rowToListItem(row dbgen.ListSchedulesByOrgRow) scheduleListItem {
+	item := scheduleListItem{
+		ID:            uuid.UUID(row.ID.Bytes).String(),
+		SkillID:       uuid.UUID(row.SkillID.Bytes).String(),
+		Name:          row.Name,
+		Cron:          row.Cron,
+		Timezone:      row.Timezone,
+		OverlapPolicy: row.OverlapPolicy,
+		TimeoutSec:    row.TimeoutSec,
+		Enabled:       row.Enabled,
+		Provider:      row.Provider,
+		Model:         row.Model,
+		SkillPath:     row.SkillPath,
+		SkillName:     row.SkillName,
+		Owner:         row.Owner,
+		RepoName:      row.RepoName,
+		MaxTurns:      row.MaxTurns,
+		MCPServers:    []config.MCPServer{},
+	}
+	if row.NextFireAt.Valid {
+		s := row.NextFireAt.Time.UTC().Format(time.RFC3339)
+		item.NextFireAt = &s
+	}
+	if len(row.SkillFrontmatterJson) > 0 {
+		var fm config.SkillFrontmatter
+		if err := json.Unmarshal(row.SkillFrontmatterJson, &fm); err != nil {
+			slog.Warn("failed to unmarshal skill frontmatter", "schedule_id", item.ID, "err", err)
+		} else if fm.MCPServers != nil {
+			item.MCPServers = fm.MCPServers
+		}
+	}
+	return item
 }
 
 func (h *schedulesHandler) list(w http.ResponseWriter, r *http.Request) {
@@ -41,19 +92,7 @@ func (h *schedulesHandler) list(w http.ResponseWriter, r *http.Request) {
 	}
 	items := make([]scheduleListItem, len(rows))
 	for i, row := range rows {
-		var fm config.SkillFrontmatter
-		if len(row.SkillFrontmatterJson) > 0 {
-			_ = json.Unmarshal(row.SkillFrontmatterJson, &fm)
-		}
-		servers := fm.MCPServers
-		if servers == nil {
-			servers = []config.MCPServer{}
-		}
-		items[i] = scheduleListItem{
-			ListSchedulesByOrgRow: row,
-			MCPServers:            servers,
-			MaxTurns:              row.MaxTurns,
-		}
+		items[i] = rowToListItem(row)
 	}
 	writeJSON(w, http.StatusOK, items)
 }
