@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cronfoundry-api
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cronfoundry-api
+  template:
+    metadata:
+      labels:
+        app: cronfoundry-api
+    spec:
+      containers:
+        - name: api
+          image: {{ printf "%s:%s" .Values.image.api .Values.image.tag | quote }}
+          args: ["serve"]
+          envFrom:
+            - configMapRef:
+                name: cronfoundry-env
+          env:
+            {{- range $k, $v := .Values.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+          ports:
+            - containerPort: 8080

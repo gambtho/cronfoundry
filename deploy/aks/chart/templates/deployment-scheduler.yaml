@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cronfoundry-scheduler
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cronfoundry-scheduler
+  template:
+    metadata:
+      labels:
+        app: cronfoundry-scheduler
+    spec:
+      containers:
+        - name: scheduler
+          image: {{ printf "%s:%s" .Values.image.api .Values.image.tag | quote }}
+          args: ["serve"]
+          envFrom:
+            - configMapRef:
+                name: cronfoundry-env
+          env:
+            {{- range $k, $v := .Values.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}

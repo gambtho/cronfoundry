@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cronfoundry-env
+  namespace: {{ .Release.Namespace }}
+data:
+  K8S_RUNNER_NAMESPACE: {{ .Values.runner.namespace | quote }}
+  K8S_RUNNER_IMAGE: {{ printf "%s:%s" .Values.runner.image .Values.runner.tag | quote }}
+  K8S_RUNNER_SERVICE_ACCOUNT: {{ .Values.runner.serviceAccount | quote }}

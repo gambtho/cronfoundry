@@ -1,0 +1,14 @@
+app = "cronfoundry-runner"
+primary_region = "iad"
+
+[build]
+  image = "ghcr.io/cronfoundry/cronfoundry:latest"
+
+# This app has no persistent processes — it exists only so Fly Machines
+# can be spawned from the registered image. Do not deploy it as a service.
+# Use: flyctl deploy --no-ha --strategy=immediate (to register the image)
+
+[[vm]]
+  memory = "1gb"
+  cpu_kind = "shared"
+  cpus = 1
