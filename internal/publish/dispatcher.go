@@ -67,6 +67,8 @@ func destType(d config.Destination) (string, error) {
 		return "teams", nil
 	case d.HTTP != nil:
 		return "http", nil
+	case d.Email != nil:
+		return "email", nil
 	}
 	return "", fmt.Errorf("destination entry has no recognised type")
 }
