@@ -11,6 +11,7 @@ import Secrets from './pages/Secrets'
 import Users from './pages/Users'
 import Audit from './pages/Audit'
 import Login from './pages/Login'
+import Providers from './pages/Providers'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -32,6 +33,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="/secrets" element={<Secrets />} />
             <Route path="/users" element={<Users />} />
             <Route path="/audit" element={<Audit />} />
+            <Route path="/providers" element={<Providers />} />
           </Route>
         </Routes>
       </BrowserRouter>
