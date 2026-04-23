@@ -342,10 +342,8 @@ func buildJobDispatcher() (cloud.JobDispatcher, error) {
 	image := os.Getenv("AZURE_CAE_JOB_IMAGE")
 	if rg == "" || jobName == "" || subID == "" {
 		if rg != "" || jobName != "" || subID != "" {
-			slog.Warn("serve: partial Azure dispatcher config — falling back to subprocess",
-				"AZURE_CAE_RESOURCE_GROUP_set", rg != "",
-				"AZURE_CAE_JOB_NAME_set", jobName != "",
-				"AZURE_SUBSCRIPTION_ID_set", subID != "")
+			return nil, fmt.Errorf("partial Azure dispatcher config: AZURE_CAE_RESOURCE_GROUP=%v AZURE_CAE_JOB_NAME=%v AZURE_SUBSCRIPTION_ID=%v — all three are required",
+				rg != "", jobName != "", subID != "")
 		}
 		return cloud.NewSubprocessDispatcher(), nil
 	}

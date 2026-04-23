@@ -5,7 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
+	"time"
 )
 
 const flyMachinesBaseURL = "https://api.machines.dev/v1"
@@ -22,7 +25,7 @@ func NewRealFlyClient(apiToken string) *RealFlyClient {
 	return &RealFlyClient{
 		apiToken: apiToken,
 		baseURL:  flyMachinesBaseURL,
-		http:     &http.Client{},
+		http:     &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
@@ -73,7 +76,8 @@ func (c *RealFlyClient) CreateMachine(ctx context.Context, req CreateMachineRequ
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 300 {
-		return fmt.Errorf("flymachines: POST machines: unexpected status %d", resp.StatusCode)
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("flymachines: POST machines: status %d: %s", resp.StatusCode, strings.TrimSpace(string(errBody)))
 	}
 	return nil
 }

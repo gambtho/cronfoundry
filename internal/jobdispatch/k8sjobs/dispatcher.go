@@ -5,7 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/gambtho/cronfoundry/internal/cloud"
 )
@@ -56,7 +57,7 @@ var _ cloud.JobDispatcher = (*Dispatcher)(nil)
 // Dispatch creates a K8s Job and returns immediately. The returned Handle
 // has PID()=0 and Wait()/Kill() not implemented (observe via kubectl/k8s API).
 func (d *Dispatcher) Dispatch(ctx context.Context, req cloud.DispatchRequest) (cloud.Handle, error) {
-	name := fmt.Sprintf("cf-runner-%d", time.Now().UnixMilli())
+	name := fmt.Sprintf("cf-runner-%s", uuid.New().String())
 	spec := JobSpec{
 		Name:           name,
 		Namespace:      d.cfg.Namespace,

@@ -4,7 +4,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
+
+	"github.com/google/uuid"
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -51,7 +52,7 @@ func (c *RealK8sClient) CreateJob(ctx context.Context, spec JobSpec) error {
 
 	name := spec.Name
 	if name == "" {
-		name = fmt.Sprintf("cf-runner-%d", time.Now().UnixMilli())
+		name = fmt.Sprintf("cf-runner-%s", uuid.New().String())
 	}
 	job := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{

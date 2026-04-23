@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/subtle"
 	"errors"
 	"net/http"
 	"strings"
@@ -83,7 +84,7 @@ func requireBearerOrAPIKey(signer *token.Signer, pool *pgxpool.Pool, runnerAPIKe
 	bearerMiddleware := requireBearer(signer, pool)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if runnerAPIKey != "" && r.Header.Get("X-Runner-Key") == runnerAPIKey {
+			if runnerAPIKey != "" && subtle.ConstantTimeCompare([]byte(r.Header.Get("X-Runner-Key")), []byte(runnerAPIKey)) == 1 {
 				next.ServeHTTP(w, r)
 				return
 			}
