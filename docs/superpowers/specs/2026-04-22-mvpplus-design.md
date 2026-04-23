@@ -22,7 +22,7 @@ and names the subsequent phases for sequencing context.
 |-------|----------|------|
 | **mvpplus-1** | UI schedule edits (F6), conditional routing (F5), rich formatting (F4) | Core UX polish for solo engineers |
 | **mvpplus-2** | Additional destinations: email, PagerDuty, custom HTTP (F8) | Widen "fits my stack" reach |
-| **mvpplus-3** | KV-proxy sidecar (F9), image signing / SBOM (F13) | Production hardening |
+| **mvpplus-3** | Pluggable secret backends + LLM prompt redaction (F9), image signing / SBOM (F13) | Production hardening |
 | **Fully deferred** | SSO/Entra (F7), Helm/AKS (F10), multi-cloud (F11), hosted SaaS (F12) | Different buyer / different business case |
 
 ---
