@@ -168,8 +168,8 @@ func TestEmailPublisher_HTMLFormat(t *testing.T) {
 	if !strings.Contains(data, "text/html") {
 		t.Errorf("expected text/html in data, got:\n%s", data)
 	}
-	if !strings.Contains(data, "<h2>MySkill</h2>") {
-		t.Errorf("expected <h2>MySkill</h2> in HTML part, got:\n%s", data)
+	if !strings.Contains(data, "<h2>MySkill — 2026-04-23</h2>") {
+		t.Errorf("expected <h2>MySkill — 2026-04-23</h2> in HTML part, got:\n%s", data)
 	}
 }
 

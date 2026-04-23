@@ -105,7 +105,7 @@ func buildEmail(from string, to []string, subject, output, format string, tctx t
 		if err != nil {
 			return nil, fmt.Errorf("email: build html part: %w", err)
 		}
-		if _, err := fmt.Fprintf(hw, "<html><body style=\"font-family:sans-serif;\"><h2>%s</h2><p>%s</p><pre style=\"white-space:pre-wrap;\">%s</pre></body></html>",
+		if _, err := fmt.Fprintf(hw, "<html><body style=\"font-family:sans-serif;\"><h2>%s — %s</h2><pre style=\"white-space:pre-wrap;\">%s</pre></body></html>",
 			html.EscapeString(tctx.Skill.Name),
 			html.EscapeString(tctx.RunDate),
 			html.EscapeString(output)); err != nil {
