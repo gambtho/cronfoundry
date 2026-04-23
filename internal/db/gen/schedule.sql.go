@@ -43,7 +43,7 @@ SET ui_overrides_json = '{}'::jsonb,
     updated_at        = now()
 WHERE id = $1
   AND org_id = $2
-RETURNING id, org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec, enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment, destinations_json, writeback_json, env_json, auto_pause_after, auto_paused_at, auto_pause_reason, last_enabled_at, mcp_env_json, ui_overrides_json, max_turns, next_fire_at, created_at, updated_at
+RETURNING id, org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec, enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment, destinations_json, writeback_json, env_json, auto_pause_after, auto_paused_at, auto_pause_reason, last_enabled_at, mcp_env_json, ui_overrides_json, max_turns, copilot_token_refs_json, next_fire_at, created_at, updated_at
 `
 
 type ClearScheduleOverridesParams struct {
@@ -79,6 +79,7 @@ func (q *Queries) ClearScheduleOverrides(ctx context.Context, arg ClearScheduleO
 		&i.McpEnvJson,
 		&i.UiOverridesJson,
 		&i.MaxTurns,
+		&i.CopilotTokenRefsJson,
 		&i.NextFireAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -514,6 +515,7 @@ func (q *Queries) SetScheduleEnabled(ctx context.Context, arg SetScheduleEnabled
 		&i.McpEnvJson,
 		&i.UiOverridesJson,
 		&i.MaxTurns,
+		&i.CopilotTokenRefsJson,
 		&i.NextFireAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -527,7 +529,7 @@ SET ui_overrides_json = $2::jsonb,
     updated_at        = now()
 WHERE id = $1
   AND org_id = $3
-RETURNING id, org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec, enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment, destinations_json, writeback_json, env_json, auto_pause_after, auto_paused_at, auto_pause_reason, last_enabled_at, mcp_env_json, ui_overrides_json, max_turns, next_fire_at, created_at, updated_at
+RETURNING id, org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec, enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment, destinations_json, writeback_json, env_json, auto_pause_after, auto_paused_at, auto_pause_reason, last_enabled_at, mcp_env_json, ui_overrides_json, max_turns, copilot_token_refs_json, next_fire_at, created_at, updated_at
 `
 
 type SetScheduleOverridesParams struct {
