@@ -78,6 +78,7 @@ func main() {
 					"slack":        publish.NewSlackPublisher(),
 					"discord":      publish.NewDiscordPublisher(),
 					"teams":        publish.NewTeamsPublisher(),
+					"http":         publish.NewHTTPPublisher(),
 				},
 			})
 
