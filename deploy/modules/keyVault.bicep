@@ -8,8 +8,8 @@ param softDeleteRetentionDays int = 7
 @description('GitHub App private key (PEM). Seeded into the vault as secret "github-app-pem" so the serve Container App can resolve its Key Vault secret reference at creation time. Pass empty string only if you plan to az keyvault secret set before the Container App is deployed.')
 param githubAppPem string = ''
 
-// Key Vault Secrets User built-in role
-var kvSecretsUserRoleId = '4633458b-17de-408a-b874-0445c86b69e6'
+// Key Vault Secrets Officer — the serve app creates secrets via the web UI
+var kvSecretsOfficerRoleId = 'b86a8fe4-44ce-4948-aee5-eccb2c155cd7'
 
 resource kv 'Microsoft.KeyVault/vaults@2023-07-01' = {
   name: name
@@ -31,10 +31,10 @@ resource kv 'Microsoft.KeyVault/vaults@2023-07-01' = {
 }
 
 resource kvServeRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(kv.id, cfServePrincipalId, kvSecretsUserRoleId)
+  name: guid(kv.id, cfServePrincipalId, kvSecretsOfficerRoleId)
   scope: kv
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', kvSecretsUserRoleId)
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', kvSecretsOfficerRoleId)
     principalId: cfServePrincipalId
     principalType: 'ServicePrincipal'
   }
