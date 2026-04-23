@@ -39,6 +39,21 @@ func (mockHandle) PID() int    { return 42 }
 func (mockHandle) Wait() error { return nil }
 func (mockHandle) Kill() error { return nil }
 
+// mockInstalls records Token calls; returns a canned token or error.
+type mockInstalls struct {
+	token string
+	err   error
+	calls []int64
+	mu    sync.Mutex
+}
+
+func (m *mockInstalls) Token(_ context.Context, installID int64) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.calls = append(m.calls, installID)
+	return m.token, m.err
+}
+
 func seedDueSchedule(t *testing.T, pool *pgxpool.Pool, overlapPolicy string) pgtype.UUID {
 	t.Helper()
 	ctx := context.Background()
@@ -339,20 +354,6 @@ func TestInsertRun_ConflictReturnsExistingRow(t *testing.T) {
 	assert.False(t, second.Inserted, "second call should report Inserted=false")
 	assert.Equal(t, first.ID, second.ID, "conflict resolution must return the original row")
 	assert.Equal(t, "sha-1", second.SkillSha, "existing row's content must not be clobbered")
-}
-
-type mockInstalls struct {
-	token string
-	err   error
-	calls []int64
-	mu    sync.Mutex
-}
-
-func (m *mockInstalls) Token(_ context.Context, installID int64) (string, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.calls = append(m.calls, installID)
-	return m.token, m.err
 }
 
 func TestTick_NoDueSchedules(t *testing.T) {

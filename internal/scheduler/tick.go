@@ -333,13 +333,11 @@ func dispatchPending(ctx context.Context, deps Deps, stats *Stats) error {
 		var r pendingRow
 		var destsJSON, envJSON []byte
 		var llmRef *string
-		var installID int64
-		if err := rows.Scan(&r.ID, &r.OrgID, &r.TimeoutSec, &destsJSON, &envJSON, &llmRef, &installID); err != nil {
+		if err := rows.Scan(&r.ID, &r.OrgID, &r.TimeoutSec, &destsJSON, &envJSON, &llmRef, &r.InstallID); err != nil {
 			slog.Error("scheduler: dispatchPending: scan failed", "err", err)
 			continue
 		}
 		r.SecretRefs = config.CollectSecretRefs(destsJSON, envJSON, llmRef)
-		r.InstallID = installID
 		pending = append(pending, r)
 	}
 	if err := rows.Err(); err != nil {
