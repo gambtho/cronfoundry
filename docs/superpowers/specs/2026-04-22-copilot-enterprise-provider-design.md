@@ -116,7 +116,7 @@ case "copilot-enterprise":
     return NewCopilotEnterprise(), nil
 ```
 
-**config/manifest.go** `provider:` field accepts `copilot-enterprise` as a valid value (validated in JSON schema).
+**config/manifest.go** `provider:` field accepts `copilot-enterprise` as a valid value (validated in JSON schema). A new optional `copilot_prefix` field on `Schedule` specifies which stored connection to use; required when `provider = copilot-enterprise`, ignored otherwise.
 
 **pricing.go** gains a `copilot-enterprise` entry with zero cost-per-token. Token counts are recorded from the API usage field as normal; `cost_cents` is 0. The UI run detail page shows "Included in Copilot subscription" instead of a cost figure when provider is `copilot-enterprise`.
 
@@ -178,4 +178,10 @@ No other schema changes.
         - slack: { secret: standup_webhook }
 ```
 
-No additional fields needed in the YAML — the token is resolved automatically at run time from the stored KV refs.
+A `copilot_prefix` field selects which stored connection to use:
+
+```yaml
+      copilot_prefix: copilot   # matches the prefix chosen during device flow
+```
+
+This field is required when `provider: copilot-enterprise`; the API returns a validation error at webhook-sync time if it is missing. Multiple schedules may reference the same prefix, or different prefixes if the org has multiple Copilot connections. The prefix is stored as part of `copilot_token_refs_json` on the schedule row.
