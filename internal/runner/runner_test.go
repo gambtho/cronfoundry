@@ -453,6 +453,34 @@ func TestRunner_ToolPath_FatalDuringDispatch(t *testing.T) {
 	assert.Equal(t, 1, mgr.shutdownCalls)
 }
 
+func TestSelectOutputForDest_Named(t *testing.T) {
+	blocks := map[string]string{
+		"summary":     "Short version",
+		"full_report": "Long version",
+	}
+	fallback := "Full LLM output"
+	got := selectOutputForDest("summary", blocks, fallback)
+	if got != "Short version" {
+		t.Errorf("want 'Short version', got %q", got)
+	}
+}
+
+func TestSelectOutputForDest_Missing(t *testing.T) {
+	blocks := map[string]string{"summary": "Short"}
+	got := selectOutputForDest("full_report", blocks, "fallback")
+	if got != "fallback" {
+		t.Errorf("want fallback when named block missing, got %q", got)
+	}
+}
+
+func TestSelectOutputForDest_Empty(t *testing.T) {
+	blocks := map[string]string{"summary": "Short"}
+	got := selectOutputForDest("", blocks, "fallback")
+	if got != "fallback" {
+		t.Errorf("want fallback when output name is empty, got %q", got)
+	}
+}
+
 func TestRunner_SkippedDestinationInResults(t *testing.T) {
 	pr := publish.Result{Type: "slack", OK: true, Skipped: true, SkipReason: "condition:on_failure not met"}
 	allOK := true
