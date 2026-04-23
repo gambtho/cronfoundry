@@ -57,7 +57,7 @@ func scheduleRowToDTO(r dbgen.ListSchedulesByOrgRow) scheduleDTO {
 		s := t.Time.Format(time.RFC3339Nano)
 		return &s
 	}
-	return scheduleDTO{
+	dto := scheduleDTO{
 		ID:              uuid.UUID(r.ID.Bytes).String(),
 		SkillID:         uuid.UUID(r.SkillID.Bytes).String(),
 		Name:            r.Name,
@@ -80,6 +80,7 @@ func scheduleRowToDTO(r dbgen.ListSchedulesByOrgRow) scheduleDTO {
 		MaxTurns:        r.MaxTurns,
 		MCPServers:      mcpServers(r.SkillFrontmatterJson),
 	}
+	return applyUIOverrides(dto, r.UiOverridesJson)
 }
 
 func mcpServers(frontmatterJSON []byte) []config.MCPServer {
