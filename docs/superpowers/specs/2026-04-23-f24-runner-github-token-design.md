@@ -27,7 +27,7 @@ in the runner container's env vars.
 
 ### 1. Scheduler gets access to `InstallationCache`
 
-Add an `Installations` field to `internal/scheduler/deps.go` (the
+Add an `Installations` field to `internal/scheduler/tick.go` (the
 `github.InstallationCache` already exists and is used by the clone-url,
 writeback-push, and repo-sync paths). Wire it in `cmd/cronfoundry/serve.go`.
 
