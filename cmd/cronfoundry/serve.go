@@ -77,10 +77,7 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 	oauthClientID := os.Getenv(envOAuthClientID)
 	oauthClientSecret := os.Getenv(envOAuthClientSecret)
 	adminLoginsRaw := os.Getenv(envAdminLogins)
-	apiBaseURL := os.Getenv("CRONFOUNDRY_API_BASE_URL")
-	if apiBaseURL == "" {
-		apiBaseURL = "http://" + addr
-	}
+	runnerAPIURL := os.Getenv("CRONFOUNDRY_API_BASE_URL")
 	if oauthClientID == "" {
 		return fmt.Errorf("%s is required", envOAuthClientID)
 	}
@@ -212,7 +209,7 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 		ViewerLogins:      viewerLogins,
 		Queries:           q,
 		Secrets:           store,
-		APIBaseURL:        apiBaseURL,
+		APIBaseURL:        "http://" + addr,
 		WebhookSecret:     []byte(os.Getenv(envWebhookSecret)),
 		Syncer:            poller,
 	})
@@ -236,7 +233,8 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 		Pool:         pool,
 		Signer:       signer,
 		Dispatcher:   dispatcher,
-		APIBaseURL:   apiBaseURL,
+		APIBaseURL:   "http://" + addr,
+		RunnerAPIURL: runnerAPIURL,
 		RunnerBinary: self,
 	}
 
