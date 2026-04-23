@@ -513,3 +513,18 @@ a separate Container Apps Job container and cannot reach `0.0.0.0:8080`.
 override in `serve.go`. Bicep sets it to
 `https://<app-name>.<cae-default-domain>` using the CAE `defaultDomain`
 output. Requires v0.7.4 image tag + redeploy.
+
+## F23 — Run-now fails: APIBaseURL dual-purpose conflict
+
+**Severity:** blocker (run-now returns 403 after F22 fix)
+**Type:** code
+
+F22 set `CRONFOUNDRY_API_BASE_URL` to the external FQDN, which
+`serve.go` used for both the runner callback URL and the webapi's
+internal self-call to `/internal/schedules/{id}/run-now`. The trigger
+endpoint's loopback guard rejects non-local requests.
+
+**Fix:** code — separated into `APIBaseURL` (always loopback, for
+internal self-calls) and `RunnerAPIURL` (external FQDN, for dispatch
+env var). `CRONFOUNDRY_API_BASE_URL` now only populates `RunnerAPIURL`.
+Requires v0.7.5 image tag + redeploy.
