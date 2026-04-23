@@ -183,6 +183,7 @@ func runRunnerHTTP(ctx context.Context, runIDFlag string) error {
 			"slack":        publish.NewSlackPublisher(),
 			"discord":      publish.NewDiscordPublisher(),
 			"teams":        publish.NewTeamsPublisher(),
+			"http":         publish.NewHTTPPublisher(),
 		},
 		EventSink: func(e runner.RunEvent) {
 			if err := client.PostEvents(ctx, runID, []event{{
