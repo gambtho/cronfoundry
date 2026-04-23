@@ -149,9 +149,18 @@ Please write a digest using {{ include "notes.md" }}.
 	assert.Equal(t, 10, result.Usage.InputTokens)
 	assert.Equal(t, 20, result.Usage.OutputTokens)
 
-	// Slack got the published output (memory block stripped).
-	assert.Contains(t, slackBody["text"].(string), "Weekly summary.")
-	assert.NotContains(t, slackBody["text"].(string), "<memory>")
+	// Slack got the published output (memory block stripped) via Block Kit.
+	blocks, ok := slackBody["blocks"].([]any)
+	require.True(t, ok, "expected blocks in Slack payload, got %v", slackBody)
+	var allText string
+	for _, b := range blocks {
+		bm, _ := b.(map[string]any)
+		if txt, ok := bm["text"].(map[string]any); ok {
+			allText += txt["text"].(string)
+		}
+	}
+	assert.Contains(t, allText, "Weekly summary.")
+	assert.NotContains(t, allText, "<memory>")
 
 	// memory.md was updated.
 	memContent, err := os.ReadFile(filepath.Join(repoRoot, "memory.md"))
