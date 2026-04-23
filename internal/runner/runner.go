@@ -347,7 +347,7 @@ func (r *Runner) Run(ctx context.Context, in RunInput) (RunResult, error) {
 
 	allOK := true
 	for _, pr := range pubResults {
-		if !pr.OK {
+		if !pr.OK && !pr.Skipped {
 			allOK = false
 		}
 	}

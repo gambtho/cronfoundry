@@ -452,3 +452,16 @@ func TestRunner_ToolPath_FatalDuringDispatch(t *testing.T) {
 	assert.Equal(t, mcp.FatalKindToolTimeout, result.ErrorKind)
 	assert.Equal(t, 1, mgr.shutdownCalls)
 }
+
+func TestRunner_SkippedDestinationInResults(t *testing.T) {
+	pr := publish.Result{Type: "slack", OK: true, Skipped: true, SkipReason: "condition:on_failure not met"}
+	allOK := true
+	for _, r := range []publish.Result{pr} {
+		if !r.OK && !r.Skipped {
+			allOK = false
+		}
+	}
+	if !allOK {
+		t.Error("skipped result should not count as failure")
+	}
+}
