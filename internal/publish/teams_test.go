@@ -15,6 +15,46 @@ import (
 	"github.com/gambtho/cronfoundry/internal/template"
 )
 
+func TestTeamsPublisher_RichCard(t *testing.T) {
+	var gotBody map[string]any
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewDecoder(r.Body).Decode(&gotBody)
+		w.WriteHeader(200)
+	}))
+	defer srv.Close()
+
+	p := NewTeamsPublisher()
+	dest := config.Destination{Teams: &config.WebhookDest{
+		Secret: "hook",
+		Title:  "Weekly Digest",
+		Format: "card",
+	}}
+	tctx := template.Context{
+		Skill:   template.Meta{Name: "digest"},
+		RunDate: "2026-04-22",
+		RunID:   "run-123",
+	}
+	res := p.Publish(context.Background(), dest, "Body text", tctx, mapSecrets{"hook": srv.URL})
+	if !res.OK {
+		t.Fatalf("publish failed: %v", res.Err)
+	}
+	attachments, ok := gotBody["attachments"].([]any)
+	if !ok || len(attachments) == 0 {
+		t.Fatalf("expected attachments, got %v", gotBody)
+	}
+	att := attachments[0].(map[string]any)
+	content := att["content"].(map[string]any)
+	body := content["body"].([]any)
+	// Expect: title TextBlock, FactSet, content TextBlock — at least 3 elements
+	if len(body) < 3 {
+		t.Errorf("rich card should have at least 3 body elements, got %d", len(body))
+	}
+	factSet := body[1].(map[string]any)
+	if factSet["type"] != "FactSet" {
+		t.Errorf("second element should be FactSet, got %v", factSet["type"])
+	}
+}
+
 func TestTeams_Publish_PostsAdaptiveCard(t *testing.T) {
 	var gotBody map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

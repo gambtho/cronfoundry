@@ -40,20 +40,42 @@ func (p *teamsPub) Publish(ctx context.Context, dest config.Destination, output 
 	}
 	text = ensureLen(text, teamsDefaultMaxChars)
 
-	body := []map[string]any{}
-	if d.Title != "" {
-		body = append(body, map[string]any{
-			"type":   "TextBlock",
-			"text":   d.Title,
-			"weight": "Bolder",
-			"size":   "Medium",
-		})
+	var body []map[string]any
+
+	if d.Format == "card" {
+		if d.Title != "" {
+			body = append(body, map[string]any{
+				"type":   "TextBlock",
+				"text":   d.Title,
+				"weight": "Bolder",
+				"size":   "Medium",
+			})
+		}
+		var facts []map[string]any
+		if tctx.Skill.Name != "" {
+			facts = append(facts, map[string]any{"title": "Skill", "value": tctx.Skill.Name})
+		}
+		if tctx.RunDate != "" {
+			facts = append(facts, map[string]any{"title": "Date", "value": tctx.RunDate})
+		}
+		if tctx.RunID != "" {
+			facts = append(facts, map[string]any{"title": "Run ID", "value": tctx.RunID})
+		}
+		if len(facts) > 0 {
+			body = append(body, map[string]any{"type": "FactSet", "facts": facts})
+		}
+		body = append(body, map[string]any{"type": "TextBlock", "text": text, "wrap": true})
+	} else {
+		if d.Title != "" {
+			body = append(body, map[string]any{
+				"type":   "TextBlock",
+				"text":   d.Title,
+				"weight": "Bolder",
+				"size":   "Medium",
+			})
+		}
+		body = append(body, map[string]any{"type": "TextBlock", "text": text, "wrap": true})
 	}
-	body = append(body, map[string]any{
-		"type": "TextBlock",
-		"text": text,
-		"wrap": true,
-	})
 
 	card := map[string]any{
 		"type": "message",
