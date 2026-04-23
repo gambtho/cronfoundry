@@ -68,7 +68,9 @@ func toARMTemplate(spec JobExecutionTemplate) (armappcontainers.JobExecutionTemp
 		args[i] = &s
 	}
 
+	containerName := "runner"
 	container := &armappcontainers.JobExecutionContainer{
+		Name: &containerName,
 		Args: args,
 		Env:  envVars,
 	}
