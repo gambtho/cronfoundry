@@ -168,10 +168,7 @@ func (r *Runner) Run(ctx context.Context, in RunInput) (RunResult, error) {
 		return fail(&result, err, r.deps.Now)
 	}
 
-	envBanner, err := buildEnvBanner(sch.Env, in.Secrets)
-	if err != nil {
-		return fail(&result, err, r.deps.Now)
-	}
+	envBanner := buildEnvBanner(sch.Env)
 
 	provider, err := r.deps.ProviderFactory(sch.Provider)
 	if err != nil {
@@ -409,9 +406,9 @@ func (r *Runner) Run(ctx context.Context, in RunInput) (RunResult, error) {
 	return result, nil
 }
 
-func buildEnvBanner(env map[string]config.EnvValue, s *secrets.Resolver) (string, error) {
+func buildEnvBanner(env map[string]config.EnvValue) string {
 	if len(env) == 0 {
-		return "", nil
+		return ""
 	}
 	var b strings.Builder
 	b.WriteString("<env>\n")
@@ -429,7 +426,7 @@ func buildEnvBanner(env map[string]config.EnvValue, s *secrets.Resolver) (string
 		fmt.Fprintf(&b, "%s=%s\n", k, v.Literal)
 	}
 	b.WriteString("</env>")
-	return b.String(), nil
+	return b.String()
 }
 
 func sortStrings(ss []string) {
