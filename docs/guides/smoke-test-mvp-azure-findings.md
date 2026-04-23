@@ -499,3 +499,17 @@ already sets it. `toARMTemplate()` did not populate `Image`.
 set `Image` on `JobExecutionContainer` in `toARMTemplate()`. Added
 `AZURE_CAE_JOB_IMAGE` env var to `containerApp.bicep` and read in
 `serve.go`. Requires v0.7.3 image tag + redeploy.
+
+## F22 — Runner job cannot reach serve app (wrong API base URL)
+
+**Severity:** blocker (runner job fails — cannot call back to serve)
+**Type:** code + infra
+
+The scheduler hard-codes `CRONFOUNDRY_API_URL=http://0.0.0.0:8080`
+(the local listen address) in the dispatch env. The runner job runs in
+a separate Container Apps Job container and cannot reach `0.0.0.0:8080`.
+
+**Fix:** code + infra — added `CRONFOUNDRY_API_BASE_URL` env var
+override in `serve.go`. Bicep sets it to
+`https://<app-name>.<cae-default-domain>` using the CAE `defaultDomain`
+output. Requires v0.7.4 image tag + redeploy.
