@@ -25,17 +25,17 @@ func (p *emailPub) Type() string { return "email" }
 func (p *emailPub) Publish(ctx context.Context, dest config.Destination, output string, tctx template.Context, secrets SecretGetter) Result {
 	d := dest.Email
 	if d == nil {
-		return Result{Type: "email", OK: false, Err: fmt.Errorf("email: destination config is nil")}
+		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("email: destination config is nil")}
 	}
 
 	username, err := secrets.Get(d.UsernameSecret)
 	if err != nil {
-		return Result{Type: "email", OK: false, Err: fmt.Errorf("email: resolve username secret: %w", err)}
+		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("email: resolve username secret: %w", err)}
 	}
 
 	password, err := secrets.Get(d.PasswordSecret)
 	if err != nil {
-		return Result{Type: "email", OK: false, Err: fmt.Errorf("email: resolve password secret: %w", err)}
+		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("email: resolve password secret: %w", err)}
 	}
 
 	subj := d.Subject
@@ -62,36 +62,38 @@ func (p *emailPub) Publish(ctx context.Context, dest config.Destination, output 
 	addr := fmt.Sprintf("%s:%d", d.SMTPHost, port)
 	auth := smtp.PlainAuth("", username, password, d.SMTPHost)
 
+	// net/smtp does not support context cancellation; the run deadline covers this via the process.
 	if err := smtp.SendMail(addr, auth, d.From, d.To, body); err != nil {
-		return Result{Type: "email", OK: false, Err: err}
+		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("email: send: %w", err)}
 	}
 
-	return Result{Type: "email", OK: true, Detail: detail}
+	return Result{Type: p.Type(), OK: true, Detail: detail}
 }
 
 func buildEmail(from string, to []string, subject, output, format string, tctx template.Context) []byte {
 	var buf bytes.Buffer
-	var bodyBuf bytes.Buffer
 
-	mw := multipart.NewWriter(&bodyBuf)
-	boundary := mw.Boundary()
-
-	// Write headers
+	// Write common headers
 	fmt.Fprintf(&buf, "From: %s\r\n", from)
 	fmt.Fprintf(&buf, "To: %s\r\n", strings.Join(to, ", "))
 	fmt.Fprintf(&buf, "Subject: %s\r\n", mime.QEncoding.Encode("utf-8", subject))
 	fmt.Fprintf(&buf, "MIME-Version: 1.0\r\n")
-	fmt.Fprintf(&buf, "Content-Type: multipart/alternative; boundary=%q\r\n", boundary)
-	fmt.Fprintf(&buf, "\r\n")
 
-	// text/plain part (always)
-	th := make(textproto.MIMEHeader)
-	th.Set("Content-Type", "text/plain; charset=utf-8")
-	pw, _ := mw.CreatePart(th)
-	pw.Write([]byte(output))
-
-	// text/html part (only when format == "html")
 	if format == "html" {
+		var bodyBuf bytes.Buffer
+		mw := multipart.NewWriter(&bodyBuf)
+		boundary := mw.Boundary()
+
+		fmt.Fprintf(&buf, "Content-Type: multipart/alternative; boundary=\"%s\"\r\n", boundary)
+		fmt.Fprintf(&buf, "\r\n")
+
+		// text/plain part
+		th := make(textproto.MIMEHeader)
+		th.Set("Content-Type", "text/plain; charset=utf-8")
+		pw, _ := mw.CreatePart(th)
+		_, _ = pw.Write([]byte(output))
+
+		// text/html part
 		hh := make(textproto.MIMEHeader)
 		hh.Set("Content-Type", "text/html; charset=utf-8")
 		hw, _ := mw.CreatePart(hh)
@@ -99,10 +101,14 @@ func buildEmail(from string, to []string, subject, output, format string, tctx t
 			html.EscapeString(tctx.Skill.Name),
 			html.EscapeString(tctx.RunDate),
 			html.EscapeString(output))
+
+		mw.Close()
+		buf.Write(bodyBuf.Bytes())
+	} else {
+		fmt.Fprintf(&buf, "Content-Type: text/plain; charset=utf-8\r\n")
+		fmt.Fprintf(&buf, "\r\n")
+		buf.WriteString(output)
 	}
 
-	mw.Close()
-
-	buf.Write(bodyBuf.Bytes())
 	return buf.Bytes()
 }
