@@ -549,3 +549,16 @@ during dispatch.
 
 **Fix:** deferred — requires design decision on how the runner
 obtains a short-lived GitHub installation token.
+
+---
+
+## Session 2 — p8smoke (v0.7.5)
+
+| Session | Value |
+|---|---|
+| Started | 2026-04-23 |
+| Operator | `gambtho` (via Claude Code) |
+| Azure subscription | `d0ecd0d2-779b-4fd0-8f04-d46d07f05703` |
+| Resource group | `rg-cronfoundry-p8smoke` |
+| Image tag | `0.7.5` |
+| Region | `swedencentral` |
