@@ -48,6 +48,9 @@ func (c *realARMJobsClient) BeginStartExecution(ctx context.Context, resourceGro
 
 // toARMTemplate converts our neutral JobExecutionTemplate into the ARM SDK type.
 func toARMTemplate(spec JobExecutionTemplate) (armappcontainers.JobExecutionTemplate, error) {
+	if spec.ContainerImage == "" {
+		return armappcontainers.JobExecutionTemplate{}, fmt.Errorf("toARMTemplate: ContainerImage must not be empty")
+	}
 	envVars := make([]*armappcontainers.EnvironmentVar, 0, len(spec.Env))
 	for _, kv := range spec.Env {
 		k, v, ok := strings.Cut(kv, "=")
@@ -68,9 +71,13 @@ func toARMTemplate(spec JobExecutionTemplate) (armappcontainers.JobExecutionTemp
 		args[i] = &s
 	}
 
+	containerName := "runner"
+	image := spec.ContainerImage
 	container := &armappcontainers.JobExecutionContainer{
-		Args: args,
-		Env:  envVars,
+		Image: &image,
+		Name:  &containerName,
+		Args:  args,
+		Env:   envVars,
 	}
 
 	return armappcontainers.JobExecutionTemplate{

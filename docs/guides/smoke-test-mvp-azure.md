@@ -11,12 +11,29 @@ is the one that worked end to end.
 **Depends on:** P6 merged (`docs/superpowers/plans/2026-04-20-p6-mvp-gaps.md`)
 for the audit-verification and push-webhook steps.
 
+**Running log of issues found while executing this runbook:**
+[`smoke-test-mvp-azure-findings.md`](./smoke-test-mvp-azure-findings.md).
+
 ---
 
 ## 1. Prerequisites
 
-- An Azure subscription with Contributor rights.
-- `az` CLI ≥ 2.60 and Bicep CLI ≥ 0.26. Verify: `az --version`.
+- An Azure subscription with Contributor rights. `az login` and
+  `az account set --subscription <id>` before starting.
+- `az` CLI ≥ 2.60. Verify with `az --version`.
+- Bicep CLI ≥ 0.26. Install once via `az bicep install` (drops the binary
+  under `~/.azure/bin/bicep`). Confirm with `az bicep version`.
+- A region where this subscription can actually provision
+  **Azure Database for PostgreSQL — Flexible Server**. Microsoft-internal
+  subscriptions and some commercial subs restrict this offer per region;
+  `az postgres flexible-server list-skus --location <region>` is **not**
+  a reliable test (it surfaces the SKU catalog, not your
+  provisioning rights). The only reliable probe is a *synchronous*
+  `az postgres flexible-server create` — `--no-wait` returns exit 0 even
+  when provisioning later fails with `LocationIsOfferRestricted`. If
+  unsure, start with a known-good region for your sub
+  (e.g., `swedencentral` was the working region for the Microsoft-
+  internal sub used on the initial smoke).
 - A GitHub account that can register a new GitHub App.
 - **One** LLM key from OpenAI, Anthropic, or Azure AI Foundry.
 - A Slack **Incoming Webhook URL** for any channel. Create one at
@@ -29,54 +46,278 @@ for the audit-verification and push-webhook steps.
 
 ## 2. Register the GitHub App
 
-1. GitHub → Settings → Developer settings → GitHub Apps → **New GitHub App**.
-2. **Homepage URL:** anything (e.g., `https://<your-api-hostname>`). You'll fill
-   the real hostname after the Bicep deploy in step 3.
-3. **Callback URL:** `https://<your-api-hostname>/oauth/callback`
-4. **Webhook URL:** `https://<your-api-hostname>/webhook/github`  
-   **Webhook secret:** generate a long random string; save for step 4.
-5. **Permissions:**
+> Register a **GitHub App**, not an **OAuth App**. Both live under
+> *Settings → Developer settings*, but only GitHub Apps have an App ID,
+> installations, and the server-to-server private key (the `.pem`) that
+> CronFoundry uses to sign JWTs for GitHub API calls. OAuth Apps expose
+> Client ID + Client Secret only and will not satisfy the Bicep's
+> `githubAppId` param.
+
+1. Open the "New GitHub App" form for your account:
+   - Personal: https://github.com/settings/apps/new
+   - Organization: https://github.com/organizations/`<org>`/settings/apps/new
+
+   (Equivalent path through the UI: GitHub → Settings → Developer settings →
+   **GitHub Apps** → **New GitHub App**. Check that the URL ends in
+   `/settings/apps/new` — if it ends in `/settings/applications/new`
+   you're on the OAuth Apps form.)
+2. **GitHub App name:** must be globally unique (e.g., `cronfoundry-p7smoke`).
+3. **Homepage URL:** anything (e.g., `https://example.com`). You'll fill
+   the real hostname after the Bicep deploy in §4.
+4. **Callback URL:** `https://example.com/oauth/callback` — placeholder.
+5. **Webhook URL:** `https://example.com/webhook/github` — placeholder.
+   **Webhook secret:** generate a long random string; save for §5 step 4.
+6. **Permissions:**
    - Repository: Contents (R+W), Issues (W), Metadata (R).
    - Account: Email (R).
-6. **Subscribe to events:** Push.
-7. Save. Generate + download the **private key** (`.pem`). Note the **App ID**
-   and **Client ID / Client Secret**.
-8. **Install the App** on your two repos (skill + reports).
+7. **Subscribe to events:** Push.
+8. Save. On the resulting settings page:
+   - Note the **App ID** (numeric, shown at the top).
+   - Under **Client secrets**, click **Generate a new client secret** — copy
+     the value; it's shown once. Note the **Client ID** too (starts with
+     `Iv23li…` for GitHub Apps — NOT `Ov23li…` which is OAuth Apps).
+   - Under **Private keys**, click **Generate a private key** — your browser
+     downloads a `.pem` file. Keep it; you'll upload it to Key Vault in §4d.
+9. **Install App** (left sidebar) on your two repos (skill + reports).
 
-You'll come back after step 3 to update the three URLs with the real hostname.
+You'll come back after §4 to update the three URLs with the real hostname.
 
-## 3. Deploy via Bicep
+## 3. Publish a container image
+
+`deploy/modules/containerApp.bicep` pulls from
+`ghcr.io/gambtho/cronfoundry:${imageTag}`. The `release.yml` workflow builds
+and pushes multi-arch images, but only on `v*` tags — a fresh checkout with
+no release tag has nothing to pull. Container Apps pulls anonymously, so
+the GHCR package must also be public.
+
+1. Tag and push:
+
+   ```bash
+   git tag v0.7.0
+   git push origin v0.7.0
+   ```
+
+   The `Release` workflow takes ~8 minutes to build linux/amd64+arm64 and
+   push three tags. `docker/metadata-action` uses
+   `type=semver,pattern={{version}}`, which **strips the `v` prefix**, so
+   the pushed tags are:
+   - `ghcr.io/<owner>/cronfoundry:0.7.0`
+   - `ghcr.io/<owner>/cronfoundry:0.7`
+   - `ghcr.io/<owner>/cronfoundry:latest`
+
+   Watch with `gh run watch`, then verify:
+
+   ```bash
+   docker manifest inspect ghcr.io/<owner>/cronfoundry:0.7.0 | head -5
+   ```
+
+2. Verify the GHCR package is **Public**. Packages linked to public source
+   repositories inherit public visibility by default, so the step above
+   should succeed without auth. If it returns `manifest unknown` or
+   `denied`, flip the package visibility manually:
+   `https://github.com/users/<owner>/packages/container/cronfoundry/settings`
+   → Danger Zone → *Change visibility* → Public.
+
+Pick the tag you'll reference from the params file — `latest` works, but
+pinning to `0.7.0` makes the deployed version explicit.
+
+## 4. Deploy via Bicep
+
+### 4a. Generate a master key
+
+`masterKey` is used to envelope-encrypt secrets at rest. Any 32 random bytes
+encoded as standard base64 work. Fastest:
+
+```bash
+openssl rand -base64 32
+```
+
+Equivalent, using the binary's built-in generator (requires `make build`):
+
+```bash
+./cronfoundry admin init    # prints CRONFOUNDRY_MASTER_KEY=<value> and exits
+```
+
+Save the value. If it's ever lost, encrypted secrets in the database are
+unrecoverable.
+
+### 4b. Fill the params file
+
+Copy the example and edit it:
 
 ```bash
 cp deploy/params.example.json deploy/params.p7smoke.json
-# Edit deploy/params.p7smoke.json — set:
-#   envName:           "p7smoke"
-#   location:          "eastus" (or your region)
-#   adminLogins:       ["<your-github-login>"]
-#   containerImageTag: "latest" (or a specific release tag)
+```
 
+`deploy/params.p7smoke.json`:
+
+```json
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "env":                         { "value": "p7smoke" },
+    "location":                    { "value": "swedencentral" },
+    "imageTag":                    { "value": "0.7.0" },
+    "githubAppId":                 { "value": "<APP_ID from §2>" },
+    "githubAppOAuthClientId":      { "value": "<CLIENT_ID from §2>" },
+    "githubAppOAuthClientSecret":  { "value": "<CLIENT_SECRET from §2>" },
+    "postgresAdminPassword":       { "value": "<20+ char alphanumeric — no @ : / % # ? & =>" },
+    "masterKey":                   { "value": "<output of §4a>" },
+    "githubAppPem":                { "value": "<contents of your GitHub App .pem — paste verbatim; JSON keeps newlines as \\n>" },
+    "adminLogins":                 { "value": "<your-github-login>" },
+    "viewerLogins":                { "value": "" },
+    "ingressExternal":             { "value": true }
+  }
+}
+```
+
+`githubAppPem` is easiest to embed via `python3`:
+
+```bash
+python3 -c "
+import json
+with open('deploy/params.p7smoke.json') as f: d = json.load(f)
+with open('/path/to/your-app.private-key.pem') as p: d['parameters']['githubAppPem'] = {'value': p.read()}
+with open('deploy/params.p7smoke.json','w') as f: json.dump(d, f, indent=2)
+"
+```
+
+Param-by-param reality check:
+- `env` — suffix for every resource name; keep it short (≤ 10 chars) and
+  note: Key Vault + Postgres soft-delete retention will pin the name for
+  7 days after teardown, so a re-run needs a new suffix (e.g. `p7smoke2`).
+- `location` — the region your subscription can actually provision
+  **Postgres Flexible Server** in. See the §1 warning on offer
+  restrictions; `swedencentral` works for the Microsoft-internal sub
+  this smoke was run against, `eastus` / `eastus2` are offer-restricted.
+- `imageTag` — whatever you pushed in §3. `latest` works; pinning is better.
+- `githubAppId` / `githubAppOAuthClientId` / `githubAppOAuthClientSecret` —
+  from the GitHub App settings page in §2. The client secret is shown once
+  at creation.
+- `postgresAdminPassword` — ends up in a connection string; avoid any
+  character `urlencode` would touch. Alphanumerics are safest.
+- `masterKey` — the base64 string from §4a. Paste verbatim (trailing `=`
+  included).
+- `githubAppPem` — the full contents of the `.pem` file from §2 including
+  the `-----BEGIN/END-----` lines. Passed through as a `@secure()` Bicep
+  param so it never prints to stdout. Seeded into Key Vault as secret
+  `github-app-pem`; the serve Container App resolves it at creation time.
+  Leave as `""` only if you plan to `az keyvault secret set` manually
+  before the Container App is deployed (see §4d).
+- `adminLogins` — a **comma-separated string** (not a JSON array). Users in
+  this list can mutate everything.
+- `ingressExternal` — **must** be `true` for GitHub's webhook to reach the
+  API. The default is `false` and silently breaks the smoke.
+
+### 4c. Run the deploy
+
+```bash
 az deployment sub create \
-  --location eastus \
+  --location swedencentral \
   --template-file deploy/main.bicep \
   --parameters @deploy/params.p7smoke.json
 ```
 
-After ~10 minutes, the deployment completes. Grab the API hostname:
+(Use the `--location` matching the region in your params file; this flag
+sets where the deployment **record** lives, not the resources — though
+it's simplest to keep them the same.)
+
+Takes ~10 minutes. The Key Vault, Postgres, Container Apps Environment,
+identities, Container App, and the runner Job are all created. Because
+`keyVault.bicep` pre-seeds the `github-app-pem` secret from the
+`githubAppPem` param, the serve Container App's Key Vault secret
+reference resolves at creation time and no post-deploy upload is needed.
+
+The serve Container App will crash-loop until you run `admin init`
+(next step) — this is expected.
+
+### 4d. Run migrations and seed the org
+
+`serve` does **not** auto-migrate. You must run `admin init` once after
+the first deploy to create the schema and seed the default organization.
+
+First, add your operator IP to the Postgres firewall:
+
+```bash
+MY_IP=$(curl -s https://ifconfig.me)
+az postgres flexible-server firewall-rule create \
+  --resource-group "rg-cronfoundry-<env>" \
+  --name "cf-pg-<env>" \
+  --rule-name AllowSmokeOperator \
+  --start-ip-address "$MY_IP" --end-ip-address "$MY_IP"
+```
+
+Then run `admin init` locally (build first if needed):
+
+```bash
+CRONFOUNDRY_DATABASE_URL="postgres://cfadmin:<password>@cf-pg-<env>.postgres.database.azure.com:5432/cronfoundry?sslmode=require" \
+CRONFOUNDRY_MASTER_KEY="<your-master-key>" \
+./cronfoundry admin init
+```
+
+You should see `Seeded organization id=... name="default". Ready.`
+
+After init succeeds, force a new Container App revision so the serve
+process picks up the migrated schema (failed revisions don't auto-heal):
+
+```bash
+az containerapp update \
+  --resource-group "rg-cronfoundry-<env>" \
+  --name "cf-serve-<env>" \
+  --set-env-vars "RESTART_TRIGGER=$(date +%s)"
+```
+
+Wait ~30 s, then verify the revision is `Healthy`:
+
+```bash
+az containerapp revision list \
+  --resource-group "rg-cronfoundry-<env>" \
+  --name "cf-serve-<env>" \
+  --query '[?properties.trafficWeight>`0`].{health:properties.healthState, running:properties.runningState}' \
+  -o table
+```
+
+### 4e. (Only if you passed `githubAppPem: ""`) Upload the pem manually
+
+Skip this section if your params file carried the real pem value in §4b.
+
+```bash
+KV_NAME=$(az keyvault list \
+  --resource-group rg-cronfoundry-p7smoke \
+  --query "[0].name" -o tsv)
+
+az keyvault secret set \
+  --vault-name "$KV_NAME" \
+  --name github-app-pem \
+  --file /path/to/your-app.private-key.pem
+
+az containerapp revision restart \
+  --resource-group rg-cronfoundry-p7smoke \
+  --name cf-serve-p7smoke \
+  --revision "$(az containerapp revision list \
+    --resource-group rg-cronfoundry-p7smoke \
+    --name cf-serve-p7smoke --query '[0].name' -o tsv)"
+```
+
+### 4f. Record the API FQDN and update the GitHub App
+
+The Bicep names the serve Container App `cf-serve-${env}`:
 
 ```bash
 az containerapp show \
   --resource-group rg-cronfoundry-p7smoke \
-  --name api \
+  --name cf-serve-p7smoke \
   --query properties.configuration.ingress.fqdn -o tsv
 ```
 
 Go back to the GitHub App settings and replace `<your-api-hostname>` in
 Homepage URL, Callback URL, and Webhook URL with this FQDN. Save.
 
-## 4. First-boot config (web UI)
+## 5. First-boot config (web UI)
 
 Do the repo + secrets setup through the web UI so each action emits the
-`repo.connect` and `secret.create` audit events the verification step in §8
+`repo.connect` and `secret.create` audit events the verification step in §9
 checks for. CLI-based setup (`./cronfoundry admin connect-repo` etc.) bypasses
 those handlers and would yield no audit rows.
 
@@ -99,7 +340,7 @@ those handlers and would yield no audit rows.
      --set-env-vars CRONFOUNDRY_GITHUB_WEBHOOK_SECRET=<same value>
    ```
 
-## 5. Land a skill
+## 6. Land a skill
 
 In your skill repo's `cronfoundry.yaml`, define one schedule firing every 5
 minutes:
@@ -148,9 +389,9 @@ run at {{ run.started_at }}
 
 Commit and push. The push webhook re-syncs the schedule within seconds.
 
-## 6. Observe the first fire
+## 7. Observe the first fire
 
-1. You're already logged in from §4. Dashboard shows the new `every-5` schedule.
+1. You're already logged in from §5. Dashboard shows the new `every-5` schedule.
 2. Wait up to 5 minutes for the first natural fire — or click **Run now**.
 3. Go to **Runs**, click the newest row.
 4. Confirm the **log panel streams** with row levels `info/warn/error` and
@@ -158,7 +399,7 @@ Commit and push. The push webhook re-syncs the schedule within seconds.
    `publish.github-issue.ok`, `writeback.commit.ok`). Status transitions to
    `succeeded`.
 
-## 7. Verify the three side effects
+## 8. Verify the three side effects
 
 - **Slack:** message lands in the configured channel with the skill output.
 - **GitHub issue:** a new issue exists in the reports repo, titled
@@ -167,7 +408,7 @@ Commit and push. The push webhook re-syncs the schedule within seconds.
   author is `cronfoundry[bot]` with message
   `chore(cronfoundry): update memory.md from run <uuid>`.
 
-## 8. Verify the audit log
+## 9. Verify the audit log
 
 Navigate to **Audit** in the sidebar (shipped in P6c). Confirm rows are
 present for the session you just walked through:
@@ -183,7 +424,7 @@ present for the session you just walked through:
 
 If any row is missing, file it as a P6c fix and do not mark the smoke passed.
 
-## 9. Teardown
+## 10. Teardown
 
 ```bash
 az group delete --name rg-cronfoundry-p7smoke --yes --no-wait
@@ -201,6 +442,8 @@ resource group is gone.
 - [ ] GitHub issue filed in the reports repo.
 - [ ] `memory.md` commit authored by `cronfoundry[bot]`.
 - [ ] Audit log contains login + repo-connect + secret-create rows.
+- [ ] Run detail shows non-zero `tokens_in`, `tokens_out`, and `cost_cents`
+      (cost accounting from the P7 follow-up).
 
 If every box is checked, MVP is shipped. Otherwise, every unchecked box
 becomes a fix in code or docs and the runbook re-runs.

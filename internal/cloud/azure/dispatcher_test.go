@@ -30,7 +30,12 @@ func (f *fakeARMClient) BeginStartExecution(ctx context.Context, resourceGroup, 
 
 func TestContainerAppsJobDispatcher_DispatchCreatesExecution(t *testing.T) {
 	fake := &fakeARMClient{}
-	d := cloudazure.NewContainerAppsJobDispatcher(fake, "rg-test", "cronfoundry-runner")
+	d := cloudazure.NewContainerAppsJobDispatcher(cloudazure.DispatcherConfig{
+		Client:        fake,
+		ResourceGroup: "rg-test",
+		JobName:       "cronfoundry-runner",
+		Image:         "ghcr.io/test/img:latest",
+	})
 
 	spec := cloud.DispatchSpec{
 		BinaryPath: "/usr/local/bin/cronfoundry",
@@ -47,11 +52,17 @@ func TestContainerAppsJobDispatcher_DispatchCreatesExecution(t *testing.T) {
 	// Verify args and env forwarded
 	require.Equal(t, []string{"runner"}, fake.dispatched[0].Template.ContainerArgs)
 	require.Equal(t, []string{"RUN_ID=abc123"}, fake.dispatched[0].Template.Env)
+	require.Equal(t, "ghcr.io/test/img:latest", fake.dispatched[0].Template.ContainerImage)
 }
 
 func TestContainerAppsJobDispatcher_HandleWait_NotImplemented(t *testing.T) {
 	fake := &fakeARMClient{}
-	d := cloudazure.NewContainerAppsJobDispatcher(fake, "rg-test", "cronfoundry-runner")
+	d := cloudazure.NewContainerAppsJobDispatcher(cloudazure.DispatcherConfig{
+		Client:        fake,
+		ResourceGroup: "rg-test",
+		JobName:       "cronfoundry-runner",
+		Image:         "ghcr.io/test/img:latest",
+	})
 	spec := cloud.DispatchSpec{BinaryPath: "/usr/local/bin/cronfoundry", Args: []string{"runner"}}
 	h, err := d.Dispatch(context.Background(), spec)
 	require.NoError(t, err)
@@ -61,7 +72,12 @@ func TestContainerAppsJobDispatcher_HandleWait_NotImplemented(t *testing.T) {
 
 func TestContainerAppsJobDispatcher_HandleKill_NotImplemented(t *testing.T) {
 	fake := &fakeARMClient{}
-	d := cloudazure.NewContainerAppsJobDispatcher(fake, "rg-test", "cronfoundry-runner")
+	d := cloudazure.NewContainerAppsJobDispatcher(cloudazure.DispatcherConfig{
+		Client:        fake,
+		ResourceGroup: "rg-test",
+		JobName:       "cronfoundry-runner",
+		Image:         "ghcr.io/test/img:latest",
+	})
 	spec := cloud.DispatchSpec{BinaryPath: "/usr/local/bin/cronfoundry", Args: []string{"runner"}}
 	h, err := d.Dispatch(context.Background(), spec)
 	require.NoError(t, err)
@@ -71,7 +87,12 @@ func TestContainerAppsJobDispatcher_HandleKill_NotImplemented(t *testing.T) {
 
 func TestContainerAppsJobDispatcher_DispatchReturnsError(t *testing.T) {
 	fake := &fakeARMClient{err: errors.New("azure: quota exceeded")}
-	d := cloudazure.NewContainerAppsJobDispatcher(fake, "rg-test", "cronfoundry-runner")
+	d := cloudazure.NewContainerAppsJobDispatcher(cloudazure.DispatcherConfig{
+		Client:        fake,
+		ResourceGroup: "rg-test",
+		JobName:       "cronfoundry-runner",
+		Image:         "ghcr.io/test/img:latest",
+	})
 	spec := cloud.DispatchSpec{BinaryPath: "/usr/local/bin/cronfoundry", Args: []string{"runner"}}
 	_, err := d.Dispatch(context.Background(), spec)
 	require.Error(t, err)

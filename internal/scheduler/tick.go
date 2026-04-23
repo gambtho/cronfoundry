@@ -24,6 +24,7 @@ type Deps struct {
 	Signer       *token.Signer
 	Dispatcher   cloud.JobDispatcher
 	APIBaseURL   string // e.g. "http://127.0.0.1:8080"
+	RunnerAPIURL string // external URL the runner uses to reach serve; falls back to APIBaseURL
 	RunnerBinary string // absolute path; typically os.Executable()
 }
 
@@ -216,11 +217,18 @@ func dispatchRun(ctx context.Context, deps Deps, args dispatchArgs) error {
 		return fmt.Errorf("update token hash: %w", err)
 	}
 
+	runnerURL := deps.RunnerAPIURL
+	if runnerURL == "" {
+		runnerURL = deps.APIBaseURL
+		slog.Warn("scheduler: RunnerAPIURL not set, falling back to APIBaseURL — will fail if runners run in separate containers",
+			"api_base_url", runnerURL)
+	}
+
 	spec := cloud.DispatchSpec{
 		BinaryPath: deps.RunnerBinary,
 		Args:       []string{"runner", "--run-id", uuid.UUID(args.RunID.Bytes).String()},
 		Env: []string{
-			"CRONFOUNDRY_API_URL=" + deps.APIBaseURL,
+			"CRONFOUNDRY_API_URL=" + runnerURL,
 			"CRONFOUNDRY_RUN_ID=" + uuid.UUID(args.RunID.Bytes).String(),
 			"CRONFOUNDRY_RUN_TOKEN=" + tok,
 		},

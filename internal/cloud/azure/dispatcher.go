@@ -12,18 +12,28 @@ type ContainerAppsJobDispatcher struct {
 	client        ARMJobsClient
 	resourceGroup string
 	jobName       string
+	image         string
+}
+
+// DispatcherConfig holds the parameters for a ContainerAppsJobDispatcher.
+type DispatcherConfig struct {
+	Client        ARMJobsClient
+	ResourceGroup string
+	JobName       string
+	Image         string
 }
 
 // NewContainerAppsJobDispatcher returns a dispatcher targeting the named Container Apps Job.
-// It panics if client is nil.
-func NewContainerAppsJobDispatcher(client ARMJobsClient, resourceGroup, jobName string) *ContainerAppsJobDispatcher {
-	if client == nil {
+// It panics if Client is nil.
+func NewContainerAppsJobDispatcher(cfg DispatcherConfig) *ContainerAppsJobDispatcher {
+	if cfg.Client == nil {
 		panic("cloud/azure: NewContainerAppsJobDispatcher: client must not be nil")
 	}
 	return &ContainerAppsJobDispatcher{
-		client:        client,
-		resourceGroup: resourceGroup,
-		jobName:       jobName,
+		client:        cfg.Client,
+		resourceGroup: cfg.ResourceGroup,
+		jobName:       cfg.JobName,
+		image:         cfg.Image,
 	}
 }
 
@@ -34,8 +44,9 @@ var _ cloud.JobDispatcher = (*ContainerAppsJobDispatcher)(nil)
 // is configured in Azure; only Args and Env are forwarded.
 func (d *ContainerAppsJobDispatcher) Dispatch(ctx context.Context, spec cloud.DispatchSpec) (cloud.Handle, error) {
 	tmpl := JobExecutionTemplate{
-		ContainerArgs: append([]string{}, spec.Args...),
-		Env:           append([]string{}, spec.Env...),
+		ContainerImage: d.image,
+		ContainerArgs:  append([]string{}, spec.Args...),
+		Env:            append([]string{}, spec.Env...),
 	}
 	executionName, err := d.client.BeginStartExecution(ctx, d.resourceGroup, d.jobName, tmpl)
 	if err != nil {

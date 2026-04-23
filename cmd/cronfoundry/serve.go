@@ -77,6 +77,7 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 	oauthClientID := os.Getenv(envOAuthClientID)
 	oauthClientSecret := os.Getenv(envOAuthClientSecret)
 	adminLoginsRaw := os.Getenv(envAdminLogins)
+	runnerAPIURL := os.Getenv("CRONFOUNDRY_API_BASE_URL")
 	if oauthClientID == "" {
 		return fmt.Errorf("%s is required", envOAuthClientID)
 	}
@@ -89,7 +90,7 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 	adminLogins := splitLogins(adminLoginsRaw)
 	viewerLogins := splitLogins(os.Getenv(envViewerLogins))
 
-	pemBytes, err := os.ReadFile(pemPath)
+	pemBytes, err := github.ReadPEM(pemPath)
 	if err != nil {
 		return fmt.Errorf("read PEM: %w", err)
 	}
@@ -233,6 +234,7 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 		Signer:       signer,
 		Dispatcher:   dispatcher,
 		APIBaseURL:   "http://" + addr,
+		RunnerAPIURL: runnerAPIURL,
 		RunnerBinary: self,
 	}
 
@@ -299,6 +301,7 @@ func buildJobDispatcher() (cloud.JobDispatcher, error) {
 	rg := os.Getenv("AZURE_CAE_RESOURCE_GROUP")
 	jobName := os.Getenv("AZURE_CAE_JOB_NAME")
 	subID := os.Getenv("AZURE_SUBSCRIPTION_ID")
+	image := os.Getenv("AZURE_CAE_JOB_IMAGE")
 	if rg == "" || jobName == "" || subID == "" {
 		if rg != "" || jobName != "" || subID != "" {
 			slog.Warn("serve: partial Azure dispatcher config — falling back to subprocess",
@@ -308,6 +311,9 @@ func buildJobDispatcher() (cloud.JobDispatcher, error) {
 		}
 		return cloud.NewSubprocessDispatcher(), nil
 	}
+	if image == "" {
+		return nil, fmt.Errorf("AZURE_CAE_JOB_IMAGE is required when Azure dispatcher is configured")
+	}
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
 		return nil, fmt.Errorf("azure credential: %w", err)
@@ -316,7 +322,12 @@ func buildJobDispatcher() (cloud.JobDispatcher, error) {
 	if err != nil {
 		return nil, fmt.Errorf("arm jobs client: %w", err)
 	}
-	return cloudazure.NewContainerAppsJobDispatcher(armClient, rg, jobName), nil
+	return cloudazure.NewContainerAppsJobDispatcher(cloudazure.DispatcherConfig{
+		Client:        armClient,
+		ResourceGroup: rg,
+		JobName:       jobName,
+		Image:         image,
+	}), nil
 }
 
 // buildSecretStore returns a KeyVaultStore when AZURE_KEYVAULT_URL is set;

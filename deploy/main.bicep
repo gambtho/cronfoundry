@@ -15,6 +15,9 @@ param githubAppOAuthClientSecret string
 param postgresAdminPassword string
 @secure()
 param masterKey string
+@secure()
+@description('Contents of the GitHub App private key PEM file. Seeded into Key Vault as secret "github-app-pem". Pass "" to skip (operator must then upload before the Container App is created).')
+param githubAppPem string = ''
 param adminLogins string
 param viewerLogins string = ''
 param ingressExternal bool = false
@@ -53,6 +56,15 @@ module kv 'modules/keyVault.bicep' = {
     location: location
     name: '${prefix}-kv-${env}'
     cfServePrincipalId: identities.outputs.cfServePrincipalId
+    // Some subscriptions (notably Microsoft-internal tenants) enforce
+    // Key Vault purge protection via Azure Policy. Leaving this at the
+    // module default (false) causes Azure to reject the deploy with
+    // "enablePurgeProtection cannot be set to false." Cost: a deleted
+    // vault is soft-preserved for softDeleteRetentionDays (7), so
+    // re-deploys with the same vault name must wait out that window or
+    // use a different env suffix.
+    enablePurgeProtection: true
+    githubAppPem: githubAppPem
   }
 }
 
@@ -74,9 +86,7 @@ module cae 'modules/containerAppsEnv.bicep' = {
   params: {
     location: location
     name: '${prefix}-cae-${env}'
-    logAnalyticsWorkspaceId: law.outputs.resourceId
-    logAnalyticsCustomerId: law.outputs.logAnalyticsWorkspaceId
-    logAnalyticsSharedKey: law.outputs.primarySharedKey
+    logAnalyticsWorkspaceName: law.outputs.name
   }
 }
 
@@ -123,7 +133,20 @@ module serve 'modules/containerApp.bicep' = {
     azureSubscriptionId: subscription().subscriptionId
     azureResourceGroup: rgName
     azureCaeJobName: runnerJobName
+    caeDefaultDomain: cae.outputs.defaultDomain
     ingressExternal: ingressExternal
+  }
+}
+
+// The serve identity needs Microsoft.App/jobs/start/action on the runner job.
+// Contributor (b24988ac-6180-42a0-ab88-20f7382dd24c) includes it; scoped to RG.
+module serveJobStartRole 'modules/roleAssignment.bicep' = {
+  scope: rg
+  name: 'serveJobStartRole'
+  params: {
+    principalId: identities.outputs.cfServePrincipalId
+    roleDefinitionId: 'b24988ac-6180-42a0-ab88-20f7382dd24c'
+    principalType: 'ServicePrincipal'
   }
 }
 
