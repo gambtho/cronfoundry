@@ -43,6 +43,7 @@ type Destination struct {
 	Discord     *WebhookDest     `json:"discord,omitempty"`
 	Teams       *WebhookDest     `json:"teams,omitempty"`
 	HTTP        *HTTPDest        `json:"http,omitempty"`
+	Email       *EmailDest       `json:"email,omitempty"`
 	// When controls which run outcomes trigger this destination.
 	// Valid values: "always" (default), "on_success", "on_failure".
 	When string `json:"when,omitempty"`
@@ -74,6 +75,30 @@ func (d Destination) Validate() error {
 			}
 		}
 	}
+	if d.Email != nil {
+		e := d.Email
+		if e.SMTPHost == "" {
+			return fmt.Errorf("email destination: smtp_host required")
+		}
+		if e.UsernameSecret == "" {
+			return fmt.Errorf("email destination: username_secret required")
+		}
+		if e.PasswordSecret == "" {
+			return fmt.Errorf("email destination: password_secret required")
+		}
+		if e.From == "" {
+			return fmt.Errorf("email destination: from required")
+		}
+		if len(e.To) == 0 {
+			return fmt.Errorf("email destination: to must have at least one address")
+		}
+		if e.SMTPPort != 0 && (e.SMTPPort < 1 || e.SMTPPort > 65535) {
+			return fmt.Errorf("email destination: smtp_port must be 1-65535 (got %d)", e.SMTPPort)
+		}
+		if e.Format != "" && e.Format != "html" && e.Format != "text" {
+			return fmt.Errorf("email destination: format must be \"html\" or \"text\" (got %q)", e.Format)
+		}
+	}
 	return nil
 }
 
@@ -103,6 +128,18 @@ type HTTPDest struct {
 	Headers      map[string]string `json:"headers,omitempty"`
 	BodyTemplate string            `json:"body_template,omitempty"` // Go template; default sends {"output":"<output>"}
 	Output       string            `json:"output,omitempty"`
+}
+
+type EmailDest struct {
+	SMTPHost       string   `json:"smtp_host"`
+	SMTPPort       int      `json:"smtp_port,omitempty"` // default 587
+	UsernameSecret string   `json:"username_secret"`
+	PasswordSecret string   `json:"password_secret"`
+	From           string   `json:"from"`
+	To             []string `json:"to"`
+	Subject        string   `json:"subject,omitempty"` // template.Render template; default below
+	Format         string   `json:"format,omitempty"`  // "html" (default) or "text"
+	Output         string   `json:"output,omitempty"`
 }
 
 type WritebackConfig struct {
