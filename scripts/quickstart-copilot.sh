@@ -191,7 +191,7 @@ ok "Image tag: $CF_IMAGE_TAG"
 # ── Step 12: postgres password ────────────────────────────────────────────────
 header "[step 12/17] Generate Postgres password"
 if [[ -z "${CF_PG_PASSWORD:-}" ]]; then
-  CF_PG_PASSWORD=$(openssl rand -base64 18 | tr -dc 'A-Za-z0-9' | head -c24)
+  CF_PG_PASSWORD=$(openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c24)
   save CF_PG_PASSWORD "$CF_PG_PASSWORD"
 fi
 ok "Postgres password generated (saved to state file)"
