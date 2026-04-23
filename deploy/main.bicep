@@ -133,6 +133,7 @@ module serve 'modules/containerApp.bicep' = {
     azureSubscriptionId: subscription().subscriptionId
     azureResourceGroup: rgName
     azureCaeJobName: runnerJobName
+    caeDefaultDomain: cae.outputs.defaultDomain
     ingressExternal: ingressExternal
   }
 }
