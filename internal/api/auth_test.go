@@ -97,6 +97,47 @@ func TestRequireBearer_Rejects_WrongKey(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, rr.Code)
 }
 
+func TestRequireBearerOrAPIKey_AcceptsAPIKey(t *testing.T) {
+	called := false
+	handler := requireBearerOrAPIKey(nil, nil, "super-secret-key")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/internal/runs/1/context", nil)
+	req.Header.Set("X-Runner-Key", "super-secret-key")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.True(t, called)
+}
+
+func TestRequireBearerOrAPIKey_RejectsWrongAPIKey(t *testing.T) {
+	handler := requireBearerOrAPIKey(nil, nil, "super-secret-key")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/internal/runs/1/context", nil)
+	req.Header.Set("X-Runner-Key", "wrong-key")
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusUnauthorized, rr.Code)
+}
+
+func TestRequireBearerOrAPIKey_RejectsNoCredentials(t *testing.T) {
+	handler := requireBearerOrAPIKey(nil, nil, "")(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest(http.MethodGet, "/internal/runs/1/context", nil)
+	rr := httptest.NewRecorder()
+	handler.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusUnauthorized, rr.Code)
+}
+
 func TestNewServer_RoutesRegistered(t *testing.T) {
 	signer := token.New(randomMaster(t))
 	deps := Deps{Signer: signer}
