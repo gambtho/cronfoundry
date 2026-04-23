@@ -121,3 +121,19 @@ SET enabled           = false,
     updated_at        = now()
 WHERE id = $1
   AND enabled = true;
+
+-- name: SetScheduleOverrides :one
+UPDATE schedule
+SET ui_overrides_json = $2::jsonb,
+    updated_at        = now()
+WHERE id = $1
+  AND org_id = $3
+RETURNING *;
+
+-- name: ClearScheduleOverrides :one
+UPDATE schedule
+SET ui_overrides_json = '{}'::jsonb,
+    updated_at        = now()
+WHERE id = $1
+  AND org_id = $2
+RETURNING *;

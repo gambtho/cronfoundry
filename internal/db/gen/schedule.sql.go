@@ -37,6 +37,55 @@ func (q *Queries) AutoPauseSchedule(ctx context.Context, arg AutoPauseSchedulePa
 	return result.RowsAffected(), nil
 }
 
+const clearScheduleOverrides = `-- name: ClearScheduleOverrides :one
+UPDATE schedule
+SET ui_overrides_json = '{}'::jsonb,
+    updated_at        = now()
+WHERE id = $1
+  AND org_id = $2
+RETURNING id, org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec, enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment, destinations_json, writeback_json, env_json, auto_pause_after, auto_paused_at, auto_pause_reason, last_enabled_at, mcp_env_json, ui_overrides_json, max_turns, next_fire_at, created_at, updated_at
+`
+
+type ClearScheduleOverridesParams struct {
+	ID    pgtype.UUID
+	OrgID pgtype.UUID
+}
+
+func (q *Queries) ClearScheduleOverrides(ctx context.Context, arg ClearScheduleOverridesParams) (Schedule, error) {
+	row := q.db.QueryRow(ctx, clearScheduleOverrides, arg.ID, arg.OrgID)
+	var i Schedule
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.SkillID,
+		&i.Name,
+		&i.Cron,
+		&i.Timezone,
+		&i.OverlapPolicy,
+		&i.TimeoutSec,
+		&i.Enabled,
+		&i.Provider,
+		&i.Model,
+		&i.LlmSecretRef,
+		&i.LlmEndpoint,
+		&i.LlmDeployment,
+		&i.DestinationsJson,
+		&i.WritebackJson,
+		&i.EnvJson,
+		&i.AutoPauseAfter,
+		&i.AutoPausedAt,
+		&i.AutoPauseReason,
+		&i.LastEnabledAt,
+		&i.McpEnvJson,
+		&i.UiOverridesJson,
+		&i.MaxTurns,
+		&i.NextFireAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const disableMissingSchedules = `-- name: DisableMissingSchedules :exec
 UPDATE schedule
 SET enabled    = false,
@@ -122,7 +171,7 @@ func (q *Queries) GetScheduleForTrigger(ctx context.Context, id pgtype.UUID) (Ge
 }
 
 const listDueSchedules = `-- name: ListDueSchedules :many
-SELECT id, org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec, enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment, destinations_json, writeback_json, env_json, auto_pause_after, auto_paused_at, auto_pause_reason, last_enabled_at, mcp_env_json, max_turns, next_fire_at, created_at, updated_at
+SELECT id, org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec, enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment, destinations_json, writeback_json, env_json, auto_pause_after, auto_paused_at, auto_pause_reason, last_enabled_at, mcp_env_json, ui_overrides_json, max_turns, next_fire_at, created_at, updated_at
 FROM schedule
 WHERE enabled = true
   AND next_fire_at IS NOT NULL
@@ -164,6 +213,7 @@ func (q *Queries) ListDueSchedules(ctx context.Context) ([]Schedule, error) {
 			&i.AutoPauseReason,
 			&i.LastEnabledAt,
 			&i.McpEnvJson,
+			&i.UiOverridesJson,
 			&i.MaxTurns,
 			&i.NextFireAt,
 			&i.CreatedAt,
@@ -180,7 +230,7 @@ func (q *Queries) ListDueSchedules(ctx context.Context) ([]Schedule, error) {
 }
 
 const listDueSchedulesWithSha = `-- name: ListDueSchedulesWithSha :many
-SELECT s.id, s.org_id, s.skill_id, s.name, s.cron, s.timezone, s.overlap_policy, s.timeout_sec, s.enabled, s.provider, s.model, s.llm_secret_ref, s.llm_endpoint, s.llm_deployment, s.destinations_json, s.writeback_json, s.env_json, s.auto_pause_after, s.auto_paused_at, s.auto_pause_reason, s.last_enabled_at, s.mcp_env_json, s.max_turns, s.next_fire_at, s.created_at, s.updated_at,
+SELECT s.id, s.org_id, s.skill_id, s.name, s.cron, s.timezone, s.overlap_policy, s.timeout_sec, s.enabled, s.provider, s.model, s.llm_secret_ref, s.llm_endpoint, s.llm_deployment, s.destinations_json, s.writeback_json, s.env_json, s.auto_pause_after, s.auto_paused_at, s.auto_pause_reason, s.last_enabled_at, s.mcp_env_json, s.ui_overrides_json, s.max_turns, s.next_fire_at, s.created_at, s.updated_at,
        sk.current_sha AS skill_sha
 FROM schedule s
 JOIN skill sk ON sk.id = s.skill_id
@@ -213,6 +263,7 @@ type ListDueSchedulesWithShaRow struct {
 	AutoPauseReason  *string
 	LastEnabledAt    pgtype.Timestamptz
 	McpEnvJson       []byte
+	UiOverridesJson  []byte
 	MaxTurns         *int32
 	NextFireAt       pgtype.Timestamptz
 	CreatedAt        pgtype.Timestamptz
@@ -254,6 +305,7 @@ func (q *Queries) ListDueSchedulesWithSha(ctx context.Context) ([]ListDueSchedul
 			&i.AutoPauseReason,
 			&i.LastEnabledAt,
 			&i.McpEnvJson,
+			&i.UiOverridesJson,
 			&i.MaxTurns,
 			&i.NextFireAt,
 			&i.CreatedAt,
@@ -271,7 +323,7 @@ func (q *Queries) ListDueSchedulesWithSha(ctx context.Context) ([]ListDueSchedul
 }
 
 const listSchedulesByOrg = `-- name: ListSchedulesByOrg :many
-SELECT s.id, s.org_id, s.skill_id, s.name, s.cron, s.timezone, s.overlap_policy, s.timeout_sec, s.enabled, s.provider, s.model, s.llm_secret_ref, s.llm_endpoint, s.llm_deployment, s.destinations_json, s.writeback_json, s.env_json, s.auto_pause_after, s.auto_paused_at, s.auto_pause_reason, s.last_enabled_at, s.mcp_env_json, s.max_turns, s.next_fire_at, s.created_at, s.updated_at, sk.path AS skill_path, sk.name AS skill_name, sk.frontmatter_json AS skill_frontmatter_json, rc.owner, rc.name AS repo_name
+SELECT s.id, s.org_id, s.skill_id, s.name, s.cron, s.timezone, s.overlap_policy, s.timeout_sec, s.enabled, s.provider, s.model, s.llm_secret_ref, s.llm_endpoint, s.llm_deployment, s.destinations_json, s.writeback_json, s.env_json, s.auto_pause_after, s.auto_paused_at, s.auto_pause_reason, s.last_enabled_at, s.mcp_env_json, s.ui_overrides_json, s.max_turns, s.next_fire_at, s.created_at, s.updated_at, sk.path AS skill_path, sk.name AS skill_name, sk.frontmatter_json AS skill_frontmatter_json, rc.owner, rc.name AS repo_name
 FROM schedule s
 JOIN skill sk ON sk.id = s.skill_id
 JOIN repo_connection rc ON rc.id = sk.repo_id
@@ -302,6 +354,7 @@ type ListSchedulesByOrgRow struct {
 	AutoPauseReason      *string
 	LastEnabledAt        pgtype.Timestamptz
 	McpEnvJson           []byte
+	UiOverridesJson      []byte
 	MaxTurns             *int32
 	NextFireAt           pgtype.Timestamptz
 	CreatedAt            pgtype.Timestamptz
@@ -345,6 +398,7 @@ func (q *Queries) ListSchedulesByOrg(ctx context.Context, orgID pgtype.UUID) ([]
 			&i.AutoPauseReason,
 			&i.LastEnabledAt,
 			&i.McpEnvJson,
+			&i.UiOverridesJson,
 			&i.MaxTurns,
 			&i.NextFireAt,
 			&i.CreatedAt,
@@ -374,7 +428,7 @@ SET enabled = $2,
     updated_at        = now()
 WHERE id = $1
   AND org_id = $3
-RETURNING id, org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec, enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment, destinations_json, writeback_json, env_json, auto_pause_after, auto_paused_at, auto_pause_reason, last_enabled_at, mcp_env_json, max_turns, next_fire_at, created_at, updated_at
+RETURNING id, org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec, enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment, destinations_json, writeback_json, env_json, auto_pause_after, auto_paused_at, auto_pause_reason, last_enabled_at, mcp_env_json, ui_overrides_json, max_turns, next_fire_at, created_at, updated_at
 `
 
 type SetScheduleEnabledParams struct {
@@ -414,6 +468,57 @@ func (q *Queries) SetScheduleEnabled(ctx context.Context, arg SetScheduleEnabled
 		&i.AutoPauseReason,
 		&i.LastEnabledAt,
 		&i.McpEnvJson,
+		&i.UiOverridesJson,
+		&i.MaxTurns,
+		&i.NextFireAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const setScheduleOverrides = `-- name: SetScheduleOverrides :one
+UPDATE schedule
+SET ui_overrides_json = $2::jsonb,
+    updated_at        = now()
+WHERE id = $1
+  AND org_id = $3
+RETURNING id, org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec, enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment, destinations_json, writeback_json, env_json, auto_pause_after, auto_paused_at, auto_pause_reason, last_enabled_at, mcp_env_json, ui_overrides_json, max_turns, next_fire_at, created_at, updated_at
+`
+
+type SetScheduleOverridesParams struct {
+	ID      pgtype.UUID
+	Column2 []byte
+	OrgID   pgtype.UUID
+}
+
+func (q *Queries) SetScheduleOverrides(ctx context.Context, arg SetScheduleOverridesParams) (Schedule, error) {
+	row := q.db.QueryRow(ctx, setScheduleOverrides, arg.ID, arg.Column2, arg.OrgID)
+	var i Schedule
+	err := row.Scan(
+		&i.ID,
+		&i.OrgID,
+		&i.SkillID,
+		&i.Name,
+		&i.Cron,
+		&i.Timezone,
+		&i.OverlapPolicy,
+		&i.TimeoutSec,
+		&i.Enabled,
+		&i.Provider,
+		&i.Model,
+		&i.LlmSecretRef,
+		&i.LlmEndpoint,
+		&i.LlmDeployment,
+		&i.DestinationsJson,
+		&i.WritebackJson,
+		&i.EnvJson,
+		&i.AutoPauseAfter,
+		&i.AutoPausedAt,
+		&i.AutoPauseReason,
+		&i.LastEnabledAt,
+		&i.McpEnvJson,
+		&i.UiOverridesJson,
 		&i.MaxTurns,
 		&i.NextFireAt,
 		&i.CreatedAt,
@@ -464,7 +569,7 @@ ON CONFLICT (skill_id, name) DO UPDATE
       mcp_env_json      = EXCLUDED.mcp_env_json,
       max_turns         = EXCLUDED.max_turns,
       updated_at        = now()
-RETURNING id, org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec, enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment, destinations_json, writeback_json, env_json, auto_pause_after, auto_paused_at, auto_pause_reason, last_enabled_at, mcp_env_json, max_turns, next_fire_at, created_at, updated_at
+RETURNING id, org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec, enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment, destinations_json, writeback_json, env_json, auto_pause_after, auto_paused_at, auto_pause_reason, last_enabled_at, mcp_env_json, ui_overrides_json, max_turns, next_fire_at, created_at, updated_at
 `
 
 type UpsertScheduleParams struct {
@@ -535,6 +640,7 @@ func (q *Queries) UpsertSchedule(ctx context.Context, arg UpsertScheduleParams) 
 		&i.AutoPauseReason,
 		&i.LastEnabledAt,
 		&i.McpEnvJson,
+		&i.UiOverridesJson,
 		&i.MaxTurns,
 		&i.NextFireAt,
 		&i.CreatedAt,
