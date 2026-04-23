@@ -232,14 +232,32 @@ func dispatchRun(ctx context.Context, deps Deps, args dispatchArgs) error {
 			"api_base_url", runnerURL)
 	}
 
+	var githubToken string
+	if deps.Installations != nil && args.InstallID != 0 {
+		gtok, err := deps.Installations.Token(ctx, args.InstallID)
+		if err != nil {
+			slog.Warn("scheduler: mint GitHub token failed (dispatch continues without GITHUB_TOKEN)",
+				"run_id", uuid.UUID(args.RunID.Bytes).String(),
+				"install_id", args.InstallID,
+				"err", err)
+		} else {
+			githubToken = gtok
+		}
+	}
+
+	env := []string{
+		"CRONFOUNDRY_API_URL=" + runnerURL,
+		"CRONFOUNDRY_RUN_ID=" + uuid.UUID(args.RunID.Bytes).String(),
+		"CRONFOUNDRY_RUN_TOKEN=" + tok,
+	}
+	if githubToken != "" {
+		env = append(env, "GITHUB_TOKEN="+githubToken)
+	}
+
 	spec := cloud.DispatchRequest{
 		BinaryPath: deps.RunnerBinary,
 		Args:       []string{"runner", "--run-id", uuid.UUID(args.RunID.Bytes).String()},
-		Env: []string{
-			"CRONFOUNDRY_API_URL=" + runnerURL,
-			"CRONFOUNDRY_RUN_ID=" + uuid.UUID(args.RunID.Bytes).String(),
-			"CRONFOUNDRY_RUN_TOKEN=" + tok,
-		},
+		Env:        env,
 	}
 	h, err := deps.Dispatcher.Dispatch(ctx, spec)
 	if err != nil {
