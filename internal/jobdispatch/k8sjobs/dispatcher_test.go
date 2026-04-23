@@ -42,6 +42,7 @@ func TestDispatch_CreatesJob(t *testing.T) {
 	require.Len(t, fake.created, 1)
 
 	job := fake.created[0]
+	require.NotEmpty(t, job.Name)
 	require.Equal(t, "cronfoundry", job.Namespace)
 	require.Equal(t, "ghcr.io/cronfoundry/runner:v1.0.0", job.Image)
 	require.Equal(t, "cf-runner", job.ServiceAccount)
@@ -56,4 +57,34 @@ func TestDispatch_PropagatesClientError(t *testing.T) {
 
 	_, err := d.Dispatch(context.Background(), cloud.DispatchRequest{})
 	require.ErrorIs(t, err, context.DeadlineExceeded)
+}
+
+func TestNewDispatcher_NilClientPanics(t *testing.T) {
+	require.Panics(t, func() {
+		k8sjobs.NewDispatcher(nil, k8sjobs.Config{})
+	})
+}
+
+func TestHandle_PIDIsZero(t *testing.T) {
+	fake := &fakeK8sClient{}
+	d := k8sjobs.NewDispatcher(fake, k8sjobs.Config{Namespace: "ns", RunnerImage: "img:v1"})
+	h, err := d.Dispatch(context.Background(), cloud.DispatchRequest{})
+	require.NoError(t, err)
+	require.Equal(t, 0, h.PID())
+}
+
+func TestHandle_WaitReturnsErrNotImplemented(t *testing.T) {
+	fake := &fakeK8sClient{}
+	d := k8sjobs.NewDispatcher(fake, k8sjobs.Config{Namespace: "ns", RunnerImage: "img:v1"})
+	h, err := d.Dispatch(context.Background(), cloud.DispatchRequest{})
+	require.NoError(t, err)
+	require.ErrorIs(t, h.Wait(), k8sjobs.ErrWaitNotImplemented)
+}
+
+func TestHandle_KillReturnsErrNotImplemented(t *testing.T) {
+	fake := &fakeK8sClient{}
+	d := k8sjobs.NewDispatcher(fake, k8sjobs.Config{Namespace: "ns", RunnerImage: "img:v1"})
+	h, err := d.Dispatch(context.Background(), cloud.DispatchRequest{})
+	require.NoError(t, err)
+	require.ErrorIs(t, h.Kill(), k8sjobs.ErrKillNotImplemented)
 }

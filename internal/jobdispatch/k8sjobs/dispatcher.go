@@ -3,10 +3,15 @@ package k8sjobs
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
 
 	"github.com/gambtho/cronfoundry/internal/cloud"
 )
+
+var ErrWaitNotImplemented = errors.New("k8sjobs: Wait not implemented: observe via kubectl")
+var ErrKillNotImplemented = errors.New("k8sjobs: Kill not implemented: delete Job via kubectl")
 
 // Config holds the static parameters for the K8s Jobs dispatcher.
 type Config struct {
@@ -51,7 +56,9 @@ var _ cloud.JobDispatcher = (*Dispatcher)(nil)
 // Dispatch creates a K8s Job and returns immediately. The returned Handle
 // has PID()=0 and Wait()/Kill() not implemented (observe via kubectl/k8s API).
 func (d *Dispatcher) Dispatch(ctx context.Context, req cloud.DispatchRequest) (cloud.Handle, error) {
+	name := fmt.Sprintf("cf-runner-%d", time.Now().UnixMilli())
 	spec := JobSpec{
+		Name:           name,
 		Namespace:      d.cfg.Namespace,
 		Image:          d.cfg.RunnerImage,
 		ServiceAccount: d.cfg.ServiceAccount,
@@ -69,5 +76,5 @@ type k8sHandle struct{}
 var _ cloud.Handle = (*k8sHandle)(nil)
 
 func (h *k8sHandle) PID() int    { return 0 }
-func (h *k8sHandle) Wait() error { return fmt.Errorf("k8sjobs: Wait not implemented: observe via kubectl") }
-func (h *k8sHandle) Kill() error { return fmt.Errorf("k8sjobs: Kill not implemented: delete Job via kubectl") }
+func (h *k8sHandle) Wait() error { return ErrWaitNotImplemented }
+func (h *k8sHandle) Kill() error { return ErrKillNotImplemented }
