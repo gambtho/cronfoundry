@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -16,7 +17,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/gambtho/cronfoundry/internal/config"
 	"github.com/gambtho/cronfoundry/internal/llm"
+	"github.com/gambtho/cronfoundry/internal/mcp"
 	"github.com/gambtho/cronfoundry/internal/publish"
 	"github.com/gambtho/cronfoundry/internal/secrets"
 )
@@ -267,4 +270,185 @@ skills:
 	require.NoError(t, err)
 	assert.Equal(t, 1_000_000, result.Usage.InputTokens)
 	assert.Equal(t, 75, result.CostCents)
+}
+
+// --- Tool-path test doubles ---
+
+type fakeToolProvider struct {
+	turns []llm.TurnResult
+	i     int
+}
+
+func (f *fakeToolProvider) Chat(_ context.Context, _ []llm.Message, _ llm.CallOptions, _ func(llm.StreamChunk)) (llm.Usage, error) {
+	return llm.Usage{}, fmt.Errorf("fakeToolProvider does not implement Chat")
+}
+
+func (f *fakeToolProvider) ChatTurn(_ context.Context, _ []llm.Message, _ []llm.ToolDef, _ llm.CallOptions, _ func(llm.StreamChunk)) (llm.TurnResult, error) {
+	if len(f.turns) == 0 {
+		return llm.TurnResult{}, fmt.Errorf("no turns scripted")
+	}
+	tr := f.turns[f.i%len(f.turns)]
+	f.i++
+	return tr, nil
+}
+
+type fakeMCPManager struct {
+	startErr      error
+	tools         map[string][]mcp.Tool
+	dispatch      func(calls []mcp.ToolUse) ([]mcp.CallResult, *mcp.FatalError)
+	shutdownCalls int
+}
+
+func (f *fakeMCPManager) Start(_, _ string, _, _ []string) error { return f.startErr }
+func (f *fakeMCPManager) Tools(name string) []mcp.Tool          { return f.tools[name] }
+func (f *fakeMCPManager) DispatchAll(_ context.Context, calls []mcp.ToolUse, _ time.Duration) ([]mcp.CallResult, *mcp.FatalError) {
+	return f.dispatch(calls)
+}
+func (f *fakeMCPManager) Shutdown() { f.shutdownCalls++ }
+
+func toolPathRepo(t *testing.T) (string, string) {
+	t.Helper()
+	repoRoot := t.TempDir()
+	manifest := `version: 1
+skills:
+  - path: sk
+    schedules:
+      - name: s
+        cron: "* * * * *"
+        provider: anthropic
+        model: claude-opus-4-7
+`
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "cronfoundry.yaml"), []byte(manifest), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "sk"), 0o755))
+	skillMD := "---\nname: s\nmcp_servers:\n  - name: stub\n    command: /bin/true\n---\nBody.\n"
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "sk/SKILL.md"), []byte(skillMD), 0o644))
+	return repoRoot, "cronfoundry.yaml"
+}
+
+func TestRunner_ToolPath_HappyOneToolThenEndTurn(t *testing.T) {
+	repo, manifest := toolPathRepo(t)
+
+	fake := &fakeToolProvider{turns: []llm.TurnResult{
+		{ToolUses: []llm.ToolUse{{ID: "t1", Name: "stub__echo", Input: json.RawMessage(`{}`)}}, Usage: llm.Usage{InputTokens: 10, OutputTokens: 5}, StopReason: "tool_use"},
+		{Text: "Final answer.", Usage: llm.Usage{InputTokens: 20, OutputTokens: 8}, StopReason: "end_turn"},
+	}}
+	mgr := &fakeMCPManager{
+		tools: map[string][]mcp.Tool{"stub": {{Name: "echo", Description: "d"}}},
+		dispatch: func(calls []mcp.ToolUse) ([]mcp.CallResult, *mcp.FatalError) {
+			out := make([]mcp.CallResult, len(calls))
+			for i, c := range calls {
+				out[i] = mcp.CallResult{ID: c.ID, ResultJSON: json.RawMessage(`"ok"`)}
+			}
+			return out, nil
+		},
+	}
+
+	r := New(Deps{
+		ProviderFactory:   func(string) (llm.Provider, error) { return fake, nil },
+		Publishers:        map[string]publish.Publisher{},
+		MCPManagerFactory: func(context.Context) mcpManager { return mgr },
+	})
+	result, err := r.Run(context.Background(), RunInput{
+		RepoRoot: repo, ManifestPath: manifest, SkillPath: "sk", ScheduleName: "s",
+		LLMAPIKey: "test", DryRun: true,
+		MCPServers: []config.MCPServer{{Name: "stub", Command: "/bin/true"}},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, StatusSucceeded, result.Status)
+	assert.Equal(t, "Final answer.", result.Output)
+	assert.Equal(t, 30, result.Usage.InputTokens)
+	assert.Equal(t, 13, result.Usage.OutputTokens)
+	assert.Equal(t, 1, mgr.shutdownCalls)
+}
+
+func TestRunner_ToolPath_MaxTurnsExceeded(t *testing.T) {
+	repo, manifest := toolPathRepo(t)
+
+	fake := &fakeToolProvider{turns: []llm.TurnResult{
+		{ToolUses: []llm.ToolUse{{ID: "t1", Name: "stub__echo", Input: json.RawMessage(`{}`)}}, Usage: llm.Usage{InputTokens: 1, OutputTokens: 1}, StopReason: "tool_use"},
+	}}
+	mgr := &fakeMCPManager{
+		tools: map[string][]mcp.Tool{"stub": {{Name: "echo"}}},
+		dispatch: func(calls []mcp.ToolUse) ([]mcp.CallResult, *mcp.FatalError) {
+			out := make([]mcp.CallResult, len(calls))
+			for i, c := range calls {
+				out[i] = mcp.CallResult{ID: c.ID, ResultJSON: json.RawMessage(`"ok"`)}
+			}
+			return out, nil
+		},
+	}
+
+	r := New(Deps{
+		ProviderFactory:   func(string) (llm.Provider, error) { return fake, nil },
+		MCPManagerFactory: func(context.Context) mcpManager { return mgr },
+	})
+	result, err := r.Run(context.Background(), RunInput{
+		RepoRoot: repo, ManifestPath: manifest, SkillPath: "sk", ScheduleName: "s",
+		LLMAPIKey: "test", DryRun: true, MaxTurns: 3,
+		MCPServers: []config.MCPServer{{Name: "stub", Command: "/bin/true"}},
+	})
+	require.Error(t, err)
+	assert.Equal(t, StatusFailed, result.Status)
+	assert.Equal(t, "max_turns_exceeded", result.ErrorKind)
+	assert.Equal(t, 1, mgr.shutdownCalls)
+}
+
+func TestRunner_ToolPath_ProviderNotToolCapable(t *testing.T) {
+	repo, manifest := toolPathRepo(t)
+
+	r := New(Deps{
+		ProviderFactory: func(string) (llm.Provider, error) { return &fakeProvider{response: "x"}, nil },
+	})
+	result, err := r.Run(context.Background(), RunInput{
+		RepoRoot: repo, ManifestPath: manifest, SkillPath: "sk", ScheduleName: "s",
+		LLMAPIKey: "test", DryRun: true,
+		MCPServers: []config.MCPServer{{Name: "stub", Command: "/bin/true"}},
+	})
+	require.Error(t, err)
+	assert.Equal(t, "provider_tool_unsupported", result.ErrorKind)
+}
+
+func TestRunner_ToolPath_ServerStartFailure(t *testing.T) {
+	repo, manifest := toolPathRepo(t)
+
+	mgr := &fakeMCPManager{startErr: fmt.Errorf("boom")}
+	r := New(Deps{
+		ProviderFactory:   func(string) (llm.Provider, error) { return &fakeToolProvider{}, nil },
+		MCPManagerFactory: func(context.Context) mcpManager { return mgr },
+	})
+	result, err := r.Run(context.Background(), RunInput{
+		RepoRoot: repo, ManifestPath: manifest, SkillPath: "sk", ScheduleName: "s",
+		LLMAPIKey: "test", DryRun: true,
+		MCPServers: []config.MCPServer{{Name: "stub", Command: "/bin/true"}},
+	})
+	require.Error(t, err)
+	assert.Equal(t, "mcp_server_start_failed", result.ErrorKind)
+	assert.Equal(t, 1, mgr.shutdownCalls)
+}
+
+func TestRunner_ToolPath_FatalDuringDispatch(t *testing.T) {
+	repo, manifest := toolPathRepo(t)
+
+	fake := &fakeToolProvider{turns: []llm.TurnResult{
+		{ToolUses: []llm.ToolUse{{ID: "t1", Name: "stub__echo", Input: json.RawMessage(`{}`)}}, Usage: llm.Usage{InputTokens: 1, OutputTokens: 1}, StopReason: "tool_use"},
+	}}
+	mgr := &fakeMCPManager{
+		tools: map[string][]mcp.Tool{"stub": {{Name: "echo"}}},
+		dispatch: func(_ []mcp.ToolUse) ([]mcp.CallResult, *mcp.FatalError) {
+			return nil, &mcp.FatalError{Kind: "mcp_tool_timeout", Err: fmt.Errorf("timed out")}
+		},
+	}
+
+	r := New(Deps{
+		ProviderFactory:   func(string) (llm.Provider, error) { return fake, nil },
+		MCPManagerFactory: func(context.Context) mcpManager { return mgr },
+	})
+	result, err := r.Run(context.Background(), RunInput{
+		RepoRoot: repo, ManifestPath: manifest, SkillPath: "sk", ScheduleName: "s",
+		LLMAPIKey: "test", DryRun: true,
+		MCPServers: []config.MCPServer{{Name: "stub", Command: "/bin/true"}},
+	})
+	require.Error(t, err)
+	assert.Equal(t, "mcp_tool_timeout", result.ErrorKind)
+	assert.Equal(t, 1, mgr.shutdownCalls)
 }
