@@ -76,6 +76,7 @@ func UpsertSkillsAndSchedules(
 	// 3) Per-skill: upsert schedules, disable missing.
 	for _, entry := range manifest.Skills {
 		skillID := skillByPath[entry.Path]
+		sk := skills[entry.Path]
 
 		presentNames := make([]string, 0, len(entry.Schedules))
 		for _, sch := range entry.Schedules {
@@ -93,6 +94,44 @@ func UpsertSkillsAndSchedules(
 			envBytes, err := json.Marshal(sch.Env)
 			if err != nil {
 				return fmt.Errorf("sync: marshal env for %q/%q: %w", entry.Path, sch.Name, err)
+			}
+
+			// Cross-file validation: mcp_servers (from skill) ↔ mcp_env (from schedule).
+			if len(sk.Frontmatter.MCPServers) > 0 {
+				if sch.Provider == "azure-foundry" {
+					return fmt.Errorf("sync: skill %q schedule %q: azure-foundry does not support mcp_servers in this release", entry.Path, sch.Name)
+				}
+				declared := map[string]bool{}
+				for _, ms := range sk.Frontmatter.MCPServers {
+					declared[ms.Name] = true
+					if _, ok := sch.MCPEnv[ms.Name]; !ok {
+						return fmt.Errorf("sync: skill %q schedule %q: mcp_env missing for declared server %q (use {} if no env needed)", entry.Path, sch.Name, ms.Name)
+					}
+				}
+				for k := range sch.MCPEnv {
+					if !declared[k] {
+						return fmt.Errorf("sync: skill %q schedule %q: mcp_env references undeclared server %q", entry.Path, sch.Name, k)
+					}
+				}
+			} else if len(sch.MCPEnv) > 0 {
+				return fmt.Errorf("sync: skill %q schedule %q: mcp_env set but skill declares no mcp_servers", entry.Path, sch.Name)
+			}
+
+			mcpEnvBytes := []byte(`{}`)
+			if len(sch.MCPEnv) > 0 {
+				mcpEnvBytes, err = json.Marshal(sch.MCPEnv)
+				if err != nil {
+					return fmt.Errorf("sync: marshal mcp_env for %q/%q: %w", entry.Path, sch.Name, err)
+				}
+			}
+
+			var maxTurns *int32
+			if sch.MaxTurns > 0 {
+				if sch.MaxTurns > math.MaxInt32 {
+					return fmt.Errorf("sync: skill %q schedule %q: max_turns %d exceeds int32 range", entry.Path, sch.Name, sch.MaxTurns)
+				}
+				v := int32(sch.MaxTurns)
+				maxTurns = &v
 			}
 
 			overlap := sch.EffectiveOverlapPolicy()
@@ -139,6 +178,8 @@ func UpsertSkillsAndSchedules(
 				WritebackJson:    writebackBytes,
 				EnvJson:          envBytes,
 				AutoPauseAfter:   autoPauseAfter,
+				McpEnvJson:       mcpEnvBytes,
+				MaxTurns:         maxTurns,
 			}); err != nil {
 				return fmt.Errorf("sync: upsert schedule %q/%q: %w", entry.Path, sch.Name, err)
 			}

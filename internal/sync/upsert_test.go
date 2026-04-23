@@ -198,3 +198,162 @@ skills:
 		Scan(&autoPauseAfterNull))
 	assert.Nil(t, autoPauseAfterNull, "auto_pause_after should be NULL when AutoPause is nil")
 }
+
+// TestUpsert_RejectsMissingMCPEnv verifies that a skill declaring an
+// mcp_servers entry whose name is not present in the schedule's mcp_env
+// block is rejected at sync time.
+func TestUpsert_RejectsMissingMCPEnv(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, orgID, repoID, cleanup := startPG(t)
+	defer cleanup()
+
+	skill := &config.Skill{
+		Frontmatter: config.SkillFrontmatter{
+			Name: "weekly-digest",
+			MCPServers: []config.MCPServer{
+				{Name: "github", Command: "npx"},
+			},
+		},
+	}
+	manifest := &config.Manifest{
+		Version: 1,
+		Skills: []config.SkillEntry{{
+			Path: "skills/weekly-digest",
+			Schedules: []config.Schedule{{
+				Name: "monday", Cron: "0 9 * * MON",
+				Provider: "anthropic", Model: "claude-opus-4-7",
+				// mcp_env is MISSING for declared 'github' server.
+			}},
+		}},
+	}
+	err := UpsertSkillsAndSchedules(context.Background(), pool, orgID, repoID, manifest,
+		map[string]*config.Skill{"skills/weekly-digest": skill}, "sha-abc")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "mcp_env missing")
+}
+
+// TestUpsert_RejectsStrayMCPEnv verifies that a schedule's mcp_env block
+// referencing a server that the skill never declared in mcp_servers is
+// rejected.
+func TestUpsert_RejectsStrayMCPEnv(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, orgID, repoID, cleanup := startPG(t)
+	defer cleanup()
+
+	skill := &config.Skill{
+		Frontmatter: config.SkillFrontmatter{
+			Name: "weekly-digest",
+			MCPServers: []config.MCPServer{
+				{Name: "github", Command: "npx"},
+			},
+		},
+	}
+	manifest := &config.Manifest{
+		Version: 1,
+		Skills: []config.SkillEntry{{
+			Path: "skills/weekly-digest",
+			Schedules: []config.Schedule{{
+				Name: "monday", Cron: "0 9 * * MON",
+				Provider: "anthropic", Model: "claude-opus-4-7",
+				MCPEnv: map[string]map[string]config.EnvValue{
+					"github": {},
+					// 'slack' is NOT declared by the skill.
+					"slack": {},
+				},
+			}},
+		}},
+	}
+	err := UpsertSkillsAndSchedules(context.Background(), pool, orgID, repoID, manifest,
+		map[string]*config.Skill{"skills/weekly-digest": skill}, "sha-abc")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "undeclared server")
+}
+
+// TestUpsert_RejectsAzureFoundryWithMCPServers verifies that a skill
+// declaring mcp_servers while the schedule targets azure-foundry is
+// rejected — that provider does not yet support MCP.
+func TestUpsert_RejectsAzureFoundryWithMCPServers(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, orgID, repoID, cleanup := startPG(t)
+	defer cleanup()
+
+	skill := &config.Skill{
+		Frontmatter: config.SkillFrontmatter{
+			Name: "weekly-digest",
+			MCPServers: []config.MCPServer{
+				{Name: "github", Command: "npx"},
+			},
+		},
+	}
+	manifest := &config.Manifest{
+		Version: 1,
+		Skills: []config.SkillEntry{{
+			Path: "skills/weekly-digest",
+			Schedules: []config.Schedule{{
+				Name: "monday", Cron: "0 9 * * MON",
+				Provider: "azure-foundry", Model: "gpt-4o",
+				MCPEnv: map[string]map[string]config.EnvValue{
+					"github": {},
+				},
+			}},
+		}},
+	}
+	err := UpsertSkillsAndSchedules(context.Background(), pool, orgID, repoID, manifest,
+		map[string]*config.Skill{"skills/weekly-digest": skill}, "sha-abc")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "azure-foundry")
+}
+
+// TestUpsert_PersistsMCPEnvAndMaxTurns verifies that a valid skill/schedule
+// pair round-trips through the DB: mcp_env_json is stored as JSON and
+// max_turns is stored as a non-null integer.
+func TestUpsert_PersistsMCPEnvAndMaxTurns(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, orgID, repoID, cleanup := startPG(t)
+	defer cleanup()
+
+	skill := &config.Skill{
+		Frontmatter: config.SkillFrontmatter{
+			Name: "weekly-digest",
+			MCPServers: []config.MCPServer{
+				{Name: "github", Command: "npx"},
+			},
+		},
+	}
+	manifest := &config.Manifest{
+		Version: 1,
+		Skills: []config.SkillEntry{{
+			Path: "skills/weekly-digest",
+			Schedules: []config.Schedule{{
+				Name: "monday", Cron: "0 9 * * MON",
+				Provider: "anthropic", Model: "claude-opus-4-7",
+				MaxTurns: 25,
+				MCPEnv: map[string]map[string]config.EnvValue{
+					"github": {
+						"GITHUB_TOKEN": {Secret: "gh_token"},
+					},
+				},
+			}},
+		}},
+	}
+	ctx := context.Background()
+	require.NoError(t, UpsertSkillsAndSchedules(ctx, pool, orgID, repoID, manifest,
+		map[string]*config.Skill{"skills/weekly-digest": skill}, "sha-abc"))
+
+	var mcpEnvJSON []byte
+	var maxTurns *int32
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT mcp_env_json, max_turns FROM schedule WHERE name = 'monday'`).Scan(&mcpEnvJSON, &maxTurns))
+	assert.Contains(t, string(mcpEnvJSON), "github")
+	assert.Contains(t, string(mcpEnvJSON), "GITHUB_TOKEN")
+	require.NotNil(t, maxTurns)
+	assert.Equal(t, int32(25), *maxTurns)
+}

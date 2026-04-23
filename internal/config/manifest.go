@@ -21,17 +21,19 @@ type SkillEntry struct {
 }
 
 type Schedule struct {
-	Name          string              `json:"name"`
-	Cron          string              `json:"cron"`
-	Timezone      string              `json:"timezone"`
-	OverlapPolicy string              `json:"overlap_policy"`
-	TimeoutSec    int                 `json:"timeout_sec"`
-	Provider      string              `json:"provider"`
-	Model         string              `json:"model"`
-	Destinations  []Destination       `json:"destinations"`
-	Writeback     *WritebackConfig    `json:"writeback,omitempty"`
-	Env           map[string]EnvValue `json:"env"`
-	AutoPause     *AutoPauseConfig    `json:"auto_pause,omitempty"`
+	Name          string                         `json:"name"`
+	Cron          string                         `json:"cron"`
+	Timezone      string                         `json:"timezone"`
+	OverlapPolicy string                         `json:"overlap_policy"`
+	TimeoutSec    int                            `json:"timeout_sec"`
+	Provider      string                         `json:"provider"`
+	Model         string                         `json:"model"`
+	MaxTurns      int                            `json:"max_turns,omitempty"`
+	Destinations  []Destination                  `json:"destinations"`
+	Writeback     *WritebackConfig               `json:"writeback,omitempty"`
+	Env           map[string]EnvValue            `json:"env"`
+	MCPEnv        map[string]map[string]EnvValue `json:"mcp_env,omitempty"`
+	AutoPause     *AutoPauseConfig               `json:"auto_pause,omitempty"`
 }
 
 type Destination struct {
@@ -168,6 +170,9 @@ func (m *Manifest) Validate() error {
 			}
 			if sch.Model == "" {
 				return fmt.Errorf("skill %q schedule %q: model required", s.Path, sch.Name)
+			}
+			if sch.MaxTurns < 0 || sch.MaxTurns > 2147483647 {
+				return fmt.Errorf("skill %q schedule %q: max_turns must be between 0 and 2147483647 (got %d)", s.Path, sch.Name, sch.MaxTurns)
 			}
 			if !validOverlap[sch.OverlapPolicy] {
 				return fmt.Errorf("skill %q schedule %q: overlap_policy %q invalid (want: skip|queue|concurrent)", s.Path, sch.Name, sch.OverlapPolicy)

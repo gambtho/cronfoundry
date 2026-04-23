@@ -102,6 +102,8 @@ type Schedule struct {
 	AutoPausedAt     pgtype.Timestamptz
 	AutoPauseReason  *string
 	LastEnabledAt    pgtype.Timestamptz
+	McpEnvJson       []byte
+	MaxTurns         *int32
 	NextFireAt       pgtype.Timestamptz
 	CreatedAt        pgtype.Timestamptz
 	UpdatedAt        pgtype.Timestamptz

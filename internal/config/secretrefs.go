@@ -10,10 +10,13 @@ import (
 // appear in the form `{ "secret": "name" }` anywhere in the JSON.
 //
 // Non-string "secret" values are skipped. Results are sorted + deduplicated.
-func CollectSecretRefs(destinations, env json.RawMessage, llmRef *string) []string {
+func CollectSecretRefs(destinations, env json.RawMessage, llmRef *string, extra ...json.RawMessage) []string {
 	seen := map[string]struct{}{}
 	scan(destinations, seen)
 	scan(env, seen)
+	for _, e := range extra {
+		scan(e, seen)
+	}
 	if llmRef != nil && *llmRef != "" {
 		seen[*llmRef] = struct{}{}
 	}

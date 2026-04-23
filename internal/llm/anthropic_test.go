@@ -105,3 +105,49 @@ func TestAnthropic_Chat_RetriesOn500UpTo3Times(t *testing.T) {
 	assert.Equal(t, int32(4), atomic.LoadInt32(&attempts),
 		"expected 1 initial + 3 retries = 4 total attempts")
 }
+
+func TestAnthropic_ChatTurn_ReturnsToolUses(t *testing.T) {
+	srv := startAnthropicFixture(t, fixtureAnthropicToolUse)
+
+	p := NewAnthropic(srv.URL)
+	tcp, ok := p.(ToolCapableProvider)
+	require.True(t, ok)
+
+	tools := []ToolDef{{
+		Name:        "get_weather",
+		Description: "return current weather",
+		InputSchema: json.RawMessage(`{"type":"object","properties":{"city":{"type":"string"}}}`),
+	}}
+	tr, err := tcp.ChatTurn(
+		context.Background(),
+		[]Message{{Role: RoleUser, Content: "what's the weather in SF?"}},
+		tools,
+		CallOptions{Model: "claude-opus-4-7", APIKey: "test", MaxTokens: 1024},
+		func(StreamChunk) {},
+	)
+	require.NoError(t, err)
+	require.Len(t, tr.ToolUses, 1)
+	assert.Equal(t, "get_weather", tr.ToolUses[0].Name)
+	assert.Equal(t, "toolu_01A", tr.ToolUses[0].ID)
+	assert.JSONEq(t, `{"city":"SF"}`, string(tr.ToolUses[0].Input))
+	assert.Equal(t, "tool_use", tr.StopReason)
+	assert.Equal(t, 42, tr.Usage.OutputTokens)
+	assert.Contains(t, tr.Text, "check")
+}
+
+func TestAnthropic_ChatTurn_TextOnly(t *testing.T) {
+	srv := startAnthropicFixture(t, fixtureAnthropicTextOnly)
+
+	p := NewAnthropic(srv.URL).(ToolCapableProvider)
+	tr, err := p.ChatTurn(
+		context.Background(),
+		[]Message{{Role: RoleUser, Content: "hi"}},
+		nil,
+		CallOptions{Model: "claude-opus-4-7", APIKey: "test", MaxTokens: 100},
+		func(StreamChunk) {},
+	)
+	require.NoError(t, err)
+	assert.Empty(t, tr.ToolUses)
+	assert.Equal(t, "end_turn", tr.StopReason)
+	assert.Equal(t, "Hello!", tr.Text)
+}

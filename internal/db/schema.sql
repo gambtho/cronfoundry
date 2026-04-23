@@ -62,6 +62,8 @@ CREATE TABLE schedule (
     auto_paused_at      timestamptz,
     auto_pause_reason   text,
     last_enabled_at     timestamptz NOT NULL DEFAULT now(),
+    mcp_env_json        jsonb NOT NULL DEFAULT '{}'::jsonb,
+    max_turns           int,
     next_fire_at        timestamptz,
     created_at          timestamptz NOT NULL DEFAULT now(),
     updated_at          timestamptz NOT NULL DEFAULT now(),

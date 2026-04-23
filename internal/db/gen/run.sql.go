@@ -229,6 +229,8 @@ SELECT r.id, r.org_id, r.schedule_id, r.skill_sha, r.fire_time, r.status, r.fire
        s.destinations_json,
        s.writeback_json,
        s.env_json,
+       s.mcp_env_json,
+       s.max_turns,
        sk.id   AS skill_id_joined,
        sk.path AS skill_path,
        sk.repo_id AS skill_repo_id,
@@ -277,6 +279,8 @@ type GetRunForContextRow struct {
 	DestinationsJson   []byte
 	WritebackJson      []byte
 	EnvJson            []byte
+	McpEnvJson         []byte
+	MaxTurns           *int32
 	SkillIDJoined      pgtype.UUID
 	SkillPath          string
 	SkillRepoID        pgtype.UUID
@@ -325,6 +329,8 @@ func (q *Queries) GetRunForContext(ctx context.Context, id pgtype.UUID) (GetRunF
 		&i.DestinationsJson,
 		&i.WritebackJson,
 		&i.EnvJson,
+		&i.McpEnvJson,
+		&i.MaxTurns,
 		&i.SkillIDJoined,
 		&i.SkillPath,
 		&i.SkillRepoID,
