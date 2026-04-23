@@ -58,7 +58,7 @@ func (p *emailPub) Publish(ctx context.Context, dest config.Destination, output 
 		port = 587
 	}
 
-	body := buildEmail(d.From, d.To, renderedSubj, output, format)
+	body := buildEmail(d.From, d.To, renderedSubj, output, format, tctx)
 	addr := fmt.Sprintf("%s:%d", d.SMTPHost, port)
 	auth := smtp.PlainAuth("", username, password, d.SMTPHost)
 
@@ -69,7 +69,7 @@ func (p *emailPub) Publish(ctx context.Context, dest config.Destination, output 
 	return Result{Type: "email", OK: true, Detail: detail}
 }
 
-func buildEmail(from string, to []string, subject, output, format string) []byte {
+func buildEmail(from string, to []string, subject, output, format string, tctx template.Context) []byte {
 	var buf bytes.Buffer
 	var bodyBuf bytes.Buffer
 
@@ -95,7 +95,9 @@ func buildEmail(from string, to []string, subject, output, format string) []byte
 		hh := make(textproto.MIMEHeader)
 		hh.Set("Content-Type", "text/html; charset=utf-8")
 		hw, _ := mw.CreatePart(hh)
-		fmt.Fprintf(hw, "<html><body style=\"font-family:sans-serif;\"><pre>%s</pre></body></html>",
+		fmt.Fprintf(hw, "<html><body style=\"font-family:sans-serif;\"><h2>%s</h2><p>%s</p><pre style=\"white-space:pre-wrap;\">%s</pre></body></html>",
+			html.EscapeString(tctx.Skill.Name),
+			html.EscapeString(tctx.RunDate),
 			html.EscapeString(output))
 	}
 
