@@ -1,6 +1,7 @@
 package webapi_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -300,4 +301,109 @@ func TestResume_ClearsAutoPauseAndBumpsLastEnabledAt(t *testing.T) {
 	if beforeLEA.Valid {
 		assert.True(t, afterLEA.Time.After(beforeLEA.Time), "last_enabled_at should advance on resume")
 	}
+}
+
+func TestSchedules_PatchOverrides(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, cleanup := testdb.BootPG(t)
+	defer cleanup()
+	seedOrg(t, pool)
+
+	ctx := context.Background()
+	var orgID, repoID, skillID pgtype.UUID
+	require.NoError(t, pool.QueryRow(ctx, `SELECT id FROM organization LIMIT 1`).Scan(&orgID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO repo_connection (org_id, github_app_install_id, owner, name, default_branch)
+		 VALUES ($1, 1, 'o', 'r', 'main') RETURNING id`, orgID).Scan(&repoID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO skill (org_id, repo_id, path, name, current_sha, frontmatter_json)
+		 VALUES ($1, $2, 'sk', 'sk', 'sha', '{}'::jsonb) RETURNING id`, orgID, repoID).Scan(&skillID))
+	var schedID pgtype.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO schedule (org_id, skill_id, name, cron, timezone, overlap_policy,
+		  timeout_sec, enabled, provider, model, destinations_json, writeback_json, env_json)
+		 VALUES ($1, $2, 'sched', '0 9 * * MON', 'UTC', 'skip', 600, true,
+		         'openai', 'gpt-4', '[]'::jsonb, '{}'::jsonb, '{}'::jsonb)
+		 RETURNING id`, orgID, skillID).Scan(&schedID))
+
+	masterKey := make([]byte, 32)
+	mux := http.NewServeMux()
+	webapi.RegisterRoutes(mux, testDeps(pool, masterKey))
+
+	body, _ := json.Marshal(webapi.UIOverrides{Cron: strPtr("*/5 * * * *")})
+	req := httptest.NewRequest("PATCH", "/api/schedules/"+schedID.String()+"/overrides",
+		bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	addTestSession(t, req, masterKey, "alice", "admin")
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	req2 := httptest.NewRequest("GET", "/api/schedules", nil)
+	addTestSession(t, req2, masterKey, "alice", "admin")
+	rr2 := httptest.NewRecorder()
+	mux.ServeHTTP(rr2, req2)
+	var rows []struct {
+		Cron           string `json:"cron"`
+		HasUIOverrides bool   `json:"has_ui_overrides"`
+	}
+	require.NoError(t, json.NewDecoder(rr2.Body).Decode(&rows))
+	require.Len(t, rows, 1)
+	assert.Equal(t, "*/5 * * * *", rows[0].Cron)
+	assert.True(t, rows[0].HasUIOverrides)
+}
+
+func strPtr(s string) *string { return &s }
+
+func TestSchedules_DeleteOverrides(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, cleanup := testdb.BootPG(t)
+	defer cleanup()
+	seedOrg(t, pool)
+
+	ctx := context.Background()
+	var orgID, repoID, skillID pgtype.UUID
+	require.NoError(t, pool.QueryRow(ctx, `SELECT id FROM organization LIMIT 1`).Scan(&orgID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO repo_connection (org_id, github_app_install_id, owner, name, default_branch)
+		 VALUES ($1, 1, 'o', 'r', 'main') RETURNING id`, orgID).Scan(&repoID))
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO skill (org_id, repo_id, path, name, current_sha, frontmatter_json)
+		 VALUES ($1, $2, 'sk', 'sk', 'sha', '{}'::jsonb) RETURNING id`, orgID, repoID).Scan(&skillID))
+	var schedID pgtype.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO schedule (org_id, skill_id, name, cron, timezone, overlap_policy,
+		  timeout_sec, enabled, provider, model, destinations_json, writeback_json, env_json,
+		  ui_overrides_json)
+		 VALUES ($1, $2, 'sched', '0 9 * * MON', 'UTC', 'skip', 600, true,
+		         'openai', 'gpt-4', '[]'::jsonb, '{}'::jsonb, '{}'::jsonb,
+		         '{"cron":"*/5 * * * *"}'::jsonb)
+		 RETURNING id`, orgID, skillID).Scan(&schedID))
+
+	masterKey := make([]byte, 32)
+	mux := http.NewServeMux()
+	webapi.RegisterRoutes(mux, testDeps(pool, masterKey))
+
+	req := httptest.NewRequest("DELETE", "/api/schedules/"+schedID.String()+"/overrides", nil)
+	addTestSession(t, req, masterKey, "alice", "admin")
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+	require.Equal(t, http.StatusOK, rr.Code)
+
+	req2 := httptest.NewRequest("GET", "/api/schedules", nil)
+	addTestSession(t, req2, masterKey, "alice", "admin")
+	rr2 := httptest.NewRecorder()
+	mux.ServeHTTP(rr2, req2)
+	var rows []struct {
+		Cron           string `json:"cron"`
+		HasUIOverrides bool   `json:"has_ui_overrides"`
+	}
+	require.NoError(t, json.NewDecoder(rr2.Body).Decode(&rows))
+	require.Len(t, rows, 1)
+	assert.Equal(t, "0 9 * * MON", rows[0].Cron)
+	assert.False(t, rows[0].HasUIOverrides)
 }

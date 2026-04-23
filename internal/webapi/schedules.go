@@ -160,6 +160,75 @@ func (h *schedulesHandler) setEnabled(w http.ResponseWriter, r *http.Request, en
 	writeJSON(w, http.StatusOK, sched)
 }
 
+func (h *schedulesHandler) patchOverrides(w http.ResponseWriter, r *http.Request) {
+	org, err := h.deps.Queries.GetFirstOrganization(r.Context())
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to load org", "internal")
+		return
+	}
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid schedule id", "bad_request")
+		return
+	}
+	var ov UIOverrides
+	if err := json.NewDecoder(r.Body).Decode(&ov); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid body", "bad_request")
+		return
+	}
+	raw, err := json.Marshal(ov)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "marshal overrides", "internal")
+		return
+	}
+	_, err = h.deps.Queries.SetScheduleOverrides(r.Context(), dbgen.SetScheduleOverridesParams{
+		ID:      pgtype.UUID{Bytes: id, Valid: true},
+		Column2: raw,
+		OrgID:   org.ID,
+	})
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to set overrides", "internal")
+		return
+	}
+	idCopy := id
+	auditLog(r.Context(), h.deps.Queries, mustClaims(r).Login, audit.Entry{
+		OrgID:      org.ID,
+		Action:     "schedule.overrides.set",
+		TargetKind: "schedule",
+		TargetID:   &idCopy,
+	})
+	w.WriteHeader(http.StatusOK)
+}
+
+func (h *schedulesHandler) deleteOverrides(w http.ResponseWriter, r *http.Request) {
+	org, err := h.deps.Queries.GetFirstOrganization(r.Context())
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to load org", "internal")
+		return
+	}
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid schedule id", "bad_request")
+		return
+	}
+	_, err = h.deps.Queries.ClearScheduleOverrides(r.Context(), dbgen.ClearScheduleOverridesParams{
+		ID:    pgtype.UUID{Bytes: id, Valid: true},
+		OrgID: org.ID,
+	})
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to clear overrides", "internal")
+		return
+	}
+	idCopy := id
+	auditLog(r.Context(), h.deps.Queries, mustClaims(r).Login, audit.Entry{
+		OrgID:      org.ID,
+		Action:     "schedule.overrides.clear",
+		TargetKind: "schedule",
+		TargetID:   &idCopy,
+	})
+	w.WriteHeader(http.StatusOK)
+}
+
 func (h *schedulesHandler) runNow(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
 	if _, err := uuid.Parse(idStr); err != nil {
