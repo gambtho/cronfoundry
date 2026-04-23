@@ -602,4 +602,4 @@ subscription with no code changes.
 - [ ] Slack message — not tested (no Slack destination in this config)
 - [ ] GitHub issue — F24 (no GITHUB_TOKEN)
 - [ ] `memory.md` writeback — F24 (no GITHUB_TOKEN)
-- [x] All Azure resources deleted (teardown below)
+- [x] All Azure resources deleted (`az group delete --name rg-cronfoundry-p8smoke --yes --no-wait`)
