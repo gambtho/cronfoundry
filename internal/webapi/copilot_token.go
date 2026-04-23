@@ -128,7 +128,7 @@ func ResolveCopilotToken(ctx context.Context, store secretstore.SecretStore, pre
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("refresh request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return "", time.Time{}, fmt.Errorf("refresh failed: HTTP %d", resp.StatusCode)

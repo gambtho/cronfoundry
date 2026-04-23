@@ -62,7 +62,7 @@ func (h *copilotConnectHandler) startFlow(w http.ResponseWriter, r *http.Request
 		writeErr(w, http.StatusBadGateway, "failed to contact GitHub", "upstream_error")
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var ghResp githubDeviceCodeResponse
 	if err := json.NewDecoder(resp.Body).Decode(&ghResp); err != nil || ghResp.DeviceCode == "" {
@@ -136,7 +136,7 @@ func (h *copilotConnectHandler) poll(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadGateway, "failed to contact GitHub", "upstream_error")
 		return
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	var tokenResp githubTokenResponse
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
