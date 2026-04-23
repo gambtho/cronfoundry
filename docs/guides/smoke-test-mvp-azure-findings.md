@@ -459,3 +459,22 @@ to start the Container Apps Job.
 RBAC module) and a `serveJobStartRole` call in `main.bicep` granting
 **Contributor** on the resource group to the serve principal. Contributor
 includes `Microsoft.App/jobs/start/action`.
+
+## F20 — Job execution template missing container name
+
+**Severity:** blocker (dispatch returns 400 even after RBAC fix)
+**Type:** code
+
+After F19 RBAC propagated, the dispatch flipped from 403 to 400:
+
+```
+ContainerAppInvalidDNS1123LabelName: Property 'containers.name' has
+an invalid value '<null>'.
+```
+
+`internal/cloud/azure/armclient_real.go:toARMTemplate()` creates a
+`JobExecutionContainer` without setting `Name`. Azure requires a valid
+DNS-1123 label.
+
+**Fix:** code — set `Name: &"runner"` on the container. Requires
+v0.7.2 image tag + redeploy.
