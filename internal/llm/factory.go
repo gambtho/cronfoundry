@@ -17,7 +17,13 @@ func NewProvider(name string) (Provider, error) {
 		return NewAnthropic(os.Getenv("CRONFOUNDRY_ANTHROPIC_BASE_URL")), nil
 	case "azure-foundry":
 		return NewAzureFoundry(), nil
+	case "openrouter":
+		base := os.Getenv("CRONFOUNDRY_OPENROUTER_BASE_URL")
+		if base == "" {
+			base = "https://openrouter.ai/api/v1"
+		}
+		return NewOpenAI(base), nil
 	default:
-		return nil, fmt.Errorf("unknown provider %q (supported: openai, anthropic, azure-foundry)", name)
+		return nil, fmt.Errorf("unknown provider %q (supported: openai, anthropic, azure-foundry, openrouter)", name)
 	}
 }
