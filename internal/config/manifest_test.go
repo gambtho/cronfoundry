@@ -351,6 +351,42 @@ skills:
 	assert.Empty(t, sch.MCPEnv["fetch"])
 }
 
+func TestManifest_Validate_CopilotPrefixRequired(t *testing.T) {
+	yml := `
+version: 1
+skills:
+  - path: skills/foo
+    schedules:
+      - name: s1
+        cron: "0 9 * * MON"
+        provider: copilot-enterprise
+        model: gpt-4o
+`
+	m, err := ParseManifest([]byte(yml))
+	require.NoError(t, err)
+	err = m.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "copilot_prefix")
+}
+
+func TestManifest_Validate_CopilotPrefixPresent(t *testing.T) {
+	yml := `
+version: 1
+skills:
+  - path: skills/foo
+    schedules:
+      - name: s1
+        cron: "0 9 * * MON"
+        provider: copilot-enterprise
+        model: gpt-4o
+        copilot_prefix: mycopilot
+`
+	m, err := ParseManifest([]byte(yml))
+	require.NoError(t, err)
+	require.NoError(t, m.Validate())
+	assert.Equal(t, "mycopilot", m.Skills[0].Schedules[0].CopilotPrefix)
+}
+
 func TestParseManifest_RejectsNegativeMaxTurns(t *testing.T) {
 	src := []byte(`version: 1
 skills:
