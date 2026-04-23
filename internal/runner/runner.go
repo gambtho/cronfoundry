@@ -342,7 +342,7 @@ func (r *Runner) Run(ctx context.Context, in RunInput) (RunResult, error) {
 		Skill:     template.Meta{Name: skill.Frontmatter.Name},
 	}
 	dispatcher := &publish.Dispatcher{Publishers: r.deps.Publishers}
-	pubResults := dispatcher.Dispatch(ctx, sch.Destinations, published, tctx, in.Secrets)
+	pubResults := dispatcher.Dispatch(ctx, sch.Destinations, func(_ config.Destination) string { return published }, tctx, in.Secrets, true)
 	result.PublishResults = pubResults
 
 	allOK := true

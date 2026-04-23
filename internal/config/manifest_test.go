@@ -368,3 +368,27 @@ skills:
 	require.Error(t, valErr)
 	assert.Contains(t, valErr.Error(), "max_turns must be between 0 and 2147483647")
 }
+
+func TestDestination_ShouldPublish(t *testing.T) {
+	cases := []struct {
+		when      string
+		succeeded bool
+		want      bool
+	}{
+		{"", true, true},
+		{"", false, true},
+		{"always", true, true},
+		{"always", false, true},
+		{"on_success", true, true},
+		{"on_success", false, false},
+		{"on_failure", true, false},
+		{"on_failure", false, true},
+	}
+	for _, c := range cases {
+		d := Destination{When: c.when}
+		got := d.ShouldPublish(c.succeeded)
+		if got != c.want {
+			t.Errorf("when=%q succeeded=%v: want %v, got %v", c.when, c.succeeded, c.want, got)
+		}
+	}
+}
