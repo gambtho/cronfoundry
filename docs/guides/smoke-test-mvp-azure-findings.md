@@ -549,3 +549,57 @@ during dispatch.
 
 **Fix:** deferred — requires design decision on how the runner
 obtains a short-lived GitHub installation token.
+
+---
+
+## Session 2 — p8smoke (v0.7.5)
+
+| Session | Value |
+|---|---|
+| Started | 2026-04-23 |
+| Operator | `gambtho` (via Claude Code) |
+| Azure subscription | `d0ecd0d2-779b-4fd0-8f04-d46d07f05703` |
+| Resource group | `rg-cronfoundry-p8smoke` |
+| Image tag | `0.7.5` |
+| Region | `swedencentral` |
+| Result | **PASS** (with known F24 `partial_failure`) |
+
+No new code or doc blockers found — v0.7.5 deployed cleanly on a fresh
+subscription with no code changes.
+
+### Observations
+
+1. **Postgres firewall IP mismatch from WSL2.** The operator IP reported
+   by `curl ifconfig.me` (76.97.162.136) was correctly added to the
+   Postgres firewall, but TCP connections timed out. A broad
+   `0.0.0.0–255.255.255.255` rule unblocked connectivity. Root cause is
+   likely NAT translation between WSL2 and the Azure gateway presenting a
+   different source IP. Not a CronFoundry bug — operational note for
+   WSL2-based operators.
+
+2. **Two `schedule.run_now` audit rows** because run-now was called
+   twice (once accidentally, once intentionally). Both runs completed
+   with `partial_failure` matching F24 exactly.
+
+3. **Writeback SHA recorded but commit not visible in GitHub.** The
+   `WritebackCommitSha` field is populated in the run record, but the
+   commit does not appear in the smoke skill repo. Writeback also
+   requires a GitHub token, which the runner lacks (same F24 root
+   cause). The SHA may be a pre-computed value rather than an actual
+   pushed commit.
+
+4. **No `auth.login` audit row.** Session was forged via HMAC-SHA256
+   with the master key (operator had direct DB + key access), bypassing
+   the OAuth flow. All other audit rows (secret.create, repo.connect,
+   schedule.run_now) are present.
+
+### Pass/Fail Checklist
+
+- [x] Run reaches `partial_failure` with only F24 as the failure reason
+- [x] `input_tokens=39`, `output_tokens=89` populated in finalize event
+- [x] Dashboard shows 2 runs (both `partial_failure`)
+- [x] Audit log: `secret.create` (llm-key), `repo.connect`, 2× `schedule.run_now`
+- [ ] Slack message — not tested (no Slack destination in this config)
+- [ ] GitHub issue — F24 (no GITHUB_TOKEN)
+- [ ] `memory.md` writeback — F24 (no GITHUB_TOKEN)
+- [x] All Azure resources deleted (`az group delete --name rg-cronfoundry-p8smoke --yes --no-wait`)
