@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"net/http"
 
 	"sigs.k8s.io/yaml"
 )
@@ -41,6 +42,7 @@ type Destination struct {
 	Slack       *WebhookDest     `json:"slack,omitempty"`
 	Discord     *WebhookDest     `json:"discord,omitempty"`
 	Teams       *WebhookDest     `json:"teams,omitempty"`
+	HTTP        *HTTPDest        `json:"http,omitempty"`
 	// When controls which run outcomes trigger this destination.
 	// Valid values: "always" (default), "on_success", "on_failure".
 	When string `json:"when,omitempty"`
@@ -56,6 +58,23 @@ func (d Destination) ShouldPublish(runSucceeded bool) bool {
 	default: // "always" or empty
 		return true
 	}
+}
+
+// Validate returns an error if the destination config is invalid.
+func (d Destination) Validate() error {
+	if d.HTTP != nil {
+		if d.HTTP.URL == "" {
+			return fmt.Errorf("http destination: url required")
+		}
+		if d.HTTP.Method != "" {
+			switch d.HTTP.Method {
+			case http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+			default:
+				return fmt.Errorf("http destination: unsupported method %q", d.HTTP.Method)
+			}
+		}
+	}
+	return nil
 }
 
 type GitHubIssueDest struct {
@@ -75,6 +94,15 @@ type WebhookDest struct {
 	Username string `json:"username,omitempty"`
 	Format   string `json:"format,omitempty"` // "blocks" (Slack default), "text", "card" (Teams)
 	Output   string `json:"output,omitempty"` // named output block to use; empty = full output
+}
+
+type HTTPDest struct {
+	URL          string            `json:"url"`
+	Method       string            `json:"method,omitempty"`        // default "POST"
+	Secret       string            `json:"secret,omitempty"`        // logical secret name; sent as Bearer token
+	Headers      map[string]string `json:"headers,omitempty"`
+	BodyTemplate string            `json:"body_template,omitempty"` // Go template; default sends {"output":"<output>"}
+	Output       string            `json:"output,omitempty"`
 }
 
 type WritebackConfig struct {
@@ -198,6 +226,11 @@ func (m *Manifest) Validate() error {
 			if sch.AutoPause != nil && sch.AutoPause.After < 1 {
 				return fmt.Errorf("skill %q schedule %q: auto_pause.after must be >= 1 (got %d)",
 					s.Path, sch.Name, sch.AutoPause.After)
+			}
+			for _, dest := range sch.Destinations {
+				if err := dest.Validate(); err != nil {
+					return fmt.Errorf("skill %q schedule %q: destination: %w", s.Path, sch.Name, err)
+				}
 			}
 		}
 	}

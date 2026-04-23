@@ -404,6 +404,74 @@ skills:
 	}
 }
 
+func TestHTTPDest_Validation(t *testing.T) {
+	tests := []struct {
+		name    string
+		yaml    string
+		wantErr string
+	}{
+		{
+			name: "valid minimal",
+			yaml: `version: 1
+skills:
+  - path: skills/test.md
+    schedules:
+      - name: s
+        cron: "0 * * * *"
+        provider: openai
+        model: gpt-4o
+        destinations:
+          - http:
+              url: https://example.com/hook`,
+		},
+		{
+			name:    "missing url",
+			wantErr: "url required",
+			yaml: `version: 1
+skills:
+  - path: skills/test.md
+    schedules:
+      - name: s
+        cron: "0 * * * *"
+        provider: openai
+        model: gpt-4o
+        destinations:
+          - http: {}`,
+		},
+		{
+			name:    "invalid method",
+			wantErr: "unsupported method",
+			yaml: `version: 1
+skills:
+  - path: skills/test.md
+    schedules:
+      - name: s
+        cron: "0 * * * *"
+        provider: openai
+        model: gpt-4o
+        destinations:
+          - http:
+              url: https://example.com/hook
+              method: CONNECT`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m, err := ParseManifest([]byte(tt.yaml))
+			if tt.wantErr == "" {
+				require.NoError(t, err)
+				assert.NoError(t, m.Validate())
+			} else {
+				if err == nil {
+					err = m.Validate()
+				}
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestDestination_ShouldPublish(t *testing.T) {	cases := []struct {
 		when      string
 		succeeded bool
