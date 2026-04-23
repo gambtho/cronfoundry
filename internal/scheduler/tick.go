@@ -18,14 +18,20 @@ import (
 	"github.com/gambtho/cronfoundry/internal/token"
 )
 
+// InstallationTokenProvider mints short-lived GitHub installation tokens.
+type InstallationTokenProvider interface {
+	Token(ctx context.Context, installID int64) (string, error)
+}
+
 // Deps bundles the scheduler's collaborators.
 type Deps struct {
-	Pool         *pgxpool.Pool
-	Signer       *token.Signer
-	Dispatcher   cloud.JobDispatcher
-	APIBaseURL   string // e.g. "http://127.0.0.1:8080"
-	RunnerAPIURL string // external URL the runner uses to reach serve; falls back to APIBaseURL
-	RunnerBinary string // absolute path; typically os.Executable()
+	Pool          *pgxpool.Pool
+	Signer        *token.Signer
+	Dispatcher    cloud.JobDispatcher
+	Installations InstallationTokenProvider // nil = no GitHub token injection
+	APIBaseURL    string                    // e.g. "http://127.0.0.1:8080"
+	RunnerAPIURL  string                    // external URL the runner uses to reach serve; falls back to APIBaseURL
+	RunnerBinary  string                    // absolute path; typically os.Executable()
 }
 
 // Stats summarizes one Tick's effects.
