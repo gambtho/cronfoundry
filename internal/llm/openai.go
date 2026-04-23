@@ -11,7 +11,8 @@ import (
 )
 
 type openAIProvider struct {
-	baseURL string
+	baseURL   string
+	extraOpts []option.RequestOption
 }
 
 // NewOpenAI returns a Provider backed by github.com/openai/openai-go.
@@ -28,6 +29,7 @@ func (p *openAIProvider) newClient(apiKey string) *openai.Client {
 	if p.baseURL != "" {
 		opts = append(opts, option.WithBaseURL(p.baseURL))
 	}
+	opts = append(opts, p.extraOpts...)
 	c := openai.NewClient(opts...)
 	return &c
 }

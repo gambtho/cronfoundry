@@ -24,7 +24,9 @@ func NewProvider(name string) (Provider, error) {
 			base = "https://openrouter.ai/api/v1"
 		}
 		return NewOpenAI(base), nil
+	case "copilot-enterprise":
+		return NewCopilotEnterprise(), nil
 	default:
-		return nil, fmt.Errorf("unknown provider %q (supported: openai, anthropic, azure-foundry, openrouter)", name)
+		return nil, fmt.Errorf("unknown provider %q (supported: openai, anthropic, azure-foundry, openrouter, copilot-enterprise)", name)
 	}
 }
