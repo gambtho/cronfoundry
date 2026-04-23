@@ -346,6 +346,69 @@ func mustNewReq(t *testing.T, method, url, bearer string) *http.Request {
 	return req
 }
 
+func TestRunContext_IncludesMCPFields(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, cleanup := testdb.BootPG(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	var orgPG pgtype.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO organization (name) VALUES ('o') RETURNING id`).Scan(&orgPG))
+	var repoID pgtype.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO repo_connection (org_id, github_app_install_id, owner, name, default_branch)
+		 VALUES ($1, 42, 'acme', 'widgets', 'main') RETURNING id`, orgPG).Scan(&repoID))
+	var skillID pgtype.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO skill (org_id, repo_id, path, name, current_sha, frontmatter_json)
+		 VALUES ($1, $2, 'skills/a', 'a', 'sha-1', '{"name":"a","mcp_servers":[{"name":"gh","command":"gh-mcp"}]}'::jsonb) RETURNING id`,
+		orgPG, repoID).Scan(&skillID))
+
+	mcpEnv := `{"gh":{"GH_TOKEN":{"secret":"github_token"}}}`
+	var schedID pgtype.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO schedule (org_id, skill_id, name, cron, provider, model, destinations_json, mcp_env_json, max_turns)
+		 VALUES ($1, $2, 's', '* * * * *', 'anthropic', 'claude-opus-4-7', '[]'::jsonb, $3::jsonb, 10) RETURNING id`,
+		orgPG, skillID, mcpEnv).Scan(&schedID))
+
+	var runPG pgtype.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO run (org_id, schedule_id, skill_sha, status, fire_reason, runner_token_hash)
+		 VALUES ($1, $2, 'sha-1', 'pending', 'manual', 'hash-placeholder') RETURNING id`,
+		orgPG, schedID).Scan(&runPG))
+	runID := uuid.UUID(runPG.Bytes)
+
+	signer := token.New(randomMaster(t))
+	tok, hash, err := signer.Sign(token.RunClaims{
+		RunID:     runID,
+		OrgID:     uuid.UUID(orgPG.Bytes),
+		ExpiresAt: time.Now().Add(time.Minute),
+	})
+	require.NoError(t, err)
+	bindRunHash(t, pool, runID, hash)
+
+	srv := NewServer("127.0.0.1:0", Deps{Pool: pool, Signer: signer})
+	ts := httptest.NewServer(srv.Handler)
+	defer ts.Close()
+
+	resp, err := ts.Client().Do(mustNewReq(t, "GET", ts.URL+"/internal/runs/"+runID.String()+"/context", tok))
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var body RunContext
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&body))
+
+	assert.NotNil(t, body.MaxTurns)
+	assert.EqualValues(t, 10, *body.MaxTurns)
+	assert.NotEmpty(t, body.MCPEnv)
+	assert.Contains(t, body.SecretManifest, "github_token", "mcp_env secrets should appear in the manifest")
+}
+
 func TestRunContext_BadURLID(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")

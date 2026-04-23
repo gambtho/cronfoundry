@@ -36,8 +36,10 @@ type RunContext struct {
 	Writeback       json.RawMessage `json:"writeback,omitempty"`
 	Env             json.RawMessage `json:"env"`
 	FrontmatterJSON json.RawMessage `json:"frontmatter"`
+	MCPEnv          json.RawMessage `json:"mcp_env,omitempty"`
+	MaxTurns        *int32          `json:"max_turns,omitempty"`
 	// SecretManifest lists the names of secrets this run is allowed to fetch;
-	// derived from destinations/env/llm_secret_ref.
+	// derived from destinations/env/llm_secret_ref/mcp_env.
 	SecretManifest []string `json:"secret_manifest"`
 }
 
@@ -91,8 +93,10 @@ func (h runContextHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Writeback:       row.WritebackJson,
 		Env:             row.EnvJson,
 		FrontmatterJSON: row.FrontmatterJson,
+		MCPEnv:          row.McpEnvJson,
+		MaxTurns:        row.MaxTurns,
 	}
-	out.SecretManifest = config.CollectSecretRefs(row.DestinationsJson, row.EnvJson, row.LlmSecretRef)
+	out.SecretManifest = config.CollectSecretRefs(row.DestinationsJson, row.EnvJson, row.LlmSecretRef, row.McpEnvJson)
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(out); err != nil {
 		// Body already partially written; nothing to recover. The API's

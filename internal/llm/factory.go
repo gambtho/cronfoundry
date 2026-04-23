@@ -13,7 +13,7 @@ func NewProvider(name string) (Provider, error) {
 	case "openai":
 		return NewOpenAI(os.Getenv("CRONFOUNDRY_OPENAI_BASE_URL")), nil
 	case "anthropic":
-		return NewAnthropic(""), nil
+		return NewAnthropic(os.Getenv("CRONFOUNDRY_ANTHROPIC_BASE_URL")), nil
 	case "azure-foundry":
 		return NewAzureFoundry(), nil
 	default:

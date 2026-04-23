@@ -115,7 +115,7 @@ func runRunnerHTTP(ctx context.Context, runIDFlag string) error {
 	// that don't return secret_manifest.
 	secretNames := runCtx.SecretManifest
 	if len(secretNames) == 0 {
-		secretNames = config.CollectSecretRefs(runCtx.Destinations, runCtx.Env, runCtx.LLMSecretRef)
+		secretNames = config.CollectSecretRefs(runCtx.Destinations, runCtx.Env, runCtx.LLMSecretRef, runCtx.MCPEnv)
 	}
 	secretMap, err := client.GetSecrets(ctx, secretNames)
 	if err != nil {
@@ -185,6 +185,9 @@ func runRunnerHTTP(ctx context.Context, runIDFlag string) error {
 			"teams":        publish.NewTeamsPublisher(),
 		},
 	})
+
+	mcpServers, mcpEnv, maxTurns := parseMCPConfig(runCtx)
+
 	result, runErr := r.Run(ctx, runner.RunInput{
 		RepoRoot:      cloneDir,
 		ManifestPath:  "cronfoundry.yaml",
@@ -195,6 +198,9 @@ func runRunnerHTTP(ctx context.Context, runIDFlag string) error {
 		LLMAPIKey:     llmAPIKey,
 		LLMEndpoint:   llmEndpoint,
 		LLMDeployment: llmDeployment,
+		MCPServers:    mcpServers,
+		MCPEnv:        mcpEnv,
+		MaxTurns:      maxTurns,
 		// Writeback push requires the installation token; the clone URL
 		// embeds one but runner.Run expects GitHubToken separate. For now,
 		// skip the push — P2d will wire a dedicated writeback token fetch.
@@ -381,6 +387,8 @@ type runContext struct {
 	Writeback      json.RawMessage `json:"writeback,omitempty"`
 	Env            json.RawMessage `json:"env"`
 	Frontmatter    json.RawMessage `json:"frontmatter"`
+	MCPEnv         json.RawMessage `json:"mcp_env,omitempty"`
+	MaxTurns       *int32          `json:"max_turns,omitempty"`
 	SecretManifest []string        `json:"secret_manifest"`
 }
 
@@ -482,4 +490,25 @@ func (c *apiClient) do(ctx context.Context, method, path string, body, decodeInt
 		}
 	}
 	return nil
+}
+
+func parseMCPConfig(rc runContext) ([]config.MCPServer, map[string]map[string]config.EnvValue, int) {
+	var fm struct {
+		MCPServers []config.MCPServer `json:"mcp_servers"`
+	}
+	if len(rc.Frontmatter) > 0 {
+		_ = json.Unmarshal(rc.Frontmatter, &fm)
+	}
+
+	var mcpEnv map[string]map[string]config.EnvValue
+	if len(rc.MCPEnv) > 0 {
+		_ = json.Unmarshal(rc.MCPEnv, &mcpEnv)
+	}
+
+	var maxTurns int
+	if rc.MaxTurns != nil {
+		maxTurns = int(*rc.MaxTurns)
+	}
+
+	return fm.MCPServers, mcpEnv, maxTurns
 }

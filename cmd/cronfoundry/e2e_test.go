@@ -777,3 +777,315 @@ func runGit(t *testing.T, workDir string, args ...string) {
 	out, err := cmd.CombinedOutput()
 	require.NoError(t, err, "git %v failed: %s", args, string(out))
 }
+
+// buildStubMCPServer compiles the testdata stub-server and returns the binary path.
+func buildStubMCPServer(t *testing.T) string {
+	t.Helper()
+	binPath := filepath.Join(t.TempDir(), "stub-mcp-server")
+	cmd := exec.Command("go", "build", "-o", binPath, "./testdata/mcp-fixtures/stub-server")
+	cmd.Dir = filepath.Join("..", "..")
+	out, err := cmd.CombinedOutput()
+	require.NoError(t, err, "build stub-mcp-server: %s", out)
+	return binPath
+}
+
+// buildMCPSkillRepo creates a local bare git repo with a skill that declares
+// an MCP server in its frontmatter.
+func buildMCPSkillRepo(t *testing.T, stubBinPath string) (bareDir, sha string) {
+	t.Helper()
+	workDir := t.TempDir()
+
+	manifest := `version: 1
+skills:
+  - path: skills/tool-test
+    schedules:
+      - name: mcp-smoke
+        cron: "0 0 1 1 *"
+        timezone: UTC
+        provider: anthropic
+        model: claude-opus-4-7
+`
+	require.NoError(t, os.WriteFile(filepath.Join(workDir, "cronfoundry.yaml"), []byte(manifest), 0644))
+
+	skillDir := filepath.Join(workDir, "skills", "tool-test")
+	require.NoError(t, os.MkdirAll(skillDir, 0755))
+	skillMD := fmt.Sprintf(`---
+name: tool-test
+description: MCP e2e test skill
+mcp_servers:
+  - name: stub
+    command: %s
+---
+Use the stub tool and report the result.
+`, stubBinPath)
+	require.NoError(t, os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte(skillMD), 0644))
+
+	runGit(t, workDir, "init", "-b", "main")
+	runGit(t, workDir, "-c", "user.email=t@t", "-c", "user.name=T", "add", ".")
+	runGit(t, workDir, "-c", "user.email=t@t", "-c", "user.name=T", "commit", "-m", "init")
+	out, err := exec.Command("git", "-C", workDir, "rev-parse", "HEAD").CombinedOutput()
+	require.NoError(t, err, "git rev-parse failed: %s", out)
+	sha = strings.TrimSpace(string(out))
+
+	bareDir = t.TempDir()
+	runGit(t, "", "clone", "--bare", workDir, bareDir)
+	return bareDir, sha
+}
+
+// TestE2E_MCPToolLoop exercises the full MCP tool-use path:
+// scheduler → runner subprocess → Anthropic ChatTurn (tool_use) →
+// MCP stub dispatch → Anthropic ChatTurn (end_turn) → finalize.
+func TestE2E_MCPToolLoop(t *testing.T) {
+	if testing.Short() {
+		t.Skip("e2e: skipped in short mode")
+	}
+
+	ctx := context.Background()
+
+	// ── 1. Build stub MCP server + local skill repo ─────────────────────────
+	t.Log("e2e-mcp: phase 1 — building stub MCP server and skill repo")
+	stubBin := buildStubMCPServer(t)
+	bareDir, pinnedSHA := buildMCPSkillRepo(t, stubBin)
+
+	// ── 2. Boot Postgres + build binary + admin init ────────────────────────
+	t.Log("e2e-mcp: phase 2 — booting Postgres and building binary")
+	dsn, teardownDB := testdb.BootPGWithDSN(t)
+	defer teardownDB()
+
+	binPath := buildBinary(t)
+	masterKey := generateMasterKey(t, binPath, dsn)
+	runAdminInitWithKey(t, binPath, dsn, masterKey)
+
+	pool, err := pgxpool.New(ctx, dsn)
+	require.NoError(t, err)
+	defer pool.Close()
+
+	q := dbgen.New(pool)
+	org, err := q.GetFirstOrganization(ctx)
+	require.NoError(t, err)
+
+	// ── 3. Seed repo + skill + schedule ─────────────────────────────────────
+	t.Log("e2e-mcp: phase 3 — seeding DB rows")
+	repoRow, err := q.InsertRepoConnection(ctx, dbgen.InsertRepoConnectionParams{
+		OrgID:              org.ID,
+		GithubAppInstallID: 12345,
+		Owner:              "e2etest",
+		Name:               "mcp-smoke",
+		DefaultBranch:      "main",
+		SyncIntervalSec:    3600,
+	})
+	require.NoError(t, err)
+
+	frontmatter := fmt.Sprintf(`{"name":"tool-test","description":"MCP e2e test skill","mcp_servers":[{"name":"stub","command":"%s"}]}`, stubBin)
+	skillRow, err := q.UpsertSkill(ctx, dbgen.UpsertSkillParams{
+		OrgID:           org.ID,
+		RepoID:          repoRow.ID,
+		Path:            "skills/tool-test",
+		Name:            "tool-test",
+		CurrentSha:      pinnedSHA,
+		FrontmatterJson: []byte(frontmatter),
+	})
+	require.NoError(t, err)
+
+	llmRef := "anthropic_key"
+	maxTurns := int32(5)
+	schedRow, err := q.UpsertSchedule(ctx, dbgen.UpsertScheduleParams{
+		OrgID:            org.ID,
+		SkillID:          skillRow.ID,
+		Name:             "mcp-smoke",
+		Cron:             "0 0 1 1 *",
+		Timezone:         "UTC",
+		OverlapPolicy:    "skip",
+		TimeoutSec:       120,
+		Enabled:          true,
+		Provider:         "anthropic",
+		Model:            "claude-opus-4-7",
+		LlmSecretRef:     &llmRef,
+		DestinationsJson: []byte(`[]`),
+		WritebackJson:    []byte(`null`),
+		EnvJson:          []byte(`{}`),
+		McpEnvJson:       []byte(`{}`),
+		MaxTurns:         &maxTurns,
+	})
+	require.NoError(t, err)
+
+	// ── 4. Store secrets ────────────────────────────────────────────────────
+	t.Log("e2e-mcp: phase 4 — storing secrets")
+	master, err := secretstore.ParseMasterKey(masterKey)
+	require.NoError(t, err)
+	store := secretstore.NewEnvelopePostgresStore(pool, org.ID, master)
+	require.NoError(t, store.Put(ctx, "anthropic_key", "sk-fake-anthropic-key"))
+
+	// ── 5. Fake Anthropic server ────────────────────────────────────────────
+	// First request: returns tool_use for stub__echo
+	// Second request: returns text with end_turn
+	t.Log("e2e-mcp: phase 5 — starting fake Anthropic server")
+	var anthropicCalls int32
+	anthropicSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call := atomic.AddInt32(&anthropicCalls, 1)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.WriteHeader(http.StatusOK)
+
+		flusher, hasFlusher := w.(http.Flusher)
+		flush := func() {
+			if hasFlusher {
+				flusher.Flush()
+			}
+		}
+
+		if call == 1 {
+			// Turn 1: tool_use
+			fmt.Fprint(w, "event: message_start\n")
+			fmt.Fprint(w, `data: {"type":"message_start","message":{"id":"m1","type":"message","role":"assistant","content":[],"model":"claude-opus-4-7","stop_reason":null,"usage":{"input_tokens":20,"output_tokens":0}}}`+"\n\n")
+			flush()
+			fmt.Fprint(w, "event: content_block_start\n")
+			fmt.Fprint(w, `data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_01","name":"stub__echo","input":{}}}`+"\n\n")
+			flush()
+			fmt.Fprint(w, "event: content_block_delta\n")
+			fmt.Fprint(w, `data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{}"}}`+"\n\n")
+			flush()
+			fmt.Fprint(w, "event: content_block_stop\n")
+			fmt.Fprint(w, `data: {"type":"content_block_stop","index":0}`+"\n\n")
+			flush()
+			fmt.Fprint(w, "event: message_delta\n")
+			fmt.Fprint(w, `data: {"type":"message_delta","delta":{"stop_reason":"tool_use","stop_sequence":null},"usage":{"output_tokens":15}}`+"\n\n")
+			flush()
+			fmt.Fprint(w, "event: message_stop\n")
+			fmt.Fprint(w, `data: {"type":"message_stop"}`+"\n\n")
+			flush()
+		} else {
+			// Turn 2: text with end_turn
+			fmt.Fprint(w, "event: message_start\n")
+			fmt.Fprint(w, `data: {"type":"message_start","message":{"id":"m2","type":"message","role":"assistant","content":[],"model":"claude-opus-4-7","stop_reason":null,"usage":{"input_tokens":30,"output_tokens":0}}}`+"\n\n")
+			flush()
+			fmt.Fprint(w, "event: content_block_start\n")
+			fmt.Fprint(w, `data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}`+"\n\n")
+			flush()
+			fmt.Fprint(w, "event: content_block_delta\n")
+			fmt.Fprint(w, `data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Tool returned ok."}}`+"\n\n")
+			flush()
+			fmt.Fprint(w, "event: content_block_stop\n")
+			fmt.Fprint(w, `data: {"type":"content_block_stop","index":0}`+"\n\n")
+			flush()
+			fmt.Fprint(w, "event: message_delta\n")
+			fmt.Fprint(w, `data: {"type":"message_delta","delta":{"stop_reason":"end_turn","stop_sequence":null},"usage":{"output_tokens":10}}`+"\n\n")
+			flush()
+			fmt.Fprint(w, "event: message_stop\n")
+			fmt.Fprint(w, `data: {"type":"message_stop"}`+"\n\n")
+			flush()
+		}
+	}))
+	defer anthropicSrv.Close()
+
+	// ── 6. Fake GitHub API ──────────────────────────────────────────────────
+	t.Log("e2e-mcp: phase 6 — starting fake GitHub API")
+	ghSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/access_tokens") {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"token":      "ghs_fake_mcp_token",
+				"expires_at": time.Now().Add(time.Hour).UTC().Format(time.RFC3339),
+			})
+			return
+		}
+		http.Error(w, "not found", http.StatusNotFound)
+	}))
+	defer ghSrv.Close()
+
+	pemPath := generateTestPEMFile(t)
+
+	// ── 7. Start cronfoundry serve ──────────────────────────────────────────
+	t.Log("e2e-mcp: phase 7 — starting cronfoundry serve")
+	apiAddr := freeAddr(t)
+
+	serveEnv := buildEnvMap(map[string]string{
+		"CRONFOUNDRY_DATABASE_URL":               dsn,
+		"CRONFOUNDRY_MASTER_KEY":                 masterKey,
+		"CRONFOUNDRY_GITHUB_APP_ID":              "123456",
+		"CRONFOUNDRY_GITHUB_APP_PEM":             pemPath,
+		"CRONFOUNDRY_GITHUB_BASE_URL":            ghSrv.URL,
+		"CRONFOUNDRY_ANTHROPIC_BASE_URL":         anthropicSrv.URL,
+		"CRONFOUNDRY_SMOKE_CLONE_URL":            "file://" + bareDir,
+		"CRONFOUNDRY_GITHUB_OAUTH_CLIENT_ID":     "fake-client-id",
+		"CRONFOUNDRY_GITHUB_OAUTH_CLIENT_SECRET": "fake-client-secret",
+		"CRONFOUNDRY_ADMIN_LOGINS":               "smoke-admin",
+		"HOME":                                   os.Getenv("HOME"),
+		"PATH":                                   os.Getenv("PATH"),
+	})
+
+	serveCmd := exec.Command(binPath, "serve",
+		"--addr", apiAddr,
+		"--tick-cadence", "2s",
+	)
+	serveCmd.Env = serveEnv
+	serveCmd.Stdout = os.Stderr
+	serveCmd.Stderr = os.Stderr
+	require.NoError(t, serveCmd.Start())
+	defer func() {
+		_ = serveCmd.Process.Kill()
+		_ = serveCmd.Wait()
+	}()
+
+	apiBaseURL := "http://" + apiAddr
+	waitHealthy(t, apiBaseURL+"/healthz", 15*time.Second)
+	t.Log("e2e-mcp: serve is healthy")
+
+	// ── 8. Insert a manual pending run ──────────────────────────────────────
+	t.Log("e2e-mcp: phase 8 — inserting manual run")
+	runID := insertManualRun(t, ctx, pool, org.ID, schedRow.ID, pinnedSHA)
+	t.Logf("e2e-mcp: inserted manual run %s", runID)
+
+	// ── 9. Poll until terminal ──────────────────────────────────────────────
+	t.Log("e2e-mcp: phase 9 — polling until terminal status")
+	terminalStatuses := map[string]bool{
+		"succeeded":       true,
+		"partial_failure": true,
+		"failed":          true,
+	}
+
+	deadline := time.Now().Add(90 * time.Second)
+	var finalStatus string
+	var finalRun dbgen.Run
+	for time.Now().Before(deadline) {
+		time.Sleep(3 * time.Second)
+		run, err := q.GetRun(ctx, runID)
+		if err != nil {
+			t.Logf("e2e-mcp: GetRun err (may be transient): %v", err)
+			continue
+		}
+		t.Logf("e2e-mcp: run status = %s", run.Status)
+		if terminalStatuses[run.Status] {
+			finalStatus = run.Status
+			finalRun = run
+			break
+		}
+	}
+
+	require.NotEmpty(t, finalStatus, "run did not reach terminal status within deadline")
+	t.Logf("e2e-mcp: run reached terminal status %q", finalStatus)
+
+	events, err := q.ListRunEvents(ctx, runID)
+	require.NoError(t, err)
+	t.Logf("e2e-mcp: %d run event(s) stored", len(events))
+	for _, ev := range events {
+		t.Logf("e2e-mcp: event type=%s level=%s", ev.EventType, ev.Level)
+	}
+
+	// ── 10. Assertions ──────────────────────────────────────────────────────
+	require.Equal(t, "succeeded", finalStatus,
+		"expected run to succeed; error_kind=%v error_msg=%v",
+		finalRun.ErrorKind, finalRun.ErrorMsg)
+
+	require.NotNil(t, finalRun.TokensIn, "tokens_in should be populated")
+	require.Greater(t, *finalRun.TokensIn, int32(0), "tokens_in should be > 0")
+	require.NotNil(t, finalRun.TokensOut, "tokens_out should be populated")
+	require.Greater(t, *finalRun.TokensOut, int32(0), "tokens_out should be > 0")
+
+	require.GreaterOrEqual(t, atomic.LoadInt32(&anthropicCalls), int32(2),
+		"Anthropic should have been called at least twice (tool_use + end_turn)")
+
+	t.Logf("e2e-mcp: PASS — run %s finalized with status %q, Anthropic called %d time(s)",
+		runID.String(), finalStatus, atomic.LoadInt32(&anthropicCalls))
+}
