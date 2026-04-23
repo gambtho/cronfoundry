@@ -7,7 +7,7 @@ import (
 	"os/exec"
 )
 
-// SubprocessDispatcher runs DispatchSpec jobs via os/exec. This is the P2
+// SubprocessDispatcher runs DispatchRequest jobs via os/exec. This is the P2
 // localhost implementation of JobDispatcher.
 type SubprocessDispatcher struct{}
 
@@ -18,7 +18,7 @@ func NewSubprocessDispatcher() *SubprocessDispatcher { return &SubprocessDispatc
 var _ JobDispatcher = (*SubprocessDispatcher)(nil)
 
 // Dispatch starts the job and returns a Handle.
-func (d *SubprocessDispatcher) Dispatch(ctx context.Context, spec DispatchSpec) (Handle, error) {
+func (d *SubprocessDispatcher) Dispatch(ctx context.Context, spec DispatchRequest) (Handle, error) {
 	cmd := exec.CommandContext(ctx, spec.BinaryPath, spec.Args...)
 	cmd.Env = append(os.Environ(), spec.Env...)
 	// Runner stdout/stderr are routed to our own stdout/stderr so they

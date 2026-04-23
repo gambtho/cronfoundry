@@ -21,10 +21,10 @@ import (
 // mockDispatcher records Dispatch calls; Wait and Kill are no-ops.
 type mockDispatcher struct {
 	mu    sync.Mutex
-	calls []cloud.DispatchSpec
+	calls []cloud.DispatchRequest
 }
 
-func (m *mockDispatcher) Dispatch(ctx context.Context, spec cloud.DispatchSpec) (cloud.Handle, error) {
+func (m *mockDispatcher) Dispatch(ctx context.Context, spec cloud.DispatchRequest) (cloud.Handle, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.calls = append(m.calls, spec)

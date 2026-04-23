@@ -42,7 +42,7 @@ var _ cloud.JobDispatcher = (*ContainerAppsJobDispatcher)(nil)
 
 // Dispatch fires a Container Apps Job execution. BinaryPath is ignored — the job image
 // is configured in Azure; only Args and Env are forwarded.
-func (d *ContainerAppsJobDispatcher) Dispatch(ctx context.Context, spec cloud.DispatchSpec) (cloud.Handle, error) {
+func (d *ContainerAppsJobDispatcher) Dispatch(ctx context.Context, spec cloud.DispatchRequest) (cloud.Handle, error) {
 	tmpl := JobExecutionTemplate{
 		ContainerImage: d.image,
 		ContainerArgs:  append([]string{}, spec.Args...),
