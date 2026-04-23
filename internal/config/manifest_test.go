@@ -577,6 +577,80 @@ skills:
               to: [team@example.com]
               format: markdown`,
 		},
+		{
+			name:    "missing username_secret",
+			wantErr: "username_secret required",
+			yaml: `version: 1
+skills:
+  - path: skills/test.md
+    schedules:
+      - name: s
+        cron: "0 * * * *"
+        provider: openai
+        model: gpt-4o
+        destinations:
+          - email:
+              smtp_host: smtp.example.com
+              password_secret: pass
+              from: bot@example.com
+              to: [team@example.com]`,
+		},
+		{
+			name:    "missing password_secret",
+			wantErr: "password_secret required",
+			yaml: `version: 1
+skills:
+  - path: skills/test.md
+    schedules:
+      - name: s
+        cron: "0 * * * *"
+        provider: openai
+        model: gpt-4o
+        destinations:
+          - email:
+              smtp_host: smtp.example.com
+              username_secret: user
+              from: bot@example.com
+              to: [team@example.com]`,
+		},
+		{
+			name:    "missing from",
+			wantErr: "from required",
+			yaml: `version: 1
+skills:
+  - path: skills/test.md
+    schedules:
+      - name: s
+        cron: "0 * * * *"
+        provider: openai
+        model: gpt-4o
+        destinations:
+          - email:
+              smtp_host: smtp.example.com
+              username_secret: user
+              password_secret: pass
+              to: [team@example.com]`,
+		},
+		{
+			name:    "invalid smtp_port",
+			wantErr: "smtp_port must be 1-65535",
+			yaml: `version: 1
+skills:
+  - path: skills/test.md
+    schedules:
+      - name: s
+        cron: "0 * * * *"
+        provider: openai
+        model: gpt-4o
+        destinations:
+          - email:
+              smtp_host: smtp.example.com
+              smtp_port: 99999
+              username_secret: user
+              password_secret: pass
+              from: bot@example.com
+              to: [team@example.com]`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
