@@ -44,6 +44,7 @@ type scheduleDTO struct {
 	RepoName        string             `json:"repo_name"`
 	MaxTurns        *int32             `json:"max_turns"`
 	MCPServers      []config.MCPServer `json:"mcp_servers"`
+	HasUIOverrides  bool               `json:"has_ui_overrides"`
 }
 
 // scheduleRowToDTO converts a sqlc row (pgtype-laden) into the wire shape.
