@@ -30,6 +30,7 @@ var priceTable = map[string]map[string]pricePer1M{
 		"claude-sonnet-4-5": {in: 300, out: 1500},
 		"claude-opus-4-6":   {in: 1500, out: 7500},
 	},
+	"copilot-enterprise": {},
 }
 
 // CostCents returns the run cost in whole cents (floored) for the given

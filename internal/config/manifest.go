@@ -33,7 +33,8 @@ type Schedule struct {
 	Writeback     *WritebackConfig               `json:"writeback,omitempty"`
 	Env           map[string]EnvValue            `json:"env"`
 	MCPEnv        map[string]map[string]EnvValue `json:"mcp_env,omitempty"`
-	AutoPause     *AutoPauseConfig               `json:"auto_pause,omitempty"`
+	AutoPause      *AutoPauseConfig               `json:"auto_pause,omitempty"`
+	CopilotPrefix  string                         `json:"copilot_prefix,omitempty"`
 }
 
 type Destination struct {
@@ -188,6 +189,9 @@ func (m *Manifest) Validate() error {
 			}
 			if sch.Model == "" {
 				return fmt.Errorf("skill %q schedule %q: model required", s.Path, sch.Name)
+			}
+			if sch.Provider == "copilot-enterprise" && sch.CopilotPrefix == "" {
+				return fmt.Errorf("skill %q schedule %q: copilot_prefix required when provider is copilot-enterprise", s.Path, sch.Name)
 			}
 			if sch.MaxTurns < 0 || sch.MaxTurns > 2147483647 {
 				return fmt.Errorf("skill %q schedule %q: max_turns must be between 0 and 2147483647 (got %d)", s.Path, sch.Name, sch.MaxTurns)

@@ -353,3 +353,59 @@ func TestRunnerHTTP_AppliesTimeoutFromRunContext(t *testing.T) {
 	assert.Less(t, elapsed, 3*time.Second, "runner must abort within timeout + a small slack")
 	assert.Contains(t, string(fullBody), `"status":"failed"`, "finalize body must record failed status")
 }
+
+func TestRunnerHTTP_CopilotTokenFetched(t *testing.T) {
+	var copilotTokenCalled bool
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/internal/runs/run-copilot/context", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"run_id":          "run-copilot",
+			"schedule_name":   "s1",
+			"skill_path":      "skills/foo",
+			"skill_sha":       "abc123",
+			"repo_id":         "repo-42",
+			"provider":        "copilot-enterprise",
+			"model":           "gpt-4o",
+			"timeout_sec":     10,
+			"secret_manifest": []string{},
+			"destinations":    []any{},
+			"env":             map[string]any{},
+		})
+	})
+	mux.HandleFunc("/internal/runs/run-copilot/copilot-token", func(w http.ResponseWriter, r *http.Request) {
+		copilotTokenCalled = true
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token": "ghu_testtoken",
+			"expires_at":   time.Now().Add(8 * time.Hour).Format(time.RFC3339),
+		})
+	})
+	// Stub remaining endpoints to prevent nil-panic crashes
+	mux.HandleFunc("/internal/secrets", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{})
+	})
+	mux.HandleFunc("/internal/repos/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"url": "https://github.com/example/repo.git"})
+	})
+	mux.HandleFunc("/internal/runs/run-copilot/finalize", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc("/internal/runs/run-copilot/events", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	t.Setenv(envAPIURL, srv.URL)
+	t.Setenv(envRunID, "run-copilot")
+	t.Setenv(envRunToken, "tok")
+
+	_ = runRunnerHTTP(context.Background(), "")
+
+	assert.True(t, copilotTokenCalled, "expected /copilot-token to be called for copilot-enterprise provider")
+}

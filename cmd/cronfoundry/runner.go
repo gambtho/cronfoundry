@@ -122,6 +122,26 @@ func runRunnerHTTP(ctx context.Context, runIDFlag string) error {
 		return failRun(ctx, client, runID, "secrets_fetch", err)
 	}
 
+	// 2b) Extract the LLM API key early so it is available before we clone.
+	llmAPIKey := ""
+	if runCtx.LLMSecretRef != nil && *runCtx.LLMSecretRef != "" {
+		if v, ok := secretMap[*runCtx.LLMSecretRef]; ok {
+			llmAPIKey = v
+		}
+	}
+
+	// For copilot-enterprise, the API mints/refreshes the OAuth token on demand.
+	if runCtx.Provider == "copilot-enterprise" {
+		copilotToken, err := client.GetCopilotToken(ctx, runID)
+		if err != nil {
+			return failRun(ctx, client, runID, "copilot_token_refresh", err)
+		}
+		if copilotToken.AccessToken == "" {
+			return failRun(ctx, client, runID, "copilot_token_refresh", fmt.Errorf("received empty access_token"))
+		}
+		llmAPIKey = copilotToken.AccessToken
+	}
+
 	// 3) Fetch the tokenized clone URL.
 	cloneURL, err := client.GetCloneURL(ctx, runCtx.RepoID)
 	if err != nil {
@@ -150,13 +170,7 @@ func runRunnerHTTP(ctx context.Context, runIDFlag string) error {
 	//    remap here.
 	resolver := secrets.New(envMapForSecrets(secretMap))
 
-	// 6) Extract the LLM API key. The provider factory needs it inline.
-	llmAPIKey := ""
-	if runCtx.LLMSecretRef != nil && *runCtx.LLMSecretRef != "" {
-		if v, ok := secretMap[*runCtx.LLMSecretRef]; ok {
-			llmAPIKey = v
-		}
-	}
+	// 6) Build LLM endpoint/deployment overrides.
 	llmEndpoint := ""
 	if runCtx.LLMEndpoint != nil {
 		llmEndpoint = *runCtx.LLMEndpoint
@@ -465,6 +479,20 @@ func (c *apiClient) PostWritebackPush(ctx context.Context, runID, commitSHA, rep
 		"repo_root":  repoRoot,
 	}
 	return c.do(ctx, http.MethodPost, "/internal/runs/"+url.PathEscape(runID)+"/writeback-push", body, nil)
+}
+
+// copilotTokenResponse is returned by GET /internal/runs/{id}/copilot-token.
+type copilotTokenResponse struct {
+	AccessToken string `json:"access_token"`
+	ExpiresAt   string `json:"expires_at"`
+}
+
+func (c *apiClient) GetCopilotToken(ctx context.Context, runID string) (*copilotTokenResponse, error) {
+	var out copilotTokenResponse
+	if err := c.do(ctx, http.MethodGet, "/internal/runs/"+url.PathEscape(runID)+"/copilot-token", nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
 // do issues a JSON-over-HTTP request with bearer auth and decodes the

@@ -2,6 +2,7 @@ package sync
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -356,4 +357,40 @@ func TestUpsert_PersistsMCPEnvAndMaxTurns(t *testing.T) {
 	assert.Contains(t, string(mcpEnvJSON), "GITHUB_TOKEN")
 	require.NotNil(t, maxTurns)
 	assert.Equal(t, int32(25), *maxTurns)
+}
+
+func TestUpsertSkillsAndSchedules_CopilotTokenRefs(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, orgID, repoID, cleanup := startPG(t)
+	defer cleanup()
+
+	manifestYAML := `version: 1
+skills:
+  - path: skills/cp
+    schedules:
+      - name: daily
+        cron: "0 9 * * *"
+        provider: copilot-enterprise
+        model: gpt-4o
+        copilot_prefix: mycopilot
+`
+	manifest, err := config.ParseManifest([]byte(manifestYAML))
+	require.NoError(t, err)
+
+	err = UpsertSkillsAndSchedules(context.Background(), pool, orgID, repoID, manifest,
+		map[string]*config.Skill{"skills/cp": {Frontmatter: config.SkillFrontmatter{Name: "cp"}}}, "abc123")
+	require.NoError(t, err)
+
+	q := dbgen.New(pool)
+	rows, err := q.ListSchedulesByOrg(context.Background(), orgID)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+
+	var refs struct {
+		Prefix string `json:"prefix"`
+	}
+	require.NoError(t, json.Unmarshal(rows[0].CopilotTokenRefsJson, &refs))
+	assert.Equal(t, "mycopilot", refs.Prefix)
 }

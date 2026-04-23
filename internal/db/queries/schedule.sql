@@ -2,27 +2,30 @@
 INSERT INTO schedule (
     org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec,
     enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment,
-    destinations_json, writeback_json, env_json, auto_pause_after, mcp_env_json, max_turns, updated_at
+    destinations_json, writeback_json, env_json, auto_pause_after, mcp_env_json,
+    max_turns, copilot_token_refs_json, updated_at
 )
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, now())
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+        $17, $18, $19, $20, now())
 ON CONFLICT (skill_id, name) DO UPDATE
-  SET cron              = EXCLUDED.cron,
-      timezone          = EXCLUDED.timezone,
-      overlap_policy    = EXCLUDED.overlap_policy,
-      timeout_sec       = EXCLUDED.timeout_sec,
-      enabled           = EXCLUDED.enabled,
-      provider          = EXCLUDED.provider,
-      model             = EXCLUDED.model,
-      llm_secret_ref    = EXCLUDED.llm_secret_ref,
-      llm_endpoint      = EXCLUDED.llm_endpoint,
-      llm_deployment    = EXCLUDED.llm_deployment,
-      destinations_json = EXCLUDED.destinations_json,
-      writeback_json    = EXCLUDED.writeback_json,
-      env_json          = EXCLUDED.env_json,
-      auto_pause_after  = EXCLUDED.auto_pause_after,
-      mcp_env_json      = EXCLUDED.mcp_env_json,
-      max_turns         = EXCLUDED.max_turns,
-      updated_at        = now()
+  SET cron                    = EXCLUDED.cron,
+      timezone                = EXCLUDED.timezone,
+      overlap_policy          = EXCLUDED.overlap_policy,
+      timeout_sec             = EXCLUDED.timeout_sec,
+      enabled                 = EXCLUDED.enabled,
+      provider                = EXCLUDED.provider,
+      model                   = EXCLUDED.model,
+      llm_secret_ref          = EXCLUDED.llm_secret_ref,
+      llm_endpoint            = EXCLUDED.llm_endpoint,
+      llm_deployment          = EXCLUDED.llm_deployment,
+      destinations_json       = EXCLUDED.destinations_json,
+      writeback_json          = EXCLUDED.writeback_json,
+      env_json                = EXCLUDED.env_json,
+      auto_pause_after        = EXCLUDED.auto_pause_after,
+      mcp_env_json            = EXCLUDED.mcp_env_json,
+      max_turns               = EXCLUDED.max_turns,
+      copilot_token_refs_json = EXCLUDED.copilot_token_refs_json,
+      updated_at              = now()
 RETURNING *;
 
 -- name: DisableMissingSchedules :exec
@@ -137,3 +140,6 @@ SET ui_overrides_json = '{}'::jsonb,
 WHERE id = $1
   AND org_id = $2
 RETURNING *;
+
+-- name: GetScheduleByID :one
+SELECT * FROM schedule WHERE id = $1 LIMIT 1;

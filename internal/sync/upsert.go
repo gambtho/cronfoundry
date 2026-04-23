@@ -158,6 +158,15 @@ func UpsertSkillsAndSchedules(
 				autoPauseAfter = &v
 			}
 
+			var copilotRefsJSON []byte
+			if sch.Provider == "copilot-enterprise" && sch.CopilotPrefix != "" {
+				// Schema mirrors webapi.CopilotTokenRefsJSON{Prefix}; keep in sync if fields are added.
+				copilotRefsJSON, err = json.Marshal(map[string]string{"prefix": sch.CopilotPrefix})
+				if err != nil {
+					return fmt.Errorf("sync: marshal copilot refs for %q/%q: %w", entry.Path, sch.Name, err)
+				}
+			}
+
 			if _, err := q.UpsertSchedule(ctx, dbgen.UpsertScheduleParams{
 				OrgID:         orgID,
 				SkillID:       skillID,
@@ -171,15 +180,16 @@ func UpsertSkillsAndSchedules(
 				Model:         sch.Model,
 				// sqlc emits *string for nullable text columns
 				// (emit_pointers_for_null_types: true). nil represents NULL.
-				LlmSecretRef:     nil,
-				LlmEndpoint:      nil,
-				LlmDeployment:    nil,
-				DestinationsJson: destBytes,
-				WritebackJson:    writebackBytes,
-				EnvJson:          envBytes,
-				AutoPauseAfter:   autoPauseAfter,
-				McpEnvJson:       mcpEnvBytes,
-				MaxTurns:         maxTurns,
+				LlmSecretRef:         nil,
+				LlmEndpoint:          nil,
+				LlmDeployment:        nil,
+				DestinationsJson:     destBytes,
+				WritebackJson:        writebackBytes,
+				EnvJson:              envBytes,
+				AutoPauseAfter:       autoPauseAfter,
+				McpEnvJson:           mcpEnvBytes,
+				MaxTurns:             maxTurns,
+				CopilotTokenRefsJson: copilotRefsJSON,
 			}); err != nil {
 				return fmt.Errorf("sync: upsert schedule %q/%q: %w", entry.Path, sch.Name, err)
 			}
