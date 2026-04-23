@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -74,13 +75,15 @@ func (p *httpPub) Publish(ctx context.Context, dest config.Destination, output s
 	if err != nil {
 		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("http: %w", err)}
 	}
-	// Drain a bounded prefix before closing so the connection can be reused.
+	// Read a bounded preview for non-2xx detail, then drain the rest so the
+	// connection can be returned to the pool for reuse.
 	var snippet string
 	buf := make([]byte, 1024)
 	n, _ := resp.Body.Read(buf)
 	if n > 0 {
 		snippet = strings.TrimSpace(string(buf[:n]))
 	}
+	_, _ = io.Copy(io.Discard, resp.Body)
 	_ = resp.Body.Close()
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		detail := fmt.Sprintf("http %d", resp.StatusCode)

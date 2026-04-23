@@ -454,6 +454,36 @@ skills:
               url: https://example.com/hook
               method: CONNECT`,
 		},
+		{
+			name:    "invalid url scheme",
+			wantErr: "invalid or unsupported URL scheme",
+			yaml: `version: 1
+skills:
+  - path: skills/test.md
+    schedules:
+      - name: s
+        cron: "0 * * * *"
+        provider: openai
+        model: gpt-4o
+        destinations:
+          - http:
+              url: ftp://example.com/hook`,
+		},
+		{
+			name:    "url with empty host",
+			wantErr: "url must include a host",
+			yaml: `version: 1
+skills:
+  - path: skills/test.md
+    schedules:
+      - name: s
+        cron: "0 * * * *"
+        provider: openai
+        model: gpt-4o
+        destinations:
+          - http:
+              url: http:///path`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -650,6 +680,63 @@ skills:
               password_secret: pass
               from: bot@example.com
               to: [team@example.com]`,
+		},
+		{
+			name: "smtp_port boundary 1",
+			yaml: `version: 1
+skills:
+  - path: skills/test.md
+    schedules:
+      - name: s
+        cron: "0 * * * *"
+        provider: openai
+        model: gpt-4o
+        destinations:
+          - email:
+              smtp_host: smtp.example.com
+              smtp_port: 1
+              username_secret: user
+              password_secret: pass
+              from: bot@example.com
+              to: [team@example.com]`,
+		},
+		{
+			name: "smtp_port boundary 65535",
+			yaml: `version: 1
+skills:
+  - path: skills/test.md
+    schedules:
+      - name: s
+        cron: "0 * * * *"
+        provider: openai
+        model: gpt-4o
+        destinations:
+          - email:
+              smtp_host: smtp.example.com
+              smtp_port: 65535
+              username_secret: user
+              password_secret: pass
+              from: bot@example.com
+              to: [team@example.com]`,
+		},
+		{
+			name:    "to contains empty address",
+			wantErr: "to contains empty address",
+			yaml: `version: 1
+skills:
+  - path: skills/test.md
+    schedules:
+      - name: s
+        cron: "0 * * * *"
+        provider: openai
+        model: gpt-4o
+        destinations:
+          - email:
+              smtp_host: smtp.example.com
+              username_secret: user
+              password_secret: pass
+              from: bot@example.com
+              to: [""]`,
 		},
 	}
 	for _, tt := range tests {

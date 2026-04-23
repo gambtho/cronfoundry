@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"sigs.k8s.io/yaml"
 )
@@ -64,6 +65,13 @@ func (d Destination) ShouldPublish(runSucceeded bool) bool {
 
 // Validate returns an error if the destination config is invalid.
 func (d Destination) Validate() error {
+	if d.When != "" {
+		switch d.When {
+		case "always", "on_success", "on_failure":
+		default:
+			return fmt.Errorf("destination: invalid when value %q (must be \"always\", \"on_success\", or \"on_failure\")", d.When)
+		}
+	}
 	if d.HTTP != nil {
 		if d.HTTP.URL == "" {
 			return fmt.Errorf("http destination: url required")
@@ -71,6 +79,9 @@ func (d Destination) Validate() error {
 		parsed, err := url.ParseRequestURI(d.HTTP.URL)
 		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
 			return fmt.Errorf("http destination: invalid or unsupported URL scheme %q (must be http or https)", d.HTTP.URL)
+		}
+		if parsed.Host == "" {
+			return fmt.Errorf("http destination: url must include a host")
 		}
 		if d.HTTP.Method != "" {
 			switch d.HTTP.Method {
@@ -96,6 +107,11 @@ func (d Destination) Validate() error {
 		}
 		if len(e.To) == 0 {
 			return fmt.Errorf("email destination: to must have at least one address")
+		}
+		for _, addr := range e.To {
+			if strings.TrimSpace(addr) == "" {
+				return fmt.Errorf("email destination: to contains empty address")
+			}
 		}
 		if e.SMTPPort != 0 && (e.SMTPPort < 1 || e.SMTPPort > 65535) {
 			return fmt.Errorf("email destination: smtp_port must be 1-65535 (got %d)", e.SMTPPort)

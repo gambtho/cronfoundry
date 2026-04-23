@@ -23,6 +23,7 @@ func fakeSMTP(t *testing.T) (string, <-chan string) {
 	ch := make(chan string, 1)
 	go func() {
 		defer func() { _ = ln.Close() }()
+		defer close(ch) // unblock receivers if no DATA command is reached
 		conn, err := ln.Accept()
 		if err != nil {
 			return

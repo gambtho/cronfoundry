@@ -7,8 +7,10 @@ import (
 	"html"
 	"mime"
 	"mime/multipart"
+	"net"
 	"net/smtp"
 	"net/textproto"
+	"strconv"
 	"strings"
 
 	"github.com/gambtho/cronfoundry/internal/config"
@@ -55,7 +57,7 @@ func (p *emailPub) Publish(ctx context.Context, dest config.Destination, output 
 	if err != nil {
 		return Result{Type: p.Type(), OK: false, Err: err}
 	}
-	addr := fmt.Sprintf("%s:%d", d.SMTPHost, port)
+	addr := net.JoinHostPort(d.SMTPHost, strconv.Itoa(port))
 	auth := smtp.PlainAuth("", username, password, d.SMTPHost)
 
 	// net/smtp does not support context cancellation; the run deadline covers this via the process.
