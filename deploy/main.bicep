@@ -137,6 +137,18 @@ module serve 'modules/containerApp.bicep' = {
   }
 }
 
+// The serve identity needs Microsoft.App/jobs/start/action on the runner job.
+// Contributor (b24988ac-6180-42a0-ab88-20f7382dd24c) includes it; scoped to RG.
+module serveJobStartRole 'modules/roleAssignment.bicep' = {
+  scope: rg
+  name: 'serveJobStartRole'
+  params: {
+    principalId: identities.outputs.cfServePrincipalId
+    roleDefinitionId: 'b24988ac-6180-42a0-ab88-20f7382dd24c'
+    principalType: 'ServicePrincipal'
+  }
+}
+
 output resourceGroup string = rgName
 output kvUrl string = kv.outputs.kvUrl
 output serveUrl string = serve.outputs.fqdn
