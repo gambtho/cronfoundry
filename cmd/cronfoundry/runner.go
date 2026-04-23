@@ -184,6 +184,13 @@ func runRunnerHTTP(ctx context.Context, runIDFlag string) error {
 			"discord":      publish.NewDiscordPublisher(),
 			"teams":        publish.NewTeamsPublisher(),
 		},
+		EventSink: func(e runner.RunEvent) {
+			_ = client.PostEvents(ctx, runID, []event{{
+				Type:    e.Type,
+				Level:   "info",
+				Payload: e.Payload,
+			}})
+		},
 	})
 
 	mcpServers, mcpEnv, maxTurns := parseMCPConfig(runCtx)

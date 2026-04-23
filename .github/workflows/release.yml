@@ -54,6 +54,28 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Extract runner metadata
+        id: runner-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-runner
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Build and push runner image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: deploy/Dockerfile.runner
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.runner-meta.outputs.tags }}
+          labels: ${{ steps.runner-meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
       - name: Bundle deploy artifacts
         run: |
           tar -czf cronfoundry-azure-deploy-${{ github.ref_name }}.tar.gz \

@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/gambtho/cronfoundry/internal/audit"
+	"github.com/gambtho/cronfoundry/internal/config"
 	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
 )
 
@@ -20,6 +21,12 @@ import (
 var runNowClient = &http.Client{Timeout: 30 * time.Second}
 
 type schedulesHandler struct{ deps Deps }
+
+type scheduleListItem struct {
+	dbgen.ListSchedulesByOrgRow
+	MCPServers []config.MCPServer `json:"mcp_servers"`
+	MaxTurns   *int32             `json:"max_turns"`
+}
 
 func (h *schedulesHandler) list(w http.ResponseWriter, r *http.Request) {
 	org, err := h.deps.Queries.GetFirstOrganization(r.Context())
@@ -32,7 +39,23 @@ func (h *schedulesHandler) list(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "failed to list schedules", "internal")
 		return
 	}
-	writeJSON(w, http.StatusOK, rows)
+	items := make([]scheduleListItem, len(rows))
+	for i, row := range rows {
+		var fm config.SkillFrontmatter
+		if len(row.SkillFrontmatterJson) > 0 {
+			_ = json.Unmarshal(row.SkillFrontmatterJson, &fm)
+		}
+		servers := fm.MCPServers
+		if servers == nil {
+			servers = []config.MCPServer{}
+		}
+		items[i] = scheduleListItem{
+			ListSchedulesByOrgRow: row,
+			MCPServers:            servers,
+			MaxTurns:              row.MaxTurns,
+		}
+	}
+	writeJSON(w, http.StatusOK, items)
 }
 
 func (h *schedulesHandler) pause(w http.ResponseWriter, r *http.Request) {

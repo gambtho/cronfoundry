@@ -36,7 +36,7 @@ WHERE skill_id = $1
   AND NOT (name = ANY($2::text[]));
 
 -- name: ListSchedulesByOrg :many
-SELECT s.*, sk.path AS skill_path, sk.name AS skill_name, rc.owner, rc.name AS repo_name
+SELECT s.*, sk.path AS skill_path, sk.name AS skill_name, sk.frontmatter_json AS skill_frontmatter_json, rc.owner, rc.name AS repo_name
 FROM schedule s
 JOIN skill sk ON sk.id = s.skill_id
 JOIN repo_connection rc ON rc.id = sk.repo_id

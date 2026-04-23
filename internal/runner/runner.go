@@ -84,12 +84,20 @@ type RunResult struct {
 	FinishedAt     time.Time
 }
 
+// RunEvent is a structured event the runner emits during execution.
+type RunEvent struct {
+	Type    string
+	Payload map[string]any
+}
+
 // Deps inject the runner's collaborators.
 type Deps struct {
 	ProviderFactory   func(name string) (llm.Provider, error)
 	Publishers        map[string]publish.Publisher
 	MCPManagerFactory func(ctx context.Context) mcpManager
 	Now               func() time.Time
+	// EventSink receives observability events during execution. May be nil.
+	EventSink func(RunEvent)
 }
 
 // Runner executes a single skill-schedule run.
@@ -107,6 +115,9 @@ func New(d Deps) *Runner {
 	}
 	if d.MCPManagerFactory == nil {
 		d.MCPManagerFactory = func(ctx context.Context) mcpManager { return mcp.NewManager(ctx) }
+	}
+	if d.EventSink == nil {
+		d.EventSink = func(RunEvent) {}
 	}
 	return &Runner{deps: d}
 }
@@ -196,6 +207,11 @@ func (r *Runner) Run(ctx context.Context, in RunInput) (RunResult, error) {
 			if err := mgr.Start(s.Name, s.Command, s.Args, env); err != nil {
 				return failWithKind(&result, "mcp_server_start_failed", err, r.deps.Now)
 			}
+			toolCount := len(mgr.Tools(s.Name))
+			r.deps.EventSink(RunEvent{
+				Type:    "mcp.server.start.ok",
+				Payload: map[string]any{"server": s.Name, "tool_count": toolCount},
+			})
 		}
 
 		var tools []llm.ToolDef
@@ -219,6 +235,10 @@ func (r *Runner) Run(ctx context.Context, in RunInput) (RunResult, error) {
 		perToolTimeout := time.Duration(DefaultMCPToolCallTimeoutS) * time.Second
 
 		for turn := 1; turn <= maxTurns; turn++ {
+			r.deps.EventSink(RunEvent{
+				Type:    "mcp.turn.start",
+				Payload: map[string]any{"turn": turn},
+			})
 			tr, err := toolProvider.ChatTurn(ctx, messages, tools, llm.CallOptions{
 				Model:      sch.Model,
 				MaxTokens:  skill.Frontmatter.MaxTokens,
@@ -242,11 +262,33 @@ func (r *Runner) Run(ctx context.Context, in RunInput) (RunResult, error) {
 			}
 
 			mcpCalls := toMCPCalls(tr.ToolUses)
+			// Build id→name map for event attribution.
+			callName := make(map[string]string, len(mcpCalls))
+			for _, c := range mcpCalls {
+				callName[c.ID] = c.Name
+			}
 			results, fatal := mgr.DispatchAll(ctx, mcpCalls, perToolTimeout)
 			if fatal != nil {
+				if fatal.Kind == "mcp_tool_timeout" {
+					r.deps.EventSink(RunEvent{
+						Type:    "mcp.tool.call.timeout",
+						Payload: map[string]any{"error": fatal.Err.Error()},
+					})
+				}
 				return failWithKind(&result, fatal.Kind, fatal.Err, r.deps.Now)
 			}
 			for _, cr := range results {
+				evType := "mcp.tool.call.ok"
+				if cr.IsError {
+					evType = "mcp.tool.call.fail"
+				}
+				r.deps.EventSink(RunEvent{
+					Type: evType,
+					Payload: map[string]any{
+						"tool":        callName[cr.ID],
+						"duration_ms": cr.DurationMS,
+					},
+				})
 				messages = append(messages, llm.Message{
 					Role: llm.RoleTool, ToolUseID: cr.ID, Content: string(cr.ResultJSON),
 				})
