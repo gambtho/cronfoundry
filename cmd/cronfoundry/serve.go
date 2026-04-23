@@ -21,6 +21,8 @@ import (
 	"github.com/gambtho/cronfoundry/internal/api"
 	"github.com/gambtho/cronfoundry/internal/cloud"
 	cloudazure "github.com/gambtho/cronfoundry/internal/cloud/azure"
+	"github.com/gambtho/cronfoundry/internal/jobdispatch/flymachines"
+	"github.com/gambtho/cronfoundry/internal/jobdispatch/k8sjobs"
 	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
 	"github.com/gambtho/cronfoundry/internal/github"
 	"github.com/gambtho/cronfoundry/internal/scheduler"
@@ -200,6 +202,7 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 		Signer:        signer,
 		Secrets:       store,
 		Installations: installs,
+		RunnerAPIKey:  os.Getenv("CRONFOUNDRY_RUNNER_API_KEY"),
 	})
 	webapi.RegisterRoutes(mux, webapi.Deps{
 		MasterKey:         master,
@@ -294,10 +297,45 @@ func splitLogins(raw string) []string {
 	return out
 }
 
-// buildJobDispatcher returns a ContainerAppsJobDispatcher when
-// AZURE_CAE_RESOURCE_GROUP, AZURE_CAE_JOB_NAME, and AZURE_SUBSCRIPTION_ID are all set;
-// otherwise returns a SubprocessDispatcher for local use.
+// buildJobDispatcher returns the appropriate JobDispatcher based on env vars.
+// Priority: Fly.io > Kubernetes > Azure Container Apps > Subprocess (local).
 func buildJobDispatcher() (cloud.JobDispatcher, error) {
+	// Fly.io — checked first; FLY_RUNNER_APP is unambiguous
+	if app := os.Getenv("FLY_RUNNER_APP"); app != "" {
+		token := os.Getenv("FLY_API_TOKEN")
+		if token == "" {
+			return nil, fmt.Errorf("FLY_RUNNER_APP is set but FLY_API_TOKEN is missing")
+		}
+		image := os.Getenv("FLY_RUNNER_IMAGE")
+		if image == "" {
+			return nil, fmt.Errorf("FLY_RUNNER_APP is set but FLY_RUNNER_IMAGE is missing")
+		}
+		client := flymachines.NewRealFlyClient(token)
+		return flymachines.NewDispatcher(client, flymachines.Config{App: app, Image: image}), nil
+	}
+
+	// AKS / Kubernetes
+	if ns := os.Getenv("K8S_RUNNER_NAMESPACE"); ns != "" {
+		image := os.Getenv("K8S_RUNNER_IMAGE")
+		if image == "" {
+			return nil, fmt.Errorf("K8S_RUNNER_NAMESPACE is set but K8S_RUNNER_IMAGE is missing")
+		}
+		sa := os.Getenv("K8S_RUNNER_SERVICE_ACCOUNT")
+		if sa == "" {
+			sa = "cf-runner"
+		}
+		k8sClient, err := k8sjobs.NewInClusterClient()
+		if err != nil {
+			return nil, fmt.Errorf("k8s in-cluster client: %w", err)
+		}
+		return k8sjobs.NewDispatcher(k8sClient, k8sjobs.Config{
+			Namespace:      ns,
+			RunnerImage:    image,
+			ServiceAccount: sa,
+		}), nil
+	}
+
+	// Azure Container Apps Jobs
 	rg := os.Getenv("AZURE_CAE_RESOURCE_GROUP")
 	jobName := os.Getenv("AZURE_CAE_JOB_NAME")
 	subID := os.Getenv("AZURE_SUBSCRIPTION_ID")
