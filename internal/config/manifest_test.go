@@ -318,3 +318,53 @@ skills:
         model: gpt-4o
 ` + extra
 }
+
+func TestParseManifest_MCPEnvAndMaxTurns(t *testing.T) {
+	src := []byte(`version: 1
+skills:
+  - path: skills/weekly-digest
+    schedules:
+      - name: monday
+        cron: "0 9 * * MON"
+        provider: anthropic
+        model: claude-opus-4-7
+        max_turns: 40
+        env:
+          LOOKBACK_DAYS: "7"
+        mcp_env:
+          github:
+            GITHUB_PERSONAL_ACCESS_TOKEN:
+              secret: github_mcp_pat
+          fetch: {}
+`)
+	m, err := ParseManifest(src)
+	require.NoError(t, err)
+	require.NoError(t, m.Validate())
+	sch := m.Skills[0].Schedules[0]
+	assert.Equal(t, 40, sch.MaxTurns)
+	require.Contains(t, sch.MCPEnv, "github")
+	require.Contains(t, sch.MCPEnv, "fetch")
+	tok, ok := sch.MCPEnv["github"]["GITHUB_PERSONAL_ACCESS_TOKEN"]
+	require.True(t, ok)
+	assert.Equal(t, "github_mcp_pat", tok.Secret)
+	// Empty server env map is valid.
+	assert.Empty(t, sch.MCPEnv["fetch"])
+}
+
+func TestParseManifest_RejectsNegativeMaxTurns(t *testing.T) {
+	src := []byte(`version: 1
+skills:
+  - path: skills/a
+    schedules:
+      - name: s
+        cron: "* * * * *"
+        provider: anthropic
+        model: x
+        max_turns: -1
+`)
+	m, err := ParseManifest(src)
+	require.NoError(t, err)
+	valErr := m.Validate()
+	require.Error(t, valErr)
+	assert.Contains(t, valErr.Error(), "max_turns must be between 0 and 2147483647")
+}

@@ -4,6 +4,7 @@ package llm
 
 import (
 	"context"
+	"encoding/json"
 )
 
 // Role is the conversational role of a Message.
@@ -13,14 +14,18 @@ type Role string
 // protocol currently distinguishes only system (instructions) and user
 // (prompt) messages; assistant replies are streamed back as StreamChunks.
 const (
-	RoleSystem Role = "system"
-	RoleUser   Role = "user"
+	RoleSystem    Role = "system"
+	RoleUser      Role = "user"
+	RoleAssistant Role = "assistant"
+	RoleTool      Role = "tool"
 )
 
 // Message is a single chat message.
 type Message struct {
-	Role    Role
-	Content string
+	Role      Role
+	Content   string
+	ToolUses  []ToolUse // RoleAssistant: tool_use blocks the model emitted
+	ToolUseID string    // RoleTool: id of the call this message answers
 }
 
 // StreamChunk is an incremental portion of the assistant's response.
@@ -58,4 +63,38 @@ type CallOptions struct {
 //     ultimately fails.
 type Provider interface {
 	Chat(ctx context.Context, messages []Message, opts CallOptions, onChunk func(StreamChunk)) (Usage, error)
+}
+
+// ToolUse represents a tool invocation emitted by the model.
+type ToolUse struct {
+	ID    string
+	Name  string
+	Input json.RawMessage
+}
+
+// ToolDef describes a tool available to the model.
+type ToolDef struct {
+	Name        string
+	Description string
+	InputSchema json.RawMessage
+}
+
+// TurnResult is one tool-aware turn's output.
+type TurnResult struct {
+	Text       string
+	ToolUses   []ToolUse
+	Usage      Usage
+	StopReason string // "end_turn" | "tool_use" | "max_tokens" | "stop"
+}
+
+// ToolCapableProvider supports tool-aware completion turns.
+type ToolCapableProvider interface {
+	Provider
+	ChatTurn(
+		ctx context.Context,
+		messages []Message,
+		tools []ToolDef,
+		opts CallOptions,
+		onChunk func(StreamChunk),
+	) (TurnResult, error)
 }
