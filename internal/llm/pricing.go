@@ -20,8 +20,8 @@ var priceTable = map[string]map[string]pricePer1M{
 	"openrouter": {
 		"openai/gpt-4o-mini":                     {in: 15, out: 60},
 		"openai/gpt-4o":                          {in: 250, out: 1000},
-		"anthropic/claude-haiku-4-5":             {in: 100, out: 500},
-		"anthropic/claude-sonnet-4-5":            {in: 300, out: 1500},
+		"anthropic/claude-haiku-4.5":             {in: 100, out: 500},
+		"anthropic/claude-sonnet-4.5":            {in: 300, out: 1500},
 		"meta-llama/llama-3.3-70b-instruct":      {in: 59, out: 79},
 		"google/gemini-2.0-flash-001":            {in: 10, out: 40},
 	},

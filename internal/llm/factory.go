@@ -7,8 +7,9 @@ import (
 
 // NewProvider returns a default-configured provider by its config name.
 // For testing with mock endpoints, call NewOpenAI/NewAnthropic directly.
-// CRONFOUNDRY_OPENAI_BASE_URL and CRONFOUNDRY_ANTHROPIC_BASE_URL override
-// the respective API endpoints (useful in tests and local development).
+// CRONFOUNDRY_OPENAI_BASE_URL, CRONFOUNDRY_ANTHROPIC_BASE_URL, and
+// CRONFOUNDRY_OPENROUTER_BASE_URL override the respective API endpoints
+// (useful in tests and local development).
 func NewProvider(name string) (Provider, error) {
 	switch name {
 	case "openai":

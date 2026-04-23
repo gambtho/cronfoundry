@@ -8,7 +8,7 @@ import (
 )
 
 func TestNewProvider_KnownNames(t *testing.T) {
-	cases := []string{"openai", "anthropic", "azure-foundry"}
+	cases := []string{"openai", "anthropic", "azure-foundry", "openrouter"}
 	for _, name := range cases {
 		p, err := NewProvider(name)
 		require.NoError(t, err, name)
