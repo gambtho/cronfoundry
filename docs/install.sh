@@ -85,6 +85,9 @@ if [[ -z "${CF_SUBSCRIPTION_ID:-}" ]]; then
   az account set --subscription "$CF_SUBSCRIPTION_ID" \
     || die "Could not set subscription '$CF_SUBSCRIPTION_ID'. Verify it exists and you have access.\nSee §3 of $GUIDE_URL"
   save CF_SUBSCRIPTION_ID "$CF_SUBSCRIPTION_ID"
+else
+  az account set --subscription "$CF_SUBSCRIPTION_ID" \
+    || die "Could not re-apply saved subscription '$CF_SUBSCRIPTION_ID'.\nSee §3 of $GUIDE_URL"
 fi
 ok "Subscription: $CF_SUBSCRIPTION_ID"
 
@@ -169,8 +172,14 @@ ok "Master key ready"
 # ── Step 9: env suffix ────────────────────────────────────────────────────────
 header "[step 9/17] Environment suffix"
 if [[ -z "${CF_ENV:-}" ]]; then
-  read -rp "Env suffix (<=10 chars, default: copilot1): " CF_ENV
-  CF_ENV="${CF_ENV:-copilot1}"
+  while true; do
+    read -rp "Env suffix (<=10 chars, lowercase/numbers/hyphens, default: copilot1): " CF_ENV
+    CF_ENV="${CF_ENV:-copilot1}"
+    if [[ "$CF_ENV" =~ ^[a-z0-9-]{1,10}$ ]]; then
+      break
+    fi
+    warn "Invalid suffix '$CF_ENV'. Use only lowercase letters, numbers, and hyphens, max 10 chars."
+  done
   save CF_ENV "$CF_ENV"
 fi
 warn "Key Vault soft-delete retains the name 'cf-kv-${CF_ENV}' for 7 days after teardown."
@@ -215,13 +224,13 @@ ok "Postgres password generated (saved to state file)"
 # ── Step 13: build params file ────────────────────────────────────────────────
 header "[step 13/17] Build params file"
 PARAMS_FILE="deploy/params.quickstart-${CF_ENV}.json"
-if [[ ! -f "$PARAMS_FILE" ]]; then
-  ADMIN_LOGIN=$(git config user.name 2>/dev/null) || {
-    warn "git config user.name is not set; using 'admin' as adminLogins value."
-    warn "You may want to set it: git config --global user.name 'Your GitHub login'"
-    ADMIN_LOGIN="admin"
-  }
-  python3 - "$CF_GITHUB_PEM_PATH" "$PARAMS_FILE" \
+ADMIN_LOGIN=$(git config user.name 2>/dev/null) || {
+  warn "git config user.name is not set; using 'admin' as adminLogins value."
+  warn "You may want to set it: git config --global user.name 'Your GitHub login'"
+  ADMIN_LOGIN="admin"
+}
+PARAMS_TMP="${PARAMS_FILE}.tmp.$$"
+python3 - "$CF_GITHUB_PEM_PATH" "$PARAMS_TMP" \
     "$CF_ENV" "$CF_REGION" "$CF_IMAGE_TAG" \
     "$CF_GITHUB_APP_ID" "$CF_GITHUB_CLIENT_ID" "$CF_GITHUB_CLIENT_SECRET" \
     "$CF_PG_PASSWORD" "$CF_MASTER_KEY" "$ADMIN_LOGIN" << 'PYEOF'
@@ -251,7 +260,8 @@ with open(out_path, "w") as f:
     json.dump(params, f, indent=2)
 print(f"Wrote {out_path}")
 PYEOF
-fi
+mv "$PARAMS_TMP" "$PARAMS_FILE"
+chmod 600 "$PARAMS_FILE"
 ok "Params file: $PARAMS_FILE"
 
 # ── Step 14: deploy ───────────────────────────────────────────────────────────

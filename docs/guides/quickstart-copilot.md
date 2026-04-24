@@ -23,6 +23,7 @@ The script checks these automatically and exits with a hint if any are missing.
 | `az` CLI | 2.60 | https://learn.microsoft.com/cli/azure/install-azure-cli |
 | Bicep | 0.26 | `az bicep install` |
 | `git` | any | https://git-scm.com/downloads |
+| `go` | 1.21+ | https://go.dev/dl |
 | `python3` | 3.8+ | pre-installed on most systems |
 | `openssl` | any | pre-installed on most systems |
 
@@ -196,7 +197,8 @@ The serve Container App will crash-loop until `admin init` runs in §15.
 ## §15 — Initialize database
 
 ```bash
-# Add operator IP to Postgres firewall
+# Temporarily opens Postgres to all IPv4 addresses — required for WSL2 NAT.
+# IMPORTANT: tighten or delete this rule after setup is complete.
 az postgres flexible-server firewall-rule create \
   --resource-group rg-cronfoundry-copilot1 \
   --name cf-pg-copilot1 \
