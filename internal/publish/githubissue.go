@@ -96,10 +96,14 @@ func (p *githubIssuePub) Publish(ctx context.Context, dest config.Destination, o
 	}
 
 	req := &github.IssueRequest{
-		Title:     &title,
-		Body:      &body,
-		Labels:    &d.Labels,
-		Assignees: &d.Assignees,
+		Title: &title,
+		Body:  &body,
+	}
+	if len(d.Labels) > 0 {
+		req.Labels = &d.Labels
+	}
+	if len(d.Assignees) > 0 {
+		req.Assignees = &d.Assignees
 	}
 	issue, _, err := client.Issues.Create(ctx, owner, repo, req)
 	if err != nil {

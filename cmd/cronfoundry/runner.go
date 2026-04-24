@@ -229,10 +229,8 @@ func runRunnerHTTP(ctx context.Context, runIDFlag string) error {
 		MCPServers:    mcpServers,
 		MCPEnv:        mcpEnv,
 		MaxTurns:      maxTurns,
-		// Writeback push requires the installation token; the clone URL
-		// embeds one but runner.Run expects GitHubToken separate. For now,
-		// skip the push — P2d will wire a dedicated writeback token fetch.
-		SkipPush: true,
+		GitHubToken:   os.Getenv("GITHUB_TOKEN"),
+		GitHubUsername: "x-access-token",
 	})
 
 	// 9a) Post publish-result events for observability. One event per destination
@@ -316,13 +314,6 @@ func runRunnerHTTP(ctx context.Context, runIDFlag string) error {
 	if result.WritebackSHA != "" {
 		sha := result.WritebackSHA
 		body.WritebackCommitSha = &sha
-		// Push is done server-side so the install token never leaves the API.
-		if err := client.PostWritebackPush(finalizeCtx, runID, sha, cloneDir); err != nil {
-			slog.Warn("writeback push failed", "err", err)
-			if body.Status == "succeeded" {
-				body.Status = "partial_failure"
-			}
-		}
 	}
 	if err := client.PostFinalize(finalizeCtx, runID, body); err != nil {
 		return fmt.Errorf("finalize: %w", err)

@@ -676,3 +676,49 @@ selects the SDK; the model field should not repeat it.
 - [ ] GitHub issue — F24 (no GITHUB_TOKEN)
 - [ ] `memory.md` writeback — F24 (no GITHUB_TOKEN)
 - [x] All Azure resources deleted (see below)
+
+---
+
+## Session 4 (p10smoke) — 2026-04-24
+
+**Code version:** v0.7.9 (includes F26, F27, F28)
+**Resource group:** `rg-cronfoundry-p10smoke`
+
+### Session 4 Findings
+
+#### F26 — GitHub issue publish 422 (nil assignees)
+*(already documented above — confirmed fixed in v0.7.9)*
+
+#### F27 — Writeback push: no GitHub token in runner
+*(already documented above — confirmed fixed in v0.7.9)*
+
+#### F28 — Writeback push: detached HEAD with no RefSpec
+*(already documented above — confirmed fixed in v0.7.9)*
+
+#### F29 — Key Vault wrong vault name in smoke notes
+**Severity:** low (operator error)
+**Type:** doc
+**Observed:** The session cookie forging script used `kv-cf-p10smoke` (wrong) instead of `cf-kv-p10smoke` (actual vault name created by Bicep). DNS resolution failed silently.
+**Fix:** Verify vault name with `az keyvault list` before scripting. Update runbook to note that the KV name prefix is `cf-kv-` not `kv-cf-`.
+
+#### F30 — `master-key` stored as container app secret, not Key Vault
+**Severity:** low
+**Type:** doc
+**Observed:** `CRONFOUNDRY_MASTER_KEY` is stored as a plain container-app secret (not a Key Vault reference). `az keyvault secret list` does not show it. Must use `az containerapp secret show --secret-name master-key` to read it.
+**Fix:** Document this in the runbook for operators who need to forge a session cookie.
+
+#### F31 — `/api/v1/` prefix not used (all routes are `/api/`)
+**Severity:** low (operator error)
+**Type:** doc
+**Observed:** During cookie debugging, used `/api/v1/schedules` (returns SPA HTML 200). Correct path is `/api/schedules`.
+**Fix:** Runbook examples should use the correct `/api/` prefix.
+
+### Session 4 Pass/Fail Checklist
+
+- [x] Run reaches `succeeded` — run `826020ed`
+- [x] `tokens_in=39`, `tokens_out=83` populated
+- [x] Dashboard shows run (API confirmed)
+- [x] Audit log: `schedule.run_now` id=8 for run `826020ed`
+- [x] `memory.md` writeback commit `59d82c8a` on `cronfoundry-smoke-skill`
+- [x] GitHub issue #3 created (`publish.github-issue.ok`)
+- [x] All Azure resources deleted (see teardown below)
