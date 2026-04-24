@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
 )
@@ -103,9 +104,20 @@ func (w *Writer) Push(repoRoot, remoteName, username, token string) error {
 	if err != nil {
 		return fmt.Errorf("writeback: open repo: %w", err)
 	}
+	branch := "main"
+	remote, err := repo.Remote(remoteName)
+	if err == nil {
+		for _, ref := range remote.Config().Fetch {
+			if s := ref.Src(); strings.HasPrefix(s, "refs/heads/") {
+				branch = strings.TrimPrefix(s, "refs/heads/")
+				break
+			}
+		}
+	}
 	err = repo.Push(&git.PushOptions{
 		RemoteName: remoteName,
 		Auth:       &http.BasicAuth{Username: username, Password: token},
+		RefSpecs:   []config.RefSpec{config.RefSpec("HEAD:refs/heads/" + branch)},
 	})
 	if err != nil && err != git.NoErrAlreadyUpToDate {
 		return fmt.Errorf("writeback: push: %w", err)
