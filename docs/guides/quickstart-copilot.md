@@ -8,7 +8,7 @@ Enterprise seat.
 bash <(curl -fsSL https://gambtho.github.io/cronfoundry/install.sh)
 ```
 
-The script automates steps 1–16. This guide documents every step so you can
+The script automates steps 1–17. This guide documents every step so you can
 understand what it does, run steps manually if the script fails, or adapt the
 process for a different environment.
 

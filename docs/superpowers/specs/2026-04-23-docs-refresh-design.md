@@ -115,7 +115,7 @@ MVP shipped ✓ — deployable to Azure today
 ```
 To:
 ```
-v0.7.5 · 4 LLM providers · deployable to Azure today
+v0.7.6 · 4 LLM providers · deployable to Azure today
 ```
 
 ### Quick-start CTA

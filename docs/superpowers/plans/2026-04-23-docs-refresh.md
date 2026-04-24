@@ -49,7 +49,7 @@ for arg in "$@"; do [[ "$arg" == "--dry-run" ]] && DRY_RUN=true; done
 STATE_FILE="${HOME}/.cronfoundry-quickstart-state"
 [[ -f "$STATE_FILE" ]] && source "$STATE_FILE"
 
-save() { echo "$1=\"$2\"" >> "$STATE_FILE"; }
+save() { printf '%s=%q\n' "$1" "$2" >> "$STATE_FILE"; }
 
 GUIDE_URL="https://gambtho.github.io/cronfoundry/guides/quickstart-copilot.html"
 

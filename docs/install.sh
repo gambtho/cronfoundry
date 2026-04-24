@@ -15,9 +15,15 @@ DRY_RUN=false
 for arg in "$@"; do [[ "$arg" == "--dry-run" ]] && DRY_RUN=true; done
 
 STATE_FILE="${HOME}/.cronfoundry-quickstart-state"
+# shellcheck disable=SC1090
+[[ -f "$STATE_FILE" ]] || { touch "$STATE_FILE" && chmod 600 "$STATE_FILE"; }
 [[ -f "$STATE_FILE" ]] && source "$STATE_FILE"
+chmod 600 "$STATE_FILE" 2>/dev/null || true
 
-save() { printf '%s=%q\n' "$1" "$2" >> "$STATE_FILE"; }
+save() {
+  printf '%s=%q\n' "$1" "$2" >> "$STATE_FILE"
+  chmod 600 "$STATE_FILE" 2>/dev/null || true
+}
 
 GUIDE_URL="https://gambtho.github.io/cronfoundry/guides/quickstart-copilot.html"
 
@@ -52,7 +58,7 @@ if ! az bicep version &>/dev/null; then
   info "Bicep not found -- installing via az bicep install..."
   az bicep install || die "Failed to install Bicep. Check internet connectivity.\nSee §1 of $GUIDE_URL"
 fi
-BICEP_VER=$(az bicep version 2>/dev/null | grep -oP '\d+\.\d+' | head -1 || echo "0.0")
+BICEP_VER=$(az bicep version 2>/dev/null | grep -Eo '[0-9]+\.[0-9]+' | head -1 || echo "0.0")
 BICEP_MINOR=$(echo "$BICEP_VER" | cut -d. -f2)
 if [[ "${BICEP_MINOR:-0}" -lt 26 ]]; then
   warn "Bicep $BICEP_VER found; recommend >= 0.26. Run: az bicep upgrade"
@@ -271,6 +277,8 @@ ok "Deployed. FQDN: $CF_FQDN"
 header "[step 15/17] Initialize database"
 if [[ "$DRY_RUN" != "true" ]]; then
   # WSL2-safe: use broad rule -- WSL2 NAT may present a different source IP to Azure
+  warn "Opening Postgres firewall to 0.0.0.0/0 for WSL2 NAT compatibility."
+  warn "Tighten this after setup: az postgres flexible-server firewall-rule update --rule-name AllowOperator ..."
   az postgres flexible-server firewall-rule create \
     --resource-group "rg-cronfoundry-${CF_ENV}" \
     --name "cf-pg-${CF_ENV}" \
@@ -300,6 +308,7 @@ if [[ "$DRY_RUN" != "true" ]]; then
 
   info "Waiting for Container App to become healthy..."
   HEALTH="unknown"
+  # shellcheck disable=SC2034
   for i in $(seq 1 12); do
     HEALTH=$(az containerapp revision list \
       --resource-group "rg-cronfoundry-${CF_ENV}" \
