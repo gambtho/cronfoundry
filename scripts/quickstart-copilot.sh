@@ -17,7 +17,7 @@ for arg in "$@"; do [[ "$arg" == "--dry-run" ]] && DRY_RUN=true; done
 STATE_FILE="${HOME}/.cronfoundry-quickstart-state"
 [[ -f "$STATE_FILE" ]] && source "$STATE_FILE"
 
-save() { echo "$1=\"$2\"" >> "$STATE_FILE"; }
+save() { printf '%s=%q\n' "$1" "$2" >> "$STATE_FILE"; }
 
 GUIDE_URL="https://gambtho.github.io/cronfoundry/guides/quickstart-copilot.html"
 
@@ -36,6 +36,7 @@ check_cmd az      "Install: https://learn.microsoft.com/cli/azure/install-azure-
 check_cmd git     "Install: https://git-scm.com/downloads"
 check_cmd python3 "Install: https://www.python.org/downloads/"
 check_cmd openssl "Usually pre-installed. Install via your OS package manager."
+check_cmd go      "Install: https://golang.org/dl/ (need >= 1.21)"
 
 # az version check (need >= 2.60)
 AZ_VER=$(az version --query '"azure-cli"' -o tsv 2>/dev/null || echo "0.0.0")
@@ -49,7 +50,7 @@ ok "az $AZ_VER"
 # bicep check (need >= 0.26)
 if ! az bicep version &>/dev/null; then
   info "Bicep not found -- installing via az bicep install..."
-  az bicep install
+  az bicep install || die "Failed to install Bicep. Check internet connectivity.\nSee §1 of $GUIDE_URL"
 fi
 BICEP_VER=$(az bicep version 2>/dev/null | grep -oP '\d+\.\d+' | head -1 || echo "0.0")
 BICEP_MINOR=$(echo "$BICEP_VER" | cut -d. -f2)
@@ -75,7 +76,8 @@ header "[step 3/17] Select subscription"
 if [[ -z "${CF_SUBSCRIPTION_ID:-}" ]]; then
   az account list --query '[].{Name:name, ID:id}' -o table
   read -rp "Enter subscription ID or name: " CF_SUBSCRIPTION_ID
-  az account set --subscription "$CF_SUBSCRIPTION_ID"
+  az account set --subscription "$CF_SUBSCRIPTION_ID" \
+    || die "Could not set subscription '$CF_SUBSCRIPTION_ID'. Verify it exists and you have access.\nSee §3 of $GUIDE_URL"
   save CF_SUBSCRIPTION_ID "$CF_SUBSCRIPTION_ID"
 fi
 ok "Subscription: $CF_SUBSCRIPTION_ID"
@@ -119,6 +121,7 @@ fi
 if [[ -z "${CF_GITHUB_CLIENT_SECRET:-}" ]]; then
   read -rsp "GitHub App Client Secret: " CF_GITHUB_CLIENT_SECRET; echo
   save CF_GITHUB_CLIENT_SECRET "$CF_GITHUB_CLIENT_SECRET"
+  warn "State file $STATE_FILE contains sensitive credentials — treat it like .env and do not commit it."
 fi
 if [[ -z "${CF_GITHUB_PEM_PATH:-}" ]]; then
   read -rp "Path to GitHub App .pem file: " CF_GITHUB_PEM_PATH
@@ -183,7 +186,14 @@ ok "Region: $CF_REGION"
 header "[step 11/17] Image tag"
 if [[ -z "${CF_IMAGE_TAG:-}" ]]; then
   CF_IMAGE_TAG=$(curl -fsSL "https://api.github.com/repos/gambtho/cronfoundry/releases/latest" \
-    | python3 -c "import sys,json; print(json.load(sys.stdin)['tag_name'].lstrip('v'))" 2>/dev/null || echo "latest")
+    2>/dev/null \
+    | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['tag_name'].lstrip('v'))" \
+    2>/dev/null) || CF_IMAGE_TAG=""
+  if [[ -z "$CF_IMAGE_TAG" ]]; then
+    warn "Could not fetch latest release tag from GitHub API (network issue or rate limit)."
+    read -rp "Enter image tag manually (e.g. 0.7.6) [default: latest]: " CF_IMAGE_TAG
+    CF_IMAGE_TAG="${CF_IMAGE_TAG:-latest}"
+  fi
   save CF_IMAGE_TAG "$CF_IMAGE_TAG"
 fi
 ok "Image tag: $CF_IMAGE_TAG"
@@ -200,7 +210,11 @@ ok "Postgres password generated (saved to state file)"
 header "[step 13/17] Build params file"
 PARAMS_FILE="deploy/params.quickstart-${CF_ENV}.json"
 if [[ ! -f "$PARAMS_FILE" ]]; then
-  ADMIN_LOGIN=$(git config user.name 2>/dev/null || echo "admin")
+  ADMIN_LOGIN=$(git config user.name 2>/dev/null) || {
+    warn "git config user.name is not set; using 'admin' as adminLogins value."
+    warn "You may want to set it: git config --global user.name 'Your GitHub login'"
+    ADMIN_LOGIN="admin"
+  }
   python3 - "$CF_GITHUB_PEM_PATH" "$PARAMS_FILE" \
     "$CF_ENV" "$CF_REGION" "$CF_IMAGE_TAG" \
     "$CF_GITHUB_APP_ID" "$CF_GITHUB_CLIENT_ID" "$CF_GITHUB_CLIENT_SECRET" \
@@ -237,18 +251,19 @@ ok "Params file: $PARAMS_FILE"
 # ── Step 14: deploy ───────────────────────────────────────────────────────────
 header "[step 14/17] Deploy to Azure (~10 min)"
 if [[ "$DRY_RUN" == "true" ]]; then
-  warn "--dry-run: skipping az deployment sub create"
+  warn "--dry-run: skipping deploy; steps 16–17 will use a placeholder FQDN"
+  CF_FQDN="<not-yet-deployed>"
 else
   az deployment sub create \
     --location "$CF_REGION" \
     --template-file deploy/main.bicep \
     --parameters "@$PARAMS_FILE"
+  CF_FQDN=$(az containerapp show \
+    --resource-group "rg-cronfoundry-${CF_ENV}" \
+    --name "cf-serve-${CF_ENV}" \
+    --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null || echo "")
+  [[ -n "$CF_FQDN" ]] || die "Could not retrieve FQDN after deploy. Check rg-cronfoundry-${CF_ENV}.\nSee §14 of $GUIDE_URL"
 fi
-
-CF_FQDN=$(az containerapp show \
-  --resource-group "rg-cronfoundry-${CF_ENV}" \
-  --name "cf-serve-${CF_ENV}" \
-  --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null || echo "")
 save CF_FQDN "$CF_FQDN"
 ok "Deployed. FQDN: $CF_FQDN"
 
@@ -261,11 +276,16 @@ if [[ "$DRY_RUN" != "true" ]]; then
     --name "cf-pg-${CF_ENV}" \
     --rule-name AllowOperator \
     --start-ip-address "0.0.0.0" \
-    --end-ip-address "255.255.255.255" 2>/dev/null || true
+    --end-ip-address "255.255.255.255" \
+    || warn "Firewall rule creation failed (may already exist) — database init may fail if connectivity is blocked."
 
   CF_DB_URL="postgres://cfadmin:${CF_PG_PASSWORD}@cf-pg-${CF_ENV}.postgres.database.azure.com:5432/cronfoundry?sslmode=require"
 
-  make build 2>/dev/null || go build -o cronfoundry ./cmd/cronfoundry
+  if ! make build; then
+    warn "make build failed; falling back to go build"
+    go build -o cronfoundry ./cmd/cronfoundry \
+      || die "Binary build failed. Ensure go >= 1.21 is installed.\nSee §15 of $GUIDE_URL"
+  fi
 
   CRONFOUNDRY_DATABASE_URL="$CF_DB_URL" \
   CRONFOUNDRY_MASTER_KEY="$CF_MASTER_KEY" \
@@ -275,7 +295,8 @@ if [[ "$DRY_RUN" != "true" ]]; then
   az containerapp update \
     --resource-group "rg-cronfoundry-${CF_ENV}" \
     --name "cf-serve-${CF_ENV}" \
-    --set-env-vars "RESTART_TRIGGER=${RESTART_TS}" >/dev/null
+    --set-env-vars "RESTART_TRIGGER=${RESTART_TS}" \
+    || die "Failed to trigger Container App restart.\nSee §15 of $GUIDE_URL"
 
   info "Waiting for Container App to become healthy..."
   HEALTH="unknown"
@@ -288,7 +309,13 @@ if [[ "$DRY_RUN" != "true" ]]; then
     [[ "$HEALTH" == "Healthy" ]] && break
     sleep 10
   done
-  ok "Container App health: $HEALTH"
+  if [[ "$HEALTH" != "Healthy" ]]; then
+    warn "Container App did not become Healthy after 120 s (last state: $HEALTH)."
+    warn "Check: az containerapp logs show --resource-group rg-cronfoundry-${CF_ENV} --name cf-serve-${CF_ENV} --follow"
+    warn "Continuing, but the app may not be ready. See §15 of $GUIDE_URL"
+  else
+    ok "Container App health: $HEALTH"
+  fi
 fi
 
 # ── Step 16: update GitHub App URLs ──────────────────────────────────────────
