@@ -86,9 +86,12 @@ You'll come back after §4 to update the three URLs with the real hostname.
 
 `deploy/modules/containerApp.bicep` pulls from
 `ghcr.io/gambtho/cronfoundry:${imageTag}`. The `release.yml` workflow builds
-and pushes multi-arch images, but only on `v*` tags — a fresh checkout with
-no release tag has nothing to pull. Container Apps pulls anonymously, so
+and pushes images (`linux/amd64`), but only on `v*` tags — a fresh checkout
+with no release tag has nothing to pull. Container Apps pulls anonymously, so
 the GHCR package must also be public.
+
+> **Note:** Azure Container Apps runs on amd64. A multi-arch build is not
+> required for smoke testing.
 
 1. Tag and push:
 
@@ -97,10 +100,9 @@ the GHCR package must also be public.
    git push origin v0.7.0
    ```
 
-   The `Release` workflow takes ~8 minutes to build linux/amd64+arm64 and
-   push three tags. `docker/metadata-action` uses
-   `type=semver,pattern={{version}}`, which **strips the `v` prefix**, so
-   the pushed tags are:
+   The `Release` workflow takes ~5 minutes to build and push three tags.
+   `docker/metadata-action` uses `type=semver,pattern={{version}}`, which
+   **strips the `v` prefix**, so the pushed tags are:
    - `ghcr.io/<owner>/cronfoundry:0.7.0`
    - `ghcr.io/<owner>/cronfoundry:0.7`
    - `ghcr.io/<owner>/cronfoundry:latest`
