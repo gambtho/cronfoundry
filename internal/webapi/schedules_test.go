@@ -72,6 +72,7 @@ func TestSchedules_Pause_AuditLogged(t *testing.T) {
 	require.NoError(t, err)
 	req := httptest.NewRequest("POST", "/api/schedules/"+schedUUID+"/pause", nil)
 	addTestSession(t, req, masterKey, "alice", "admin")
+	req = withCSRF(t, req)
 	rr := httptest.NewRecorder()
 	mux.ServeHTTP(rr, req)
 
@@ -282,6 +283,7 @@ func TestResume_ClearsAutoPauseAndBumpsLastEnabledAt(t *testing.T) {
 
 	req := httptest.NewRequest("POST", "/api/schedules/"+schedUUID+"/resume", nil)
 	addTestSession(t, req, masterKey, "alice", "admin")
+	req = withCSRF(t, req)
 	rr := httptest.NewRecorder()
 	mux.ServeHTTP(rr, req)
 	require.Equal(t, http.StatusOK, rr.Code)
@@ -337,6 +339,7 @@ func TestSchedules_PatchOverrides(t *testing.T) {
 		bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	addTestSession(t, req, masterKey, "alice", "admin")
+	req = withCSRF(t, req)
 	rr := httptest.NewRecorder()
 	mux.ServeHTTP(rr, req)
 	require.Equal(t, http.StatusOK, rr.Code)
@@ -390,6 +393,7 @@ func TestSchedules_DeleteOverrides(t *testing.T) {
 
 	req := httptest.NewRequest("DELETE", "/api/schedules/"+schedID.String()+"/overrides", nil)
 	addTestSession(t, req, masterKey, "alice", "admin")
+	req = withCSRF(t, req)
 	rr := httptest.NewRecorder()
 	mux.ServeHTTP(rr, req)
 	require.Equal(t, http.StatusOK, rr.Code)

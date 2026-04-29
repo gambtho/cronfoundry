@@ -92,6 +92,7 @@ func TestCopilotConnect_StartFlow(t *testing.T) {
 		strings.NewReader(`{"prefix":"mycopilot"}`))
 	req.Header.Set("Content-Type", "application/json")
 	addTestSession(t, req, masterKey, "alice", "admin")
+	req = withCSRF(t, req)
 
 	rr := httptest.NewRecorder()
 	mux.ServeHTTP(rr, req)
@@ -129,6 +130,7 @@ func TestCopilotConnect_PollSuccess(t *testing.T) {
 		strings.NewReader(`{"prefix":"mycopilot"}`))
 	startReq.Header.Set("Content-Type", "application/json")
 	addTestSession(t, startReq, masterKey, "alice", "admin")
+	startReq = withCSRF(t, startReq)
 	startRR := httptest.NewRecorder()
 	mux.ServeHTTP(startRR, startReq)
 	require.Equal(t, http.StatusOK, startRR.Code)
@@ -173,6 +175,7 @@ func TestCopilotConnect_PollDeclined(t *testing.T) {
 		strings.NewReader(`{"prefix":"mycopilot"}`))
 	startReq.Header.Set("Content-Type", "application/json")
 	addTestSession(t, startReq, masterKey, "alice", "admin")
+	startReq = withCSRF(t, startReq)
 	startRR := httptest.NewRecorder()
 	mux.ServeHTTP(startRR, startReq)
 	require.Equal(t, http.StatusOK, startRR.Code)
