@@ -2,9 +2,87 @@ package webapi
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
+	"encoding/json"
+	"log/slog"
 	"net/http"
+	"net/url"
+	"strings"
 )
+
+// CSRFConfig configures the CSRF middleware.
+type CSRFConfig struct {
+	// AllowedOrigin is the scheme+host of the trusted public origin
+	// (e.g. "https://cronfoundry.example.com"). When empty, the
+	// Origin/Referer check is skipped — intended for local dev only.
+	AllowedOrigin string
+}
+
+// CSRF returns a middleware that enforces double-submit cookie + Origin check
+// on all mutating requests (POST, PATCH, PUT, DELETE). GET, HEAD, OPTIONS pass
+// through unchanged.
+func CSRF(cfg CSRFConfig) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet, http.MethodHead, http.MethodOptions:
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			cookie, err := r.Cookie(CSRFCookieName)
+			if err != nil || cookie.Value == "" {
+				csrfReject(w, r, "csrf cookie missing")
+				return
+			}
+			header := r.Header.Get(CSRFHeaderName)
+			if header == "" {
+				csrfReject(w, r, "csrf header missing")
+				return
+			}
+			if subtle.ConstantTimeCompare([]byte(cookie.Value), []byte(header)) != 1 {
+				csrfReject(w, r, "csrf mismatch")
+				return
+			}
+
+			if cfg.AllowedOrigin != "" {
+				if reason, ok := checkOrigin(r, cfg.AllowedOrigin); !ok {
+					csrfReject(w, r, reason)
+					return
+				}
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func checkOrigin(r *http.Request, allowed string) (string, bool) {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		ref := r.Header.Get("Referer")
+		if ref == "" {
+			return "origin missing", false
+		}
+		u, err := url.Parse(ref)
+		if err != nil || u.Scheme == "" || u.Host == "" {
+			return "origin missing", false
+		}
+		origin = u.Scheme + "://" + u.Host
+	}
+	if !strings.EqualFold(origin, allowed) {
+		return "origin mismatch", false
+	}
+	return "", true
+}
+
+func csrfReject(w http.ResponseWriter, r *http.Request, reason string) {
+	slog.Info("csrf reject", "method", r.Method, "path", r.URL.Path, "reason", reason)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusForbidden)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": reason})
+}
 
 // CSRFCookieName is the cookie that carries the per-session CSRF token.
 // It is non-HttpOnly so the SPA can read it via document.cookie and echo it

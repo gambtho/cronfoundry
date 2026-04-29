@@ -61,3 +61,113 @@ func TestClearCSRFCookie(t *testing.T) {
 	assert.Less(t, c.MaxAge, 0)
 	assert.Equal(t, "/", c.Path)
 }
+
+func okHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	})
+}
+
+func TestCSRF_GETPassesThrough(t *testing.T) {
+	mw := CSRF(CSRFConfig{AllowedOrigin: ""})(okHandler())
+	req := httptest.NewRequest("GET", "/api/runs", nil)
+	w := httptest.NewRecorder()
+	mw.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestCSRF_POST_NoCookie_403(t *testing.T) {
+	mw := CSRF(CSRFConfig{AllowedOrigin: ""})(okHandler())
+	req := httptest.NewRequest("POST", "/api/repos", nil)
+	w := httptest.NewRecorder()
+	mw.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Contains(t, w.Body.String(), "csrf cookie missing")
+}
+
+func TestCSRF_POST_CookieNoHeader_403(t *testing.T) {
+	mw := CSRF(CSRFConfig{AllowedOrigin: ""})(okHandler())
+	req := httptest.NewRequest("POST", "/api/repos", nil)
+	req.AddCookie(&http.Cookie{Name: CSRFCookieName, Value: "abc"})
+	w := httptest.NewRecorder()
+	mw.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Contains(t, w.Body.String(), "csrf header missing")
+}
+
+func TestCSRF_POST_Mismatch_403(t *testing.T) {
+	mw := CSRF(CSRFConfig{AllowedOrigin: ""})(okHandler())
+	req := httptest.NewRequest("POST", "/api/repos", nil)
+	req.AddCookie(&http.Cookie{Name: CSRFCookieName, Value: "abc"})
+	req.Header.Set(CSRFHeaderName, "xyz")
+	w := httptest.NewRecorder()
+	mw.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Contains(t, w.Body.String(), "csrf mismatch")
+}
+
+func TestCSRF_POST_Match_NoOriginRequired_OK(t *testing.T) {
+	mw := CSRF(CSRFConfig{AllowedOrigin: ""})(okHandler())
+	req := httptest.NewRequest("POST", "/api/repos", nil)
+	req.AddCookie(&http.Cookie{Name: CSRFCookieName, Value: "tok"})
+	req.Header.Set(CSRFHeaderName, "tok")
+	w := httptest.NewRecorder()
+	mw.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestCSRF_POST_OriginMatch_OK(t *testing.T) {
+	mw := CSRF(CSRFConfig{AllowedOrigin: "https://cronfoundry.example.com"})(okHandler())
+	req := httptest.NewRequest("POST", "/api/repos", nil)
+	req.AddCookie(&http.Cookie{Name: CSRFCookieName, Value: "tok"})
+	req.Header.Set(CSRFHeaderName, "tok")
+	req.Header.Set("Origin", "https://cronfoundry.example.com")
+	w := httptest.NewRecorder()
+	mw.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestCSRF_POST_OriginMismatch_403(t *testing.T) {
+	mw := CSRF(CSRFConfig{AllowedOrigin: "https://cronfoundry.example.com"})(okHandler())
+	req := httptest.NewRequest("POST", "/api/repos", nil)
+	req.AddCookie(&http.Cookie{Name: CSRFCookieName, Value: "tok"})
+	req.Header.Set(CSRFHeaderName, "tok")
+	req.Header.Set("Origin", "https://evil.example.com")
+	w := httptest.NewRecorder()
+	mw.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Contains(t, w.Body.String(), "origin mismatch")
+}
+
+func TestCSRF_POST_RefererFallback_OK(t *testing.T) {
+	mw := CSRF(CSRFConfig{AllowedOrigin: "https://cronfoundry.example.com"})(okHandler())
+	req := httptest.NewRequest("POST", "/api/repos", nil)
+	req.AddCookie(&http.Cookie{Name: CSRFCookieName, Value: "tok"})
+	req.Header.Set(CSRFHeaderName, "tok")
+	req.Header.Set("Referer", "https://cronfoundry.example.com/runs/abc")
+	w := httptest.NewRecorder()
+	mw.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestCSRF_POST_NoOriginNoReferer_AllowedOriginSet_403(t *testing.T) {
+	mw := CSRF(CSRFConfig{AllowedOrigin: "https://cronfoundry.example.com"})(okHandler())
+	req := httptest.NewRequest("POST", "/api/repos", nil)
+	req.AddCookie(&http.Cookie{Name: CSRFCookieName, Value: "tok"})
+	req.Header.Set(CSRFHeaderName, "tok")
+	w := httptest.NewRecorder()
+	mw.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Contains(t, w.Body.String(), "origin missing")
+}
+
+func TestCSRF_HEADAndOPTIONS_PassThrough(t *testing.T) {
+	mw := CSRF(CSRFConfig{AllowedOrigin: ""})(okHandler())
+	for _, method := range []string{"HEAD", "OPTIONS"} {
+		req := httptest.NewRequest(method, "/api/runs", nil)
+		w := httptest.NewRecorder()
+		mw.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusOK, w.Code, method)
+	}
+}
