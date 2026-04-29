@@ -34,6 +34,7 @@ Required-in-production parameters worth calling out:
 | Param | Notes |
 |---|---|
 | `ingressExternal` | Set `true` for any deploy that needs the GitHub push webhook to reach it. The default `false` produces an internal-only FQDN. |
+<<<<<<< HEAD
 | `trustProxy` | Set `true` for any deploy behind a reverse proxy or Container Apps ingress so the leftmost `X-Forwarded-For` is used for rate limiting. The default `false` makes the limiter see the proxy IP and uselessly limit one shared bucket. |
 
 ### Rate-limit tuning (rarely needed)
@@ -53,6 +54,9 @@ release-readiness sizing for a single-operator deploy:
 Set any RPM to `0` to disable rate limiting on that group only. These are
 operator overrides not exposed as Bicep params; set them via
 `containerApp.bicep`'s env block if you need persistent values.
+=======
+| `publicBaseUrl` | Externally-reachable URL of the service (scheme+host, e.g. `https://cronfoundry.example.com`). Used as the CSRF middleware `Origin`/`Referer` allowlist. Empty disables the Origin check (local dev only); the cookie+header double-submit check still runs. After the first deploy, find the FQDN with `az containerapp show -n <name> -g <rg> --query properties.configuration.ingress.fqdn -o tsv` and re-deploy with that value set. |
+>>>>>>> 0edf3de (csrf: document and plumb CRONFOUNDRY_PUBLIC_BASE_URL through deploy)
 
 ## 3. Deploy
 
