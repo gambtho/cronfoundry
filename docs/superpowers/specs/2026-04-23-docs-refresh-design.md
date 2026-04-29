@@ -1,6 +1,6 @@
 # CronFoundry Docs Refresh — Design
 
-**Status:** Proposed  
+**Status:** Shipped (7418fad)
 **Date:** 2026-04-23  
 **Author:** gambtho (brainstormed with Claude)
 

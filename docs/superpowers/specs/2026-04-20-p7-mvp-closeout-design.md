@@ -1,6 +1,6 @@
 # P7 — MVP Close-out — Design
 
-**Status:** Proposed
+**Status:** Shipped (f7f2f93)
 **Date:** 2026-04-20
 **Author:** gambtho (brainstormed with Claude)
 **Depends on:** P6 (`docs/superpowers/plans/2026-04-20-p6-mvp-gaps.md`)

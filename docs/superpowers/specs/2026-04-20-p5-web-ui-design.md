@@ -1,6 +1,6 @@
 # P5 — Web UI — Design
 
-**Status:** Proposed
+**Status:** Shipped (f6d1267)
 **Date:** 2026-04-20
 **Author:** gambtho (brainstormed with Claude)
 
