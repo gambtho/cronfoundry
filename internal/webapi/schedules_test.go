@@ -108,10 +108,15 @@ func TestSchedulesHandler_PauseRequiresAdmin(t *testing.T) {
 
 	req := httptest.NewRequest("POST", "/api/schedules/00000000-0000-0000-0000-000000000000/pause", nil)
 	addTestSession(t, req, masterKey, "bob", "viewer")
+	req = withCSRF(t, req)
 	rr := httptest.NewRecorder()
 	mux.ServeHTTP(rr, req)
 
 	require.Equal(t, http.StatusForbidden, rr.Code)
+	// Body should reflect the role check, not CSRF — confirms middleware
+	// ordering (csrf → auth) didn't accidentally short-circuit before the
+	// authz assertion this test is meant to exercise.
+	assert.NotContains(t, rr.Body.String(), "csrf")
 }
 
 // seedAutoPausedSchedule inserts a minimal org (if not already present), repo,
