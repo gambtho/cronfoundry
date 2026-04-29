@@ -1,4 +1,4 @@
-.PHONY: sqlc test test-short build web vet lint dev dev-down migrate e2e clean help
+.PHONY: sqlc test test-short build web vet lint dev dev-down migrate e2e clean help worktree-clean
 
 help:
 	@echo 'Targets:'
@@ -14,6 +14,7 @@ help:
 	@echo '  migrate      Run goose migrations against $$CRONFOUNDRY_DATABASE_URL'
 	@echo '  e2e          Run the end-to-end integration test (requires docker)'
 	@echo '  clean        Remove built binaries'
+	@echo '  worktree-clean  Prune stale worktree admin records and list remaining worktrees'
 
 web:
 	cd web && npm ci && npm run build
@@ -59,3 +60,10 @@ e2e:
 
 clean:
 	rm -f cronfoundry cronfoundry-runner
+
+worktree-clean:
+	@echo 'Pruning stale worktree admin records...'
+	git worktree prune -v
+	@echo ''
+	@echo 'Remaining worktrees (review and remove unwanted ones manually with `git worktree remove <path>`):'
+	@git worktree list
