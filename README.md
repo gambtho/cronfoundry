@@ -257,4 +257,4 @@ failure), or `failed` (load/LLM error). Per-destination failures are isolated
 
 ## License
 
-TBD.
+MIT — see [LICENSE](LICENSE).
