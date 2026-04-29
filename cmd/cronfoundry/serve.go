@@ -47,6 +47,7 @@ const (
 	envRateSSEConcurrent = "CRONFOUNDRY_RATE_SSE_MAX_CONCURRENT"
 	envRateLRUSize       = "CRONFOUNDRY_RATE_LRU_SIZE"
 	envRateDisabled      = "CRONFOUNDRY_RATE_DISABLED"
+	envPublicBaseURL     = "CRONFOUNDRY_PUBLIC_BASE_URL"
 )
 
 func newServeCmd() *cobra.Command {
@@ -221,6 +222,9 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 		SSEMaxConcurrent: envInt(envRateSSEConcurrent, 5),
 		LRUSize:          envInt(envRateLRUSize, 4096),
 	}
+	if os.Getenv(envPublicBaseURL) == "" {
+		slog.Warn("CRONFOUNDRY_PUBLIC_BASE_URL not set; CSRF Origin check disabled (dev mode)")
+	}
 	webapi.RegisterRoutes(mux, webapi.Deps{
 		MasterKey:         master,
 		OAuthClientID:     oauthClientID,
@@ -231,6 +235,7 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 		Secrets:           store,
 		APIBaseURL:        "http://" + addr,
 		WebhookSecret:     []byte(os.Getenv(envWebhookSecret)),
+		PublicBaseURL:     os.Getenv(envPublicBaseURL),
 		Syncer:            poller,
 		RateLimit:         rateCfg,
 	})
