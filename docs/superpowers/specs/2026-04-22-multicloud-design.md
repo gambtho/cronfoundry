@@ -1,6 +1,6 @@
 # CronFoundry — Multi-Platform Deploy Design
 
-**Status:** Proposed
+**Status:** Shipped (4b6d7f2)
 **Date:** 2026-04-22
 **Author:** gambtho (brainstormed with Claude)
 

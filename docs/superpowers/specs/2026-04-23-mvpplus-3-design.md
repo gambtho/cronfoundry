@@ -1,6 +1,6 @@
 # CronFoundry mvpplus-3: Secure Secret Storage — Design
 
-**Status:** Proposed  
+**Status:** Shipped (3a5fde1)
 **Date:** 2026-04-23  
 **Author:** gambtho (brainstormed with Claude)
 

@@ -1,7 +1,7 @@
 # F24 — Inject GitHub Installation Token into Runner at Dispatch Time
 
 **Date:** 2026-04-23
-**Status:** Approved
+**Status:** Shipped (563cf15)
 **Author:** gambtho + Claude Code
 
 ## Problem

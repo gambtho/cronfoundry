@@ -1,6 +1,6 @@
 # MCP Tool Support in Skills — Design
 
-**Status:** Proposed
+**Status:** Shipped (37fb496)
 **Date:** 2026-04-22
 **Author:** gambtho (brainstormed with Claude)
 **Depends on:** MVP (`docs/superpowers/specs/2026-04-19-cronfoundry-design.md`, deferred item #2)

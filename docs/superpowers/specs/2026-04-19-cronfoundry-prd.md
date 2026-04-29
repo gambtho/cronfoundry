@@ -1,6 +1,6 @@
 # CronFoundry — Product Requirements
 
-**Status:** Proposed
+**Status:** Shipped (fd91fd6)
 **Date:** 2026-04-19
 **Author:** gambtho
 **Companion document:** [`2026-04-19-cronfoundry-design.md`](./2026-04-19-cronfoundry-design.md) (technical design)
