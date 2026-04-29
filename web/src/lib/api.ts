@@ -3,11 +3,33 @@ import type {
   RepoConnection, Skill, Schedule, RunSummary, RunDetail, RunEvent, SecretMeta, Me, AuditEntry, UserDTO
 } from './types'
 
+function csrfToken(): string | undefined {
+  const m = document.cookie.split('; ').find(c => c.startsWith('cf_csrf='))
+  return m ? m.slice('cf_csrf='.length) : undefined
+}
+
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, { credentials: 'include', ...init })
+  const method = (init?.method ?? 'GET').toUpperCase()
+  const headers = new Headers(init?.headers)
+  if (!SAFE_METHODS.has(method)) {
+    const t = csrfToken()
+    if (t) headers.set('X-CSRF-Token', t)
+  }
+  const res = await fetch(path, { credentials: 'include', ...init, headers })
   if (res.status === 401) {
     window.location.href = '/oauth/login'
     return Promise.reject(new Error('unauthorized'))
+  }
+  if (res.status === 403) {
+    // CSRF rejection (cookie missing / mismatch) → re-auth flow.
+    // Origin-mismatch / role 403 are real authz errors and fall through.
+    const body = await res.clone().json().catch(() => ({}))
+    if (typeof body.error === 'string' && body.error.startsWith('csrf')) {
+      window.location.href = '/oauth/login'
+      return Promise.reject(new Error('csrf rejected; re-authenticating'))
+    }
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }))
