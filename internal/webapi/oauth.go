@@ -145,11 +145,18 @@ func (h oauthHandlers) callback(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 		Secure:   !isLocalhost(r.Host),
 	})
+	csrfTok, err := NewCSRFToken()
+	if err != nil {
+		http.Error(w, "csrf token generation failed", http.StatusInternalServerError)
+		return
+	}
+	SetCSRFCookie(w, csrfTok, int(sessionDuration.Seconds()), r.Host)
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
 func (h oauthHandlers) logout(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{Name: "cf_session", MaxAge: -1, Path: "/"})
+	ClearCSRFCookie(w)
 	http.Redirect(w, r, "/oauth/login", http.StatusFound)
 }
 
