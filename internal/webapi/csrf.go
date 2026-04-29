@@ -20,8 +20,10 @@ type CSRFConfig struct {
 }
 
 // CSRF returns a middleware that enforces double-submit cookie + Origin check
-// on all mutating requests (POST, PATCH, PUT, DELETE). GET, HEAD, OPTIONS pass
-// through unchanged.
+// on all non-safe HTTP methods. GET, HEAD, and OPTIONS pass through unchanged
+// (these are the IETF "safe methods"); every other method — including POST,
+// PATCH, PUT, DELETE, and any unknown verb — must present a matching cf_csrf
+// cookie and X-CSRF-Token header.
 func CSRF(cfg CSRFConfig) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -59,22 +61,47 @@ func CSRF(cfg CSRFConfig) func(http.Handler) http.Handler {
 }
 
 func checkOrigin(r *http.Request, allowed string) (string, bool) {
-	origin := r.Header.Get("Origin")
-	if origin == "" {
+	want, ok := normalizeOrigin(allowed)
+	if !ok {
+		// Misconfigured AllowedOrigin — fail closed.
+		return "origin mismatch", false
+	}
+
+	candidate := r.Header.Get("Origin")
+	if candidate == "" {
 		ref := r.Header.Get("Referer")
 		if ref == "" {
 			return "origin missing", false
 		}
-		u, err := url.Parse(ref)
-		if err != nil || u.Scheme == "" || u.Host == "" {
-			return "origin missing", false
-		}
-		origin = u.Scheme + "://" + u.Host
+		candidate = ref
 	}
-	if !strings.EqualFold(origin, allowed) {
+	got, ok := normalizeOrigin(candidate)
+	if !ok {
+		return "origin missing", false
+	}
+	if got != want {
 		return "origin mismatch", false
 	}
 	return "", true
+}
+
+// normalizeOrigin returns scheme://host (host lowercased, default port stripped,
+// userinfo discarded) or ok=false if the input cannot be parsed as an origin.
+func normalizeOrigin(s string) (string, bool) {
+	u, err := url.Parse(s)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return "", false
+	}
+	host := strings.ToLower(u.Hostname())
+	port := u.Port()
+	switch {
+	case port == "" ||
+		(u.Scheme == "http" && port == "80") ||
+		(u.Scheme == "https" && port == "443"):
+		return u.Scheme + "://" + host, true
+	default:
+		return u.Scheme + "://" + host + ":" + port, true
+	}
 }
 
 func csrfReject(w http.ResponseWriter, r *http.Request, reason string) {

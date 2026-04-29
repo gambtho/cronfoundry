@@ -171,3 +171,53 @@ func TestCSRF_HEADAndOPTIONS_PassThrough(t *testing.T) {
 		assert.Equal(t, http.StatusOK, w.Code, method)
 	}
 }
+
+func TestCSRF_AllUnsafeMethods_Enforced(t *testing.T) {
+	mw := CSRF(CSRFConfig{AllowedOrigin: ""})(okHandler())
+	for _, method := range []string{"PATCH", "PUT", "DELETE"} {
+		t.Run(method, func(t *testing.T) {
+			// No cookie/header → 403
+			req := httptest.NewRequest(method, "/api/anything", nil)
+			w := httptest.NewRecorder()
+			mw.ServeHTTP(w, req)
+			assert.Equal(t, http.StatusForbidden, w.Code)
+			assert.Contains(t, w.Body.String(), "csrf cookie missing")
+
+			// Matching cookie+header → OK
+			req = httptest.NewRequest(method, "/api/anything", nil)
+			req.AddCookie(&http.Cookie{Name: CSRFCookieName, Value: "tok"})
+			req.Header.Set(CSRFHeaderName, "tok")
+			w = httptest.NewRecorder()
+			mw.ServeHTTP(w, req)
+			assert.Equal(t, http.StatusOK, w.Code)
+		})
+	}
+}
+
+func TestCSRF_OriginNormalization(t *testing.T) {
+	cases := []struct {
+		name    string
+		allowed string
+		origin  string
+		want    int
+	}{
+		{"default port matches omitted (https)", "https://cf.example.com", "https://cf.example.com:443", http.StatusOK},
+		{"default port matches omitted (http)", "http://cf.example.com", "http://cf.example.com:80", http.StatusOK},
+		{"non-default port mismatches", "https://cf.example.com", "https://cf.example.com:8443", http.StatusForbidden},
+		{"userinfo stripped", "https://cf.example.com", "https://user:pass@cf.example.com", http.StatusOK},
+		{"hostname case-insensitive", "https://cf.example.com", "https://CF.Example.COM", http.StatusOK},
+		{"scheme mismatch", "https://cf.example.com", "http://cf.example.com", http.StatusForbidden},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mw := CSRF(CSRFConfig{AllowedOrigin: tc.allowed})(okHandler())
+			req := httptest.NewRequest("POST", "/x", nil)
+			req.AddCookie(&http.Cookie{Name: CSRFCookieName, Value: "tok"})
+			req.Header.Set(CSRFHeaderName, "tok")
+			req.Header.Set("Origin", tc.origin)
+			w := httptest.NewRecorder()
+			mw.ServeHTTP(w, req)
+			assert.Equal(t, tc.want, w.Code)
+		})
+	}
+}
