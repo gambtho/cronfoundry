@@ -76,8 +76,9 @@ func RegisterRoutes(mux *http.ServeMux, deps Deps) {
 	session := func(h http.Handler) http.Handler {
 		return rl.Group("api", RequireSession(deps.MasterKey, h))
 	}
+	csrfMW := CSRF(CSRFConfig{AllowedOrigin: deps.PublicBaseURL})
 	adminOnly := func(h http.Handler) http.Handler {
-		return rl.Group("api", RequireRole(deps.MasterKey, "admin", h))
+		return csrfMW(rl.Group("api", RequireRole(deps.MasterKey, "admin", h)))
 	}
 
 	// P3a routes

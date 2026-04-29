@@ -1,10 +1,12 @@
 package webapi
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -220,4 +222,25 @@ func TestCSRF_OriginNormalization(t *testing.T) {
 			assert.Equal(t, tc.want, w.Code)
 		})
 	}
+}
+
+func TestRegisterRoutes_AdminMutationsRequireCSRF(t *testing.T) {
+	mux := http.NewServeMux()
+	deps := Deps{
+		MasterKey:     bytes.Repeat([]byte("k"), 32),
+		PublicBaseURL: "",
+	}
+	RegisterRoutes(mux, deps)
+
+	// POST /api/repos with a valid admin session but NO CSRF cookie/header
+	// should be rejected by CSRF middleware (403), not auth (401).
+	sess, err := SignSession(SessionClaims{Login: "admin", Role: "admin"}, deps.MasterKey, time.Hour)
+	require.NoError(t, err)
+	req := httptest.NewRequest("POST", "/api/repos", nil)
+	req.AddCookie(&http.Cookie{Name: "cf_session", Value: sess})
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusForbidden, w.Code)
+	assert.Contains(t, w.Body.String(), "csrf cookie missing")
 }
