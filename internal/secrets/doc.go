@@ -14,7 +14,9 @@
 //       - secrets/server.EnvelopePostgresStore — self-hosted Postgres
 //         with envelope encryption (DEK wrapped under the master key).
 //       - secrets/server/azurekv.KeyVaultStore — Azure Key Vault.
-//     The backend is selected at startup from CRONFOUNDRY_SECRETS_BACKEND.
+//     The backend is selected at startup in cmd/cronfoundry/serve.go: if
+//     AZURE_KEYVAULT_URL is set, KeyVaultStore is used; otherwise
+//     EnvelopePostgresStore is used.
 //
 // Per-run scoped manifest (PRD FR-6.4): when the server prepares a run,
 // it resolves only the secrets named in the skill manifest and exports

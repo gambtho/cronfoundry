@@ -32,7 +32,7 @@ the per-run scoping. **No behavior change.**
 
 Consolidate both packages under one root, split by consumer/role:
 
-```
+```text
 internal/secrets/
   doc.go                          (NEW)  package-level trust-boundary doc
   runner/                         (was internal/secrets/)
@@ -141,7 +141,7 @@ No new tests. All existing tests must pass with import-path updates only:
 
 Acceptance command sequence:
 
-```
+```bash
 go vet ./...
 go test ./...
 golangci-lint run ./...   # if available locally
