@@ -59,6 +59,7 @@ func (c *Converter) Convert(ctx context.Context, code string) (*Conversion, erro
 			return nil, fmt.Errorf("githubapp: build request: %w", err)
 		}
 		req.Header.Set("Accept", "application/vnd.github+json")
+		req.Header.Set("User-Agent", "cronfoundry-setup")
 
 		resp, err := c.HTTP.Do(req)
 		if err != nil {
