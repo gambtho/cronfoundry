@@ -17,6 +17,8 @@ for arg in "$@"; do [[ "$arg" == "--dry-run" ]] && DRY_RUN=true; done
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/state.sh
 source "${SCRIPT_DIR}/lib/state.sh"
+# shellcheck source=lib/steps.sh
+source "${SCRIPT_DIR}/lib/steps.sh"
 state_init
 state_load
 save() { state_save "$1" "$2"; }   # legacy alias used elsewhere in script
