@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
+	"github.com/gambtho/cronfoundry/internal/metrics"
 )
 
 // autoPauseEvalTimeout bounds the post-commit auto-pause evaluation. The
@@ -115,6 +116,25 @@ func (h finalizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		http.Error(w, "finalize: "+err.Error(), http.StatusInternalServerError)
 		return
+	}
+
+	// Emit Prometheus metrics. Provider isn't on the FinalizeRun row, so we
+	// emit LLM token/cost series under provider="unknown" for now; a
+	// follow-up can plumb provider through the row or have the runner
+	// include it in the finalize body.
+	metrics.RunsFinished.WithLabelValues(body.Status).Inc()
+	if body.DurationMs != nil {
+		metrics.RunDuration.WithLabelValues(body.Status).Observe(float64(*body.DurationMs) / 1000.0)
+	}
+	const provider = "unknown"
+	if body.TokensIn != nil && *body.TokensIn > 0 {
+		metrics.LLMTokens.WithLabelValues(provider, "input").Add(float64(*body.TokensIn))
+	}
+	if body.TokensOut != nil && *body.TokensOut > 0 {
+		metrics.LLMTokens.WithLabelValues(provider, "output").Add(float64(*body.TokensOut))
+	}
+	if body.CostCents != nil && *body.CostCents > 0 {
+		metrics.LLMCost.WithLabelValues(provider).Add(float64(*body.CostCents) / 100.0)
 	}
 
 	// Auto-pause evaluation runs AFTER finalize has committed, in its own
