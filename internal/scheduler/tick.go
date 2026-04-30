@@ -14,6 +14,7 @@ import (
 
 	"github.com/gambtho/cronfoundry/internal/cloud"
 	"github.com/gambtho/cronfoundry/internal/config"
+	"github.com/gambtho/cronfoundry/internal/metrics"
 	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
 	"github.com/gambtho/cronfoundry/internal/token"
 )
@@ -177,11 +178,12 @@ func processOne(
 	}
 
 	if err := dispatchRun(ctx, deps, dispatchArgs{
-		RunID:      run.ID,
-		OrgID:      sched.OrgID,
-		TimeoutSec: sched.TimeoutSec,
-		SecretRefs: config.CollectSecretRefs(sched.DestinationsJson, sched.EnvJson, sched.LlmSecretRef),
-		InstallID:  sched.InstallID,
+		RunID:        run.ID,
+		OrgID:        sched.OrgID,
+		TimeoutSec:   sched.TimeoutSec,
+		SecretRefs:   config.CollectSecretRefs(sched.DestinationsJson, sched.EnvJson, sched.LlmSecretRef),
+		InstallID:    sched.InstallID,
+		ScheduleName: sched.Name,
 	}); err != nil {
 		return err
 	}
@@ -194,11 +196,12 @@ func processOne(
 // dispatchPending's catch-up path. Keeps the two call sites behaviorally
 // identical (sign JWT, persist hash, dispatch, mark running).
 type dispatchArgs struct {
-	RunID      pgtype.UUID
-	OrgID      pgtype.UUID
-	TimeoutSec int32
-	SecretRefs []string
-	InstallID  int64
+	RunID        pgtype.UUID
+	OrgID        pgtype.UUID
+	TimeoutSec   int32
+	SecretRefs   []string
+	InstallID    int64
+	ScheduleName string
 }
 
 // dispatchRun signs a JWT for the run, persists its hash, dispatches the
@@ -263,6 +266,7 @@ func dispatchRun(ctx context.Context, deps Deps, args dispatchArgs) error {
 	if err != nil {
 		return fmt.Errorf("dispatch: %w", err)
 	}
+	metrics.RunsStarted.WithLabelValues(args.ScheduleName).Inc()
 
 	// Flip to 'running' and record the pid. The WHERE clause in SetRunRunning
 	// only matches status='pending' — if the runner already finalized by the
@@ -292,7 +296,7 @@ func dispatchRun(ctx context.Context, deps Deps, args dispatchArgs) error {
 func dispatchPending(ctx context.Context, deps Deps, stats *Stats) error {
 	rows, err := deps.Pool.Query(ctx, `
 		SELECT r.id, r.org_id,
-		       s.timeout_sec, s.destinations_json, s.env_json, s.llm_secret_ref,
+		       s.name, s.timeout_sec, s.destinations_json, s.env_json, s.llm_secret_ref,
 		       rc.github_app_install_id
 		FROM run r
 		JOIN schedule s ON s.id = r.schedule_id
@@ -324,6 +328,7 @@ func dispatchPending(ctx context.Context, deps Deps, stats *Stats) error {
 	type pendingRow struct {
 		ID         pgtype.UUID
 		OrgID      pgtype.UUID
+		Name       string
 		TimeoutSec int32
 		SecretRefs []string
 		InstallID  int64
@@ -333,7 +338,7 @@ func dispatchPending(ctx context.Context, deps Deps, stats *Stats) error {
 		var r pendingRow
 		var destsJSON, envJSON []byte
 		var llmRef *string
-		if err := rows.Scan(&r.ID, &r.OrgID, &r.TimeoutSec, &destsJSON, &envJSON, &llmRef, &r.InstallID); err != nil {
+		if err := rows.Scan(&r.ID, &r.OrgID, &r.Name, &r.TimeoutSec, &destsJSON, &envJSON, &llmRef, &r.InstallID); err != nil {
 			slog.Error("scheduler: dispatchPending: scan failed", "err", err)
 			continue
 		}
@@ -346,11 +351,12 @@ func dispatchPending(ctx context.Context, deps Deps, stats *Stats) error {
 
 	for _, r := range pending {
 		if err := dispatchRun(ctx, deps, dispatchArgs{
-			RunID:      r.ID,
-			OrgID:      r.OrgID,
-			TimeoutSec: r.TimeoutSec,
-			SecretRefs: r.SecretRefs,
-			InstallID:  r.InstallID,
+			RunID:        r.ID,
+			OrgID:        r.OrgID,
+			TimeoutSec:   r.TimeoutSec,
+			SecretRefs:   r.SecretRefs,
+			InstallID:    r.InstallID,
+			ScheduleName: r.Name,
 		}); err != nil {
 			slog.Error("scheduler: dispatchPending: dispatch failed",
 				"run_id", uuid.UUID(r.ID.Bytes).String(),
