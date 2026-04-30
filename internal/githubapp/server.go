@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -155,7 +156,14 @@ func (s *Server) writePEM(c *Conversion) (string, error) {
 	if err := os.MkdirAll(s.opts.PEMDir, 0o700); err != nil {
 		return "", fmt.Errorf("githubapp: mkdir pem-dir: %w", err)
 	}
-	path := filepath.Join(s.opts.PEMDir, c.Slug+".pem")
+	// Defense-in-depth: GitHub slugs are [a-z0-9-]+ in practice, but the
+	// response is attacker-influenceable (the user types the App name). Reject
+	// anything that could escape PEMDir or write to a hidden/special file.
+	slug := c.Slug
+	if slug == "" || strings.ContainsAny(slug, `/\`) || strings.Contains(slug, "..") || strings.HasPrefix(slug, ".") {
+		return "", fmt.Errorf("githubapp: refusing to write pem with unsafe slug %q", slug)
+	}
+	path := filepath.Join(s.opts.PEMDir, slug+".pem")
 	if err := os.WriteFile(path, []byte(c.PEM), 0o600); err != nil {
 		return "", fmt.Errorf("githubapp: write pem: %w", err)
 	}
@@ -221,6 +229,19 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleInstalled(w http.ResponseWriter, r *http.Request) {
+	// We only accept the installation redirect after /callback has produced
+	// a Conversion. Until then, an arbitrary localhost client (other tab,
+	// local process) could otherwise inject an installation_id of their
+	// choosing. After /callback runs we know GitHub is the only legitimate
+	// next caller because the user just clicked through a github.com page.
+	s.mu.Lock()
+	convReady := s.conv != nil
+	s.mu.Unlock()
+	if !convReady {
+		http.Error(w, "manifest exchange not yet complete", http.StatusBadRequest)
+		return
+	}
+
 	idStr := r.URL.Query().Get("installation_id")
 	var id int64
 	if _, err := fmt.Sscanf(idStr, "%d", &id); err != nil || id <= 0 {
@@ -240,10 +261,7 @@ func (s *Server) handleInstalled(w http.ResponseWriter, r *http.Request) {
 <p>You can return to your terminal — CronFoundry has the credentials it needs.</p>
 </body>`))
 
-	go func() {
-		time.Sleep(50 * time.Millisecond)
-		s.signalDone()
-	}()
+	s.signalDone()
 }
 
 // htmlEscape escapes characters that matter inside an HTML attribute value.
