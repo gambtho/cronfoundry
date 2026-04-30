@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/gambtho/cronfoundry/internal/secretstore"
+	"github.com/gambtho/cronfoundry/internal/secrets/server"
 	azuresecretstore "github.com/gambtho/cronfoundry/internal/secretstore/azure"
 )
 
@@ -56,7 +56,7 @@ func TestKeyVaultStore_Get_NotFound(t *testing.T) {
 	client := &fakeKVClient{secrets: map[string]string{}}
 	store := azuresecretstore.NewKeyVaultStore(client)
 	_, err := store.Get(context.Background(), "MISSING")
-	require.ErrorIs(t, err, secretstore.ErrNotFound)
+	require.ErrorIs(t, err, server.ErrNotFound)
 }
 
 func TestKeyVaultStore_Put_And_Get(t *testing.T) {
@@ -73,7 +73,7 @@ func TestKeyVaultStore_Delete(t *testing.T) {
 	store := azuresecretstore.NewKeyVaultStore(client)
 	require.NoError(t, store.Delete(context.Background(), "K"))
 	_, err := store.Get(context.Background(), "K")
-	require.ErrorIs(t, err, secretstore.ErrNotFound)
+	require.ErrorIs(t, err, server.ErrNotFound)
 }
 
 func TestKeyVaultStore_Delete_NotFound_ReturnsNil(t *testing.T) {

@@ -26,7 +26,7 @@ import (
 	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
 	"github.com/gambtho/cronfoundry/internal/github"
 	"github.com/gambtho/cronfoundry/internal/scheduler"
-	"github.com/gambtho/cronfoundry/internal/secretstore"
+	"github.com/gambtho/cronfoundry/internal/secrets/server"
 	secretstoreazure "github.com/gambtho/cronfoundry/internal/secretstore/azure"
 	"github.com/gambtho/cronfoundry/internal/sync"
 	"github.com/gambtho/cronfoundry/internal/token"
@@ -62,7 +62,7 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 	if masterEnc == "" {
 		return fmt.Errorf("%s is required", envMasterKey)
 	}
-	master, err := secretstore.ParseMasterKey(masterEnc)
+	master, err := server.ParseMasterKey(masterEnc)
 	if err != nil {
 		return fmt.Errorf("parse master key: %w", err)
 	}
@@ -369,10 +369,10 @@ func buildJobDispatcher() (cloud.JobDispatcher, error) {
 
 // buildSecretStore returns a KeyVaultStore when AZURE_KEYVAULT_URL is set;
 // otherwise returns an EnvelopePostgresStore for local use.
-func buildSecretStore(pool *pgxpool.Pool, orgID pgtype.UUID, master []byte) (secretstore.SecretStore, error) {
+func buildSecretStore(pool *pgxpool.Pool, orgID pgtype.UUID, master []byte) (server.SecretStore, error) {
 	kvURL := os.Getenv("AZURE_KEYVAULT_URL")
 	if kvURL == "" {
-		return secretstore.NewEnvelopePostgresStore(pool, orgID, master), nil
+		return server.NewEnvelopePostgresStore(pool, orgID, master), nil
 	}
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {

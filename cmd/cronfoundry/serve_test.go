@@ -16,7 +16,7 @@ import (
 
 	"github.com/gambtho/cronfoundry/internal/cloud"
 	"github.com/gambtho/cronfoundry/internal/githubtest"
-	"github.com/gambtho/cronfoundry/internal/secretstore"
+	"github.com/gambtho/cronfoundry/internal/secrets/server"
 	"github.com/gambtho/cronfoundry/internal/webapi"
 )
 
@@ -121,7 +121,7 @@ func TestBuildSecretStore_Local(t *testing.T) {
 	t.Setenv("AZURE_KEYVAULT_URL", "")
 	store, err := buildSecretStore(nil, pgtype.UUID{}, nil)
 	require.NoError(t, err)
-	_, ok := store.(*secretstore.EnvelopePostgresStore)
+	_, ok := store.(*server.EnvelopePostgresStore)
 	require.True(t, ok, "expected EnvelopePostgresStore when AZURE_KEYVAULT_URL is unset")
 }
 
@@ -157,7 +157,7 @@ func TestServe_APIMe_WithSession(t *testing.T) {
 
 	waitForHealthz(t, addr, 5*time.Second)
 
-	masterBytes, err := secretstore.ParseMasterKey(masterKey)
+	masterBytes, err := server.ParseMasterKey(masterKey)
 	require.NoError(t, err)
 	cookie, err := webapi.SignSession(
 		webapi.SessionClaims{Login: "alice", Role: "admin"},

@@ -14,7 +14,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 
-	"github.com/gambtho/cronfoundry/internal/secretstore"
+	"github.com/gambtho/cronfoundry/internal/secrets/server"
 )
 
 const copilotRefreshURL = "https://github.com/login/oauth/access_token"
@@ -81,7 +81,7 @@ func (h *copilotTokenHandler) get(w http.ResponseWriter, r *http.Request) {
 //
 // githubOverrideURL overrides the GitHub token endpoint for tests; pass nil
 // to use the real GitHub endpoint.
-func ResolveCopilotToken(ctx context.Context, store secretstore.SecretStore, prefix string, githubOverrideURL *string) (string, time.Time, error) {
+func ResolveCopilotToken(ctx context.Context, store server.SecretStore, prefix string, githubOverrideURL *string) (string, time.Time, error) {
 	expiryStr, err := store.Get(ctx, prefix+"_expiry")
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("read expiry: %w", err)

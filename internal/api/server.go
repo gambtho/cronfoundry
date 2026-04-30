@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/gambtho/cronfoundry/internal/github"
-	"github.com/gambtho/cronfoundry/internal/secretstore"
+	"github.com/gambtho/cronfoundry/internal/secrets/server"
 	"github.com/gambtho/cronfoundry/internal/token"
 )
 
@@ -18,7 +18,7 @@ import (
 type Deps struct {
 	Pool          *pgxpool.Pool
 	Signer        *token.Signer
-	Secrets       secretstore.SecretStore
+	Secrets       server.SecretStore
 	Installations *github.InstallationCache
 	RunnerAPIKey  string // optional; when set, X-Runner-Key is accepted on /internal routes
 }

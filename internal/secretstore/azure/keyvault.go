@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"sort"
 
-	"github.com/gambtho/cronfoundry/internal/secretstore"
+	"github.com/gambtho/cronfoundry/internal/secrets/server"
 )
 
 // secretNameRe enforces Azure Key Vault secret name constraints: 1–127 alphanumeric/hyphen chars.
@@ -30,13 +30,13 @@ func NewKeyVaultStore(client KVClient) *KeyVaultStore {
 }
 
 // Compile-time interface check.
-var _ secretstore.SecretStore = (*KeyVaultStore)(nil)
+var _ server.SecretStore = (*KeyVaultStore)(nil)
 
 func (s *KeyVaultStore) Get(ctx context.Context, name string) (string, error) {
 	val, err := s.client.GetSecret(ctx, name, "")
 	if err != nil {
 		if errors.Is(err, ErrSecretNotFound) {
-			return "", secretstore.ErrNotFound
+			return "", server.ErrNotFound
 		}
 		return "", err
 	}

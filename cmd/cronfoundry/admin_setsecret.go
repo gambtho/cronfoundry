@@ -15,7 +15,7 @@ import (
 	"github.com/spf13/cobra"
 
 	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
-	"github.com/gambtho/cronfoundry/internal/secretstore"
+	"github.com/gambtho/cronfoundry/internal/secrets/server"
 )
 
 func newAdminSetSecretCmd() *cobra.Command {
@@ -44,7 +44,7 @@ func runAdminSetSecret(ctx context.Context, name string, in io.Reader, out io.Wr
 			return fmt.Errorf("%s is required; run `cronfoundry admin init` first", envMasterKey)
 		}
 		var err error
-		master, err = secretstore.ParseMasterKey(encodedMaster)
+		master, err = server.ParseMasterKey(encodedMaster)
 		if err != nil {
 			return fmt.Errorf("parse %s: %w", envMasterKey, err)
 		}

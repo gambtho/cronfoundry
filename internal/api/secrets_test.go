@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gambtho/cronfoundry/internal/secretstore"
+	"github.com/gambtho/cronfoundry/internal/secrets/server"
 	"github.com/gambtho/cronfoundry/internal/testdb"
 	"github.com/gambtho/cronfoundry/internal/token"
 )
@@ -30,7 +30,7 @@ func TestSecrets_ScopedToClaim(t *testing.T) {
 	runID, orgID := seedRun(t, pool)
 
 	master := randomMaster(t)
-	store := secretstore.NewEnvelopePostgresStore(pool, orgID, master)
+	store := server.NewEnvelopePostgresStore(pool, orgID, master)
 	require.NoError(t, store.Put(context.Background(), "allowed", "value-A"))
 	require.NoError(t, store.Put(context.Background(), "forbidden", "value-F"))
 
@@ -84,7 +84,7 @@ func TestSecrets_MultipleNames(t *testing.T) {
 	runID, orgID := seedRun(t, pool)
 
 	master := randomMaster(t)
-	store := secretstore.NewEnvelopePostgresStore(pool, orgID, master)
+	store := server.NewEnvelopePostgresStore(pool, orgID, master)
 	require.NoError(t, store.Put(context.Background(), "slack", "A"))
 	require.NoError(t, store.Put(context.Background(), "openai", "B"))
 
@@ -155,7 +155,7 @@ func TestSecrets_LogsFetchedEvents(t *testing.T) {
 	runID, orgID := seedRun(t, pool)
 
 	master := randomMaster(t)
-	store := secretstore.NewEnvelopePostgresStore(pool, orgID, master)
+	store := server.NewEnvelopePostgresStore(pool, orgID, master)
 	require.NoError(t, store.Put(context.Background(), "slack", "A"))
 	require.NoError(t, store.Put(context.Background(), "openai", "B"))
 
@@ -216,7 +216,7 @@ func TestSecrets_LogsDeniedEvent(t *testing.T) {
 	runID, orgID := seedRun(t, pool)
 
 	master := randomMaster(t)
-	store := secretstore.NewEnvelopePostgresStore(pool, orgID, master)
+	store := server.NewEnvelopePostgresStore(pool, orgID, master)
 
 	signer := token.New(master)
 	tok, hash, err := signer.Sign(token.RunClaims{

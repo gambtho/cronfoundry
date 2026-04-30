@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gambtho/cronfoundry/internal/secretstore"
+	"github.com/gambtho/cronfoundry/internal/secrets/server"
 	"github.com/gambtho/cronfoundry/internal/testdb"
 )
 
@@ -41,7 +41,7 @@ func captureStdout(t *testing.T, fn func()) string {
 
 func mustMasterKey(t *testing.T) string {
 	t.Helper()
-	k, err := secretstore.GenerateMasterKey()
+	k, err := server.GenerateMasterKey()
 	require.NoError(t, err)
 	return k
 }
