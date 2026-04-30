@@ -170,7 +170,7 @@ golangci-lint run ./...   # if available locally
 1. `internal/secrets/doc.go` exists and documents the trust boundary,
    master-key location, scoped-manifest contract, and backend selection.
 2. No file under `internal/secretstore/` (top level or `azure/`) and no
-   file under `internal/secrets/*.go` outside `runner/`/`server/`.
+   file under `internal/secrets/*.go` outside `runner/` or `server/`.
 3. `go vet ./...` and `go test ./...` pass without modifying any test
    logic; only import paths and package qualifiers change.
 4. PR body includes a diff summary of which symbols moved and which
