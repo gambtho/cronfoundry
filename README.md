@@ -10,7 +10,7 @@ GitHub App sync, `/internal` HTTP API, subprocess + Container Apps Jobs runner
 dispatch, React operator UI with live-tail logs, push-webhook resync, audit
 log, persistent user table, and a one-command Bicep deploy. See
 [`docs/superpowers/specs/2026-04-19-cronfoundry-design.md`](docs/superpowers/specs/2026-04-19-cronfoundry-design.md)
-for the design and [`docs/guides/smoke-test-mvp-azure.md`](docs/guides/smoke-test-mvp-azure.md)
+for the design and [`docs/guides/quickstart-azure.md`](docs/guides/quickstart-azure.md)
 for the Azure runbook.
 
 ## Requirements
