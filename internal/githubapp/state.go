@@ -30,9 +30,12 @@ func SaveState(path string, kv map[string]string) error {
 	if err != nil {
 		return fmt.Errorf("githubapp: open state: %w", err)
 	}
-	defer f.Close()
 	if _, err := f.WriteString(b.String()); err != nil {
+		_ = f.Close()
 		return fmt.Errorf("githubapp: write state: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		return fmt.Errorf("githubapp: close state: %w", err)
 	}
 	if err := os.Chmod(path, 0o600); err != nil {
 		return fmt.Errorf("githubapp: chmod state: %w", err)

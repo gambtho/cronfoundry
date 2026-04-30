@@ -68,7 +68,7 @@ func newSetupGithubAppCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(),
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(),
 				"Starting local GitHub App setup helper at %s\nIf your browser doesn't open, visit that URL manually.\n",
 				srv.URL())
 
@@ -78,7 +78,7 @@ func newSetupGithubAppCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("setup: %w (re-run with --manual for the legacy prompts)", err)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(),
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(),
 				"\nGitHub App created: id=%d slug=%s installation=%d\n  PEM: %s\n  state: %s\n",
 				res.AppID, res.Slug, res.InstallationID, res.PEMPath, stateFile)
 			return nil

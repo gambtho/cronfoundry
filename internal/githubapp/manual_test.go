@@ -30,7 +30,10 @@ func TestRunManual_HappyPath(t *testing.T) {
 	if err := RunManual(in, &out, ManualOptions{StateFile: stateFile}); err != nil {
 		t.Fatalf("manual: %v", err)
 	}
-	b, _ := os.ReadFile(stateFile)
+	b, err := os.ReadFile(stateFile)
+	if err != nil {
+		t.Fatalf("read state: %v", err)
+	}
 	for _, want := range []string{
 		"CF_GITHUB_APP_ID=12345",
 		"CF_GITHUB_CLIENT_ID=Iv23liabcdef",

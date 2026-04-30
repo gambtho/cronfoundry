@@ -3,6 +3,7 @@ package githubapp
 import (
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -46,6 +47,7 @@ type Server struct {
 
 	mu             sync.Mutex
 	conv           *Conversion
+	installNonce   string // one-shot token mounted on the install URL; cleared on first match
 	installationID int64
 	convErr        error
 	doneCh         chan struct{}
@@ -113,6 +115,12 @@ func (s *Server) Run(ctx context.Context) (*Result, error) {
 	select {
 	case <-s.doneCh:
 	case <-timeoutCtx.Done():
+		// Distinguish "user took too long" from "caller cancelled us" — both
+		// surface here as timeoutCtx.Done(), but the parent ctx error wins
+		// when present.
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("githubapp: cancelled while waiting for manifest flow: %w", ctx.Err())
+		}
 		return nil, fmt.Errorf("githubapp: timed out waiting for manifest flow: %w", timeoutCtx.Err())
 	}
 
@@ -199,7 +207,7 @@ func (s *Server) handleRoot(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprintf(w, `<!doctype html>
+	_, _ = fmt.Fprintf(w, `<!doctype html>
 <meta charset="utf-8">
 <title>CronFoundry — creating GitHub App</title>
 <body style="font-family:system-ui;max-width:40rem;margin:4rem auto;line-height:1.5">
@@ -241,34 +249,57 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
+	// Mint a one-shot install nonce so /installed can verify that the next
+	// hit is the redirect we triggered, not another localhost client racing
+	// to inject an installation_id. GitHub preserves the `state` query param
+	// from /installations/new through to the App's configured setup_url.
+	nonceBytes := make([]byte, 32)
+	if _, err := rand.Read(nonceBytes); err != nil {
+		s.mu.Lock()
+		s.convErr = fmt.Errorf("githubapp: random install nonce: %w", err)
+		s.mu.Unlock()
+		s.signalDone()
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	nonce := hex.EncodeToString(nonceBytes)
+
 	s.mu.Lock()
 	s.conv = conv
+	s.installNonce = nonce
 	slug := conv.Slug
 	s.mu.Unlock()
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprintf(w, `<!doctype html>
+	_, _ = fmt.Fprintf(w, `<!doctype html>
 <meta charset="utf-8">
 <title>App created — install it</title>
 <body style="font-family:system-ui;max-width:40rem;margin:4rem auto;line-height:1.5">
 <h1>GitHub App created.</h1>
 <p>Now install it on the repos CronFoundry will manage. You'll be redirected automatically.</p>
-<script>location.href = "https://github.com/apps/%s/installations/new";</script>
-<noscript><a href="https://github.com/apps/%s/installations/new">Install the app</a></noscript>
-</body>`, slug, slug)
+<script>location.href = "https://github.com/apps/%s/installations/new?state=%s";</script>
+<noscript><a href="https://github.com/apps/%s/installations/new?state=%s">Install the app</a></noscript>
+</body>`, slug, nonce, slug, nonce)
 }
 
 func (s *Server) handleInstalled(w http.ResponseWriter, r *http.Request) {
-	// We only accept the installation redirect after /callback has produced
-	// a Conversion. Until then, an arbitrary localhost client (other tab,
-	// local process) could otherwise inject an installation_id of their
-	// choosing. After /callback runs we know GitHub is the only legitimate
-	// next caller because the user just clicked through a github.com page.
+	// /installed must run after /callback has produced a Conversion AND the
+	// caller must present the one-shot nonce we minted in /callback. The
+	// nonce is consumed atomically under s.mu so a race can't replay it.
+	gotNonce := r.URL.Query().Get("state")
 	s.mu.Lock()
 	convReady := s.conv != nil
+	nonceOK := convReady && s.installNonce != "" && subtle.ConstantTimeCompare([]byte(gotNonce), []byte(s.installNonce)) == 1
+	if nonceOK {
+		s.installNonce = "" // one-shot
+	}
 	s.mu.Unlock()
 	if !convReady {
 		http.Error(w, "manifest exchange not yet complete", http.StatusBadRequest)
+		return
+	}
+	if !nonceOK {
+		http.Error(w, "install nonce mismatch", http.StatusBadRequest)
 		return
 	}
 

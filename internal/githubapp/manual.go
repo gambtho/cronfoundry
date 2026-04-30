@@ -20,7 +20,9 @@ type ManualOptions struct {
 func RunManual(in io.Reader, out io.Writer, opts ManualOptions) error {
 	br := bufio.NewReader(in)
 
-	fmt.Fprint(out, manualInstructions)
+	if _, err := fmt.Fprint(out, manualInstructions); err != nil {
+		return fmt.Errorf("githubapp: write instructions: %w", err)
+	}
 
 	appIDStr, err := prompt(out, br, "GitHub App ID (numeric): ")
 	if err != nil {

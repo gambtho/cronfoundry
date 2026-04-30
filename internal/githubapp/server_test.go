@@ -2,6 +2,7 @@ package githubapp
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -45,8 +46,29 @@ func TestServer_HappyPath(t *testing.T) {
 	go func() {
 		state := s.State()
 		client := &http.Client{Timeout: 2 * time.Second}
-		_, _ = client.Get(s.URL() + "/callback?code=abc&state=" + url.QueryEscape(state))
-		_, _ = client.Get(s.URL() + "/installed?installation_id=4242&setup_action=install")
+		resp, err := client.Get(s.URL() + "/callback?code=abc&state=" + url.QueryEscape(state))
+		if err != nil {
+			t.Errorf("callback: %v", err)
+			return
+		}
+		body, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		// Extract install nonce embedded in the install URL. /callback renders
+		// `installations/new?state=<nonce>`; pull the first such occurrence.
+		const marker = "installations/new?state="
+		idx := strings.Index(string(body), marker)
+		if idx < 0 {
+			t.Errorf("install nonce not found in callback body:\n%s", string(body))
+			return
+		}
+		rest := string(body)[idx+len(marker):]
+		end := strings.IndexAny(rest, `"&`)
+		if end < 0 {
+			t.Errorf("malformed install URL in body")
+			return
+		}
+		nonce := rest[:end]
+		_, _ = client.Get(s.URL() + "/installed?installation_id=4242&setup_action=install&state=" + url.QueryEscape(nonce))
 	}()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
