@@ -39,7 +39,7 @@ No behavioral change. Three concrete changes:
      `stats.Queued == 1` — no dispatch happened (the existing running run
      blocks).
    - Mark the prior running run as `succeeded` (terminal).
-   - Reset `next_fire_at` back into the past so the schedule path doesn't
+   - Push `next_fire_at` into the future so the schedule path doesn't
      fire a new row. Call `Tick` again. Assert the queued pending row's
      status is now `running` and `stats.Dispatched == 1`.
 
@@ -67,7 +67,7 @@ No behavioral change. Three concrete changes:
 # Tests
 
 The new test uses `testdb.BootPG(t)` and follows the same setup pattern as
-existing tests in `tick_test.go` (e.g. `TestTick_DueScheduleDispatches`). It
+existing tests in `tick_test.go` (e.g. `TestTick_DispatchesDue`). It
 asserts:
 
 1. After first tick: 2 runs for the schedule (1 running prior + 1 pending
