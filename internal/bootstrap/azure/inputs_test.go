@@ -47,7 +47,7 @@ func TestInputs_Validate_MissingImageTag(t *testing.T) {
 func TestGeneratePassword_AlphanumericAndLongEnough(t *testing.T) {
 	p, err := GeneratePostgresPassword()
 	require.NoError(t, err)
-	require.GreaterOrEqual(t, len(p), 20)
+	require.Len(t, p, 24)
 	for _, r := range p {
 		ok := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
 		require.True(t, ok, "non-alphanumeric in %q", p)

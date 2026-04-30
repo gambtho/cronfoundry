@@ -50,6 +50,20 @@ func (b *Bootstrap) Run(ctx context.Context) error {
 	if err := b.Inputs.Validate(); err != nil {
 		return err
 	}
+	if b.ParamsPath == "" {
+		return errors.New("Bootstrap.ParamsPath is required")
+	}
+	if b.MasterKey == "" {
+		return errors.New("Bootstrap.MasterKey is required")
+	}
+	if !b.DryRun {
+		if b.TemplateFile == "" {
+			return errors.New("Bootstrap.TemplateFile is required when DryRun is false")
+		}
+		if b.Binary == "" {
+			return errors.New("Bootstrap.Binary is required when DryRun is false")
+		}
+	}
 	fmt.Fprintln(b.Stdout, "==> preflight") //nolint:errcheck
 	if err := Preflight(ctx, b.Runner); err != nil {
 		return err
