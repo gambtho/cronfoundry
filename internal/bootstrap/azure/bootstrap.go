@@ -21,6 +21,8 @@ type Bootstrap struct {
 	DryRun       bool    // skip deploy + everything after
 	ImageRoot    string  // override ghcr.io for testing; defaults to ghcrRoot
 	HealthScheme string  // "https" by default
+	HealthHost   string  // test-only: override fqdn used for /healthz polling
+	IPDetector   func(ctx context.Context) (string, error) // override for tests; nil → detectPublicIPDefault
 	Stdout       io.Writer
 }
 
@@ -32,6 +34,9 @@ func (b *Bootstrap) Run(ctx context.Context) error {
 	}
 	if b.HealthScheme == "" {
 		b.HealthScheme = "https"
+	}
+	if b.IPDetector == nil {
+		b.IPDetector = detectPublicIPDefault
 	}
 	root := b.ImageRoot
 	if root == "" {
@@ -61,7 +66,7 @@ func (b *Bootstrap) Run(ctx context.Context) error {
 	if err := Deploy(ctx, b.Runner, b.Inputs.Region, b.TemplateFile, b.ParamsPath); err != nil {
 		return err
 	}
-	ip, err := detectPublicIP(ctx)
+	ip, err := b.IPDetector(ctx)
 	if err != nil {
 		return fmt.Errorf("detect public ip: %w", err)
 	}
@@ -91,8 +96,12 @@ func (b *Bootstrap) Run(ctx context.Context) error {
 		return fmt.Errorf("discover fqdn: %w", err)
 	}
 	fqdn := strings.TrimSpace(string(out))
-	fmt.Fprintln(b.Stdout, "==> waiting for /healthz at", fqdn)
-	if err := waitHealthyAt(ctx, b.HealthScheme, fqdn, 5*time.Minute, 5*time.Second); err != nil {
+	healthHost := fqdn
+	if b.HealthHost != "" {
+		healthHost = b.HealthHost
+	}
+	fmt.Fprintln(b.Stdout, "==> waiting for /healthz at", healthHost)
+	if err := waitHealthyAt(ctx, b.HealthScheme, healthHost, 5*time.Minute, 5*time.Second); err != nil {
 		return err
 	}
 	fmt.Fprintln(b.Stdout)
@@ -102,11 +111,12 @@ func (b *Bootstrap) Run(ctx context.Context) error {
 	return nil
 }
 
-func detectPublicIP(ctx context.Context) (string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://ifconfig.me", nil)
+func detectPublicIPDefault(ctx context.Context) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.ipify.org", nil)
 	if err != nil {
 		return "", err
 	}
+	req.Header.Set("User-Agent", "cronfoundry-bootstrap")
 	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
 	if err != nil {
 		return "", err
