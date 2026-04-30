@@ -63,3 +63,10 @@ func TestMockRunner_RunWithEnv_ErrorsOnUnscriptedCall(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "unexpected call")
 }
+
+func TestExecRunner_Run_IncludesStderrInError(t *testing.T) {
+	r := &ExecRunner{}
+	_, err := r.Run(context.Background(), "sh", "-c", "echo OOPS_TOKEN >&2; exit 1")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "OOPS_TOKEN")
+}

@@ -3,6 +3,7 @@
 package azure
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -24,7 +25,14 @@ type ExecRunner struct {
 }
 
 func (r *ExecRunner) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
-	return exec.CommandContext(ctx, name, args...).Output()
+	cmd := exec.CommandContext(ctx, name, args...)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		return out, fmt.Errorf("%s %v: %w: %s", name, args, err, stderr.String())
+	}
+	return out, nil
 }
 
 func (r *ExecRunner) RunStreaming(ctx context.Context, name string, args ...string) error {
