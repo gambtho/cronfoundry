@@ -36,13 +36,22 @@ func RunManual(in io.Reader, out io.Writer, opts ManualOptions) error {
 	if err != nil {
 		return err
 	}
+	if clientID == "" {
+		return fmt.Errorf("githubapp: client ID cannot be empty")
+	}
 	clientSecret, err := prompt(out, br, "GitHub App Client Secret: ")
 	if err != nil {
 		return err
 	}
+	if clientSecret == "" {
+		return fmt.Errorf("githubapp: client secret cannot be empty")
+	}
 	webhookSecret, err := prompt(out, br, "GitHub App Webhook Secret (from `openssl rand -hex 32`): ")
 	if err != nil {
 		return err
+	}
+	if webhookSecret == "" {
+		return fmt.Errorf("githubapp: webhook secret cannot be empty")
 	}
 	pemPath, err := prompt(out, br, "Path to GitHub App .pem file: ")
 	if err != nil {

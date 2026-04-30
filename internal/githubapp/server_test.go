@@ -106,7 +106,12 @@ func TestServer_StateMismatchRejected(t *testing.T) {
 	go func() {
 		client := &http.Client{Timeout: time.Second}
 		resp, err := client.Get(s.URL() + "/callback?code=abc&state=WRONG")
-		if err == nil && resp.StatusCode != http.StatusBadRequest {
+		if err != nil {
+			t.Errorf("callback request failed: %v", err)
+			return
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("status = %d, want 400", resp.StatusCode)
 		}
 	}()
