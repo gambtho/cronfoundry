@@ -310,6 +310,17 @@ button (Phase 5b — copy will reference it).
 
 ## Phase 5 — Three small operator features
 
+> **Status update (added during plan-writing):** All three features were
+> already shipped on the backend before this spec was written. Phase 5 work
+> is therefore mostly UI polish, verification, and documentation — not new
+> features.
+>
+> | Feature | Backend | UI today | Phase 5 work |
+> |---------|---------|----------|--------------|
+> | 5a Auto-pause | Shipped (PR #17) | Surfaced on Dashboard | Verify; add explicit Resume button; e2e |
+> | 5b Run replay | Shipped (`/run-now`) | None | Add "Run now" button + 409 toast |
+> | 5c Tokens/cost | Shipped (parsing + DB columns + pricing.CostCents + finalize wiring) | Inline text in Runs.tsx | Promote into Phase-3 DataTable columns; Dashboard weekly tile |
+
 ### 5a — Auto-pause on consecutive failures
 
 **Manifest field:** `auto_pause_after: 3` per schedule (default disabled
