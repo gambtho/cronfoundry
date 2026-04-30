@@ -14,9 +14,9 @@ type ManualOptions struct {
 	StateFile string
 }
 
-// RunManual reads the same five values install.sh used to prompt for, validates
-// them lightly, and writes them to the state file. It is the fallback path
-// when the browser flow can't be used (SSH, codespaces, --manual flag).
+// RunManual reads the values install.sh used to prompt for, validates them,
+// and writes them to the state file. It is the fallback path when the browser
+// flow can't be used (SSH, codespaces, --manual flag).
 func RunManual(in io.Reader, out io.Writer, opts ManualOptions) error {
 	br := bufio.NewReader(in)
 
@@ -26,8 +26,8 @@ func RunManual(in io.Reader, out io.Writer, opts ManualOptions) error {
 	if err != nil {
 		return err
 	}
-	if _, err := strconv.ParseInt(appIDStr, 10, 64); err != nil {
-		return fmt.Errorf("githubapp: app id must be numeric, got %q", appIDStr)
+	if id, err := strconv.ParseInt(appIDStr, 10, 64); err != nil || id <= 0 {
+		return fmt.Errorf("githubapp: app id must be a positive integer, got %q", appIDStr)
 	}
 
 	clientID, err := prompt(out, br, "GitHub App Client ID (starts with Iv23li): ")
@@ -38,27 +38,36 @@ func RunManual(in io.Reader, out io.Writer, opts ManualOptions) error {
 	if err != nil {
 		return err
 	}
+	webhookSecret, err := prompt(out, br, "GitHub App Webhook Secret (from `openssl rand -hex 32`): ")
+	if err != nil {
+		return err
+	}
 	pemPath, err := prompt(out, br, "Path to GitHub App .pem file: ")
 	if err != nil {
 		return err
 	}
-	if _, err := os.Stat(pemPath); err != nil {
+	st, err := os.Stat(pemPath)
+	if err != nil {
 		return fmt.Errorf("githubapp: pem not found at %s: %w", pemPath, err)
+	}
+	if !st.Mode().IsRegular() {
+		return fmt.Errorf("githubapp: pem path %s is not a regular file", pemPath)
 	}
 	installID, err := prompt(out, br, "GitHub App Installation ID: ")
 	if err != nil {
 		return err
 	}
-	if _, err := strconv.ParseInt(installID, 10, 64); err != nil {
-		return fmt.Errorf("githubapp: installation id must be numeric, got %q", installID)
+	if id, err := strconv.ParseInt(installID, 10, 64); err != nil || id <= 0 {
+		return fmt.Errorf("githubapp: installation id must be a positive integer, got %q", installID)
 	}
 
 	return SaveState(opts.StateFile, map[string]string{
-		"CF_GITHUB_APP_ID":        appIDStr,
-		"CF_GITHUB_CLIENT_ID":     clientID,
-		"CF_GITHUB_CLIENT_SECRET": clientSecret,
-		"CF_GITHUB_PEM_PATH":      pemPath,
-		"CF_INSTALLATION_ID":      installID,
+		"CF_GITHUB_APP_ID":         appIDStr,
+		"CF_GITHUB_CLIENT_ID":      clientID,
+		"CF_GITHUB_CLIENT_SECRET":  clientSecret,
+		"CF_GITHUB_WEBHOOK_SECRET": webhookSecret,
+		"CF_GITHUB_PEM_PATH":       pemPath,
+		"CF_INSTALLATION_ID":       installID,
 	})
 }
 

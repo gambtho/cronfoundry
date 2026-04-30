@@ -21,6 +21,7 @@ func TestRunManual_HappyPath(t *testing.T) {
 		"12345",
 		"Iv23liabcdef",
 		"client-secret-value",
+		"webhook-secret-value",
 		pem,
 		"55",
 	}, "\n") + "\n")
@@ -34,6 +35,7 @@ func TestRunManual_HappyPath(t *testing.T) {
 		"CF_GITHUB_APP_ID=12345",
 		"CF_GITHUB_CLIENT_ID=Iv23liabcdef",
 		"CF_GITHUB_CLIENT_SECRET=client-secret-value",
+		"CF_GITHUB_WEBHOOK_SECRET=webhook-secret-value",
 		"CF_INSTALLATION_ID=55",
 	} {
 		if !strings.Contains(string(b), want) {
@@ -45,7 +47,7 @@ func TestRunManual_HappyPath(t *testing.T) {
 func TestRunManual_RejectsMissingPEM(t *testing.T) {
 	dir := t.TempDir()
 	stateFile := filepath.Join(dir, "state")
-	in := strings.NewReader("1\nIv1\ncs\n/no/such/file.pem\n")
+	in := strings.NewReader("1\nIv1\ncs\nws\n/no/such/file.pem\n")
 	var out bytes.Buffer
 	err := RunManual(in, &out, ManualOptions{StateFile: stateFile})
 	if err == nil || !strings.Contains(err.Error(), "pem") {

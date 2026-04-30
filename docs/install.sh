@@ -125,7 +125,7 @@ if [[ -z "${CF_GITHUB_APP_ID:-}" ]]; then
   # shellcheck disable=SC1090
   source "$STATE_FILE"
 fi
-ok "GitHub App credentials collected (app=$CF_GITHUB_APP_SLUG installation=$CF_INSTALLATION_ID)"
+ok "GitHub App credentials collected (app=${CF_GITHUB_APP_SLUG:-unknown} installation=${CF_INSTALLATION_ID:-unknown})"
 
 # ── Step 6: skill repo ────────────────────────────────────────────────────────
 header "[step 6/17] Skill repo"

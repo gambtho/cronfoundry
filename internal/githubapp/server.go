@@ -156,18 +156,39 @@ func (s *Server) writePEM(c *Conversion) (string, error) {
 	if err := os.MkdirAll(s.opts.PEMDir, 0o700); err != nil {
 		return "", fmt.Errorf("githubapp: mkdir pem-dir: %w", err)
 	}
-	// Defense-in-depth: GitHub slugs are [a-z0-9-]+ in practice, but the
-	// response is attacker-influenceable (the user types the App name). Reject
-	// anything that could escape PEMDir or write to a hidden/special file.
-	slug := c.Slug
-	if slug == "" || strings.ContainsAny(slug, `/\`) || strings.Contains(slug, "..") || strings.HasPrefix(slug, ".") {
-		return "", fmt.Errorf("githubapp: refusing to write pem with unsafe slug %q", slug)
+	if !isSafeSlug(c.Slug) {
+		return "", fmt.Errorf("githubapp: refusing to write pem with unsafe slug %q", c.Slug)
 	}
-	path := filepath.Join(s.opts.PEMDir, slug+".pem")
+	path := filepath.Join(s.opts.PEMDir, c.Slug+".pem")
 	if err := os.WriteFile(path, []byte(c.PEM), 0o600); err != nil {
 		return "", fmt.Errorf("githubapp: write pem: %w", err)
 	}
 	return path, nil
+}
+
+// isSafeSlug constrains a GitHub App slug to characters safe for both filesystem
+// paths and embedding into the install-redirect URL. GitHub slugs are normally
+// [a-z0-9-]+; we accept that plus uppercase to be a little forgiving without
+// opening the door to path or HTML/JS escapes.
+func isSafeSlug(slug string) bool {
+	if slug == "" || len(slug) > 64 {
+		return false
+	}
+	if strings.HasPrefix(slug, "-") || strings.HasSuffix(slug, "-") {
+		return false
+	}
+	for i := 0; i < len(slug); i++ {
+		c := slug[i]
+		switch {
+		case c >= 'a' && c <= 'z':
+		case c >= 'A' && c <= 'Z':
+		case c >= '0' && c <= '9':
+		case c == '-':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Server) handleRoot(w http.ResponseWriter, _ *http.Request) {
@@ -204,6 +225,15 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	conv, err := s.opts.Converter.Convert(r.Context(), code)
 	if err != nil {
+		s.mu.Lock()
+		s.convErr = err
+		s.mu.Unlock()
+		s.signalDone()
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	if !isSafeSlug(conv.Slug) {
+		err := fmt.Errorf("githubapp: github returned unsafe slug %q", conv.Slug)
 		s.mu.Lock()
 		s.convErr = err
 		s.mu.Unlock()

@@ -28,17 +28,21 @@ func newSetupGithubAppCmd() *cobra.Command {
 		Use:   "github-app",
 		Short: "Create and install a GitHub App via manifest flow",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if stateFile == "" {
-				home, _ := os.UserHomeDir()
-				stateFile = filepath.Join(home, ".cronfoundry-quickstart-state")
-			}
-			if pemDir == "" {
-				home, _ := os.UserHomeDir()
-				pemDir = filepath.Join(home, ".cronfoundry")
+			if stateFile == "" || pemDir == "" {
+				home, err := os.UserHomeDir()
+				if err != nil {
+					return fmt.Errorf("setup: resolve home directory (pass --state-file and --pem-dir to override): %w", err)
+				}
+				if stateFile == "" {
+					stateFile = filepath.Join(home, ".cronfoundry-quickstart-state")
+				}
+				if pemDir == "" {
+					pemDir = filepath.Join(home, ".cronfoundry")
+				}
 			}
 			if defaultName == "" {
-				u, _ := user.Current()
-				if u != nil {
+				u, err := user.Current()
+				if err == nil && u != nil && u.Username != "" {
 					defaultName = "cronfoundry-" + u.Username
 				} else {
 					defaultName = "cronfoundry-app"

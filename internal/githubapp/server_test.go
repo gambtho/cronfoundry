@@ -69,7 +69,7 @@ func TestServer_StateMismatchRejected(t *testing.T) {
 	}))
 	defer gh.Close()
 
-	s, _ := NewServer(Options{
+	s, err := NewServer(Options{
 		Port:            0,
 		StateFile:       filepath.Join(t.TempDir(), "state"),
 		PEMDir:          t.TempDir(),
@@ -78,6 +78,9 @@ func TestServer_StateMismatchRejected(t *testing.T) {
 		Timeout:         500 * time.Millisecond,
 		SkipBrowserOpen: true,
 	})
+	if err != nil {
+		t.Fatalf("new: %v", err)
+	}
 	go func() {
 		client := &http.Client{Timeout: time.Second}
 		resp, err := client.Get(s.URL() + "/callback?code=abc&state=WRONG")
@@ -87,7 +90,7 @@ func TestServer_StateMismatchRejected(t *testing.T) {
 	}()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	_, err := s.Run(ctx)
+	_, err = s.Run(ctx)
 	if err == nil {
 		t.Error("expected timeout error, got nil")
 	}
