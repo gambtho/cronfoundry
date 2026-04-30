@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
+	"github.com/gambtho/cronfoundry/internal/metrics"
 	"github.com/gambtho/cronfoundry/internal/secretstore"
 )
 
@@ -137,6 +138,7 @@ func RegisterRoutes(mux *http.ServeMux, deps Deps) {
 
 	// Webhooks (unauthenticated; HMAC-verified)
 	wh := &webhookHandler{deps: deps, secret: deps.WebhookSecret, syncer: deps.Syncer}
+	mux.Handle("GET /metrics", metrics.Handler())
 	mux.Handle("POST /webhook/github", rl.Group("webhook", wh))
 
 	// Copilot Enterprise device flow (admin-only)
