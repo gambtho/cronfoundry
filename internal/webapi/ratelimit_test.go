@@ -219,7 +219,6 @@ func TestRateLimiter_SSE_PerIPIsolation(t *testing.T) {
 	rl := newTestRL(t, RateLimiterConfig{APIRPM: 60, OAuthRPM: 10, WebhookRPM: 300, SSEMaxConcurrent: 1, LRUSize: 128})
 
 	release := make(chan struct{})
-	defer close(release)
 	mw := rl.SSE(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		<-release
@@ -250,6 +249,11 @@ func TestRateLimiter_SSE_PerIPIsolation(t *testing.T) {
 	w := httptest.NewRecorder()
 	mw.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusTooManyRequests, w.Code, "IP A's only slot is full")
+
+	// Unblock IP B's handler so its goroutine completes; consume gotCode
+	// so we don't leave a goroutine blocked across test boundaries.
+	close(release)
+	assert.Equal(t, http.StatusOK, <-gotCode)
 }
 
 func TestRateLimiter_SSE_DisabledByZeroCap(t *testing.T) {

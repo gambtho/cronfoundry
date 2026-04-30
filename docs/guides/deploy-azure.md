@@ -14,7 +14,7 @@
 2. Set name: `cronfoundry-<yourname>`
 3. Homepage URL: your fork or self-hosted URL (e.g. `https://github.com/yourname/cronfoundry`)
 4. Callback URL: `https://<your-serve-fqdn>/oauth/callback` (update after deploy)
-5. Webhook URL: `https://<your-serve-fqdn>/webhooks/github` (update after deploy)
+5. Webhook URL: `https://<your-serve-fqdn>/webhook/github` (update after deploy)
 6. Permissions:
    - Repository contents: Read & write
    - Issues: Write

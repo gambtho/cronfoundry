@@ -149,7 +149,7 @@ The order matters:
 
 429 response:
 
-```
+```http
 HTTP/1.1 429 Too Many Requests
 Content-Type: application/json
 Retry-After: 1
