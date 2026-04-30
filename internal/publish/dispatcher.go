@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/gambtho/cronfoundry/internal/config"
+	"github.com/gambtho/cronfoundry/internal/metrics"
 	"github.com/gambtho/cronfoundry/internal/template"
 )
 
@@ -31,7 +32,14 @@ func (d *Dispatcher) Dispatch(ctx context.Context, dests []config.Destination, o
 				results[i] = Result{Type: mustDestType(dest), OK: true, Skipped: true, SkipReason: "condition:" + dest.When + " not met"}
 				return
 			}
-			results[i] = d.publishOne(ctx, dest, outputFor(dest), tctx, secrets)
+			res := d.publishOne(ctx, dest, outputFor(dest), tctx, secrets)
+			results[i] = res
+			// Skipped results aren't counted — only actual publish attempts.
+			label := "ok"
+			if !res.OK {
+				label = "error"
+			}
+			metrics.DestPublish.WithLabelValues(res.Type, label).Inc()
 		}()
 	}
 	wg.Wait()
