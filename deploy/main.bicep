@@ -22,6 +22,9 @@ param adminLogins string
 param viewerLogins string = ''
 param ingressExternal bool = false
 
+@description('Honor the leftmost X-Forwarded-For header for client IP. Set true behind a reverse proxy / Container Apps ingress so per-IP rate limits track real clients, not the proxy IP.')
+param trustProxy bool = false
+
 var prefix = 'cf'
 var rgName = 'rg-cronfoundry-${env}'
 
@@ -135,6 +138,7 @@ module serve 'modules/containerApp.bicep' = {
     azureCaeJobName: runnerJobName
     caeDefaultDomain: cae.outputs.defaultDomain
     ingressExternal: ingressExternal
+    trustProxy: trustProxy
   }
 }
 
