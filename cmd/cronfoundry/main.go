@@ -19,6 +19,7 @@ func main() {
 	root.AddCommand(newAdminCmd())
 	root.AddCommand(newRunnerCmd())
 	root.AddCommand(newServeCmd())
+	root.AddCommand(newSetupCmd())
 	root.AddCommand(newBootstrapCmd())
 
 	if err := root.Execute(); err != nil {
