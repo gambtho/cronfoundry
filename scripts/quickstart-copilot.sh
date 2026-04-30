@@ -14,16 +14,12 @@ header()  { echo -e "\n${BOLD}$*${RESET}"; }
 DRY_RUN=false
 for arg in "$@"; do [[ "$arg" == "--dry-run" ]] && DRY_RUN=true; done
 
-STATE_FILE="${HOME}/.cronfoundry-quickstart-state"
-# shellcheck disable=SC1090
-[[ -f "$STATE_FILE" ]] || { touch "$STATE_FILE" && chmod 600 "$STATE_FILE"; }
-[[ -f "$STATE_FILE" ]] && source "$STATE_FILE"
-chmod 600 "$STATE_FILE" 2>/dev/null || true
-
-save() {
-  printf '%s=%q\n' "$1" "$2" >> "$STATE_FILE"
-  chmod 600 "$STATE_FILE" 2>/dev/null || true
-}
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/state.sh
+source "${SCRIPT_DIR}/lib/state.sh"
+state_init
+state_load
+save() { state_save "$1" "$2"; }   # legacy alias used elsewhere in script
 
 GUIDE_URL="https://gambtho.github.io/cronfoundry/guides/quickstart-copilot.html"
 
