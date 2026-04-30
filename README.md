@@ -254,6 +254,8 @@ failure), or `failed` (load/LLM error). Per-destination failures are isolated
   touched
 - `GET /api/runs/{id}/events/stream` — SSE stream consumed by the `LogTail`
   component in the Runs detail drawer for in-flight runs
+- `GET /metrics` — Prometheus text-format scrape endpoint (see
+  [`docs/guides/observability.md`](docs/guides/observability.md))
 
 ### CSRF & origin allowlist
 
