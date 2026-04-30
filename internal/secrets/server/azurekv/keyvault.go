@@ -1,4 +1,4 @@
-package azure
+package azurekv
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"sort"
 
-	"github.com/gambtho/cronfoundry/internal/secretstore"
+	"github.com/gambtho/cronfoundry/internal/secrets/server"
 )
 
 // secretNameRe enforces Azure Key Vault secret name constraints: 1–127 alphanumeric/hyphen chars.
@@ -16,7 +16,7 @@ var secretNameRe = regexp.MustCompile(`^[0-9a-zA-Z-]{1,127}$`)
 // ErrInvalidSecretName is returned when a secret name violates Azure Key Vault naming rules.
 var ErrInvalidSecretName = errors.New("azure keyvault: secret name must match ^[0-9a-zA-Z-]{1,127}$")
 
-// KeyVaultStore implements secretstore.SecretStore backed by Azure Key Vault.
+// KeyVaultStore implements server.SecretStore backed by Azure Key Vault.
 type KeyVaultStore struct {
 	client KVClient
 }
@@ -24,19 +24,19 @@ type KeyVaultStore struct {
 // NewKeyVaultStore wraps a KVClient as a SecretStore. Panics if client is nil.
 func NewKeyVaultStore(client KVClient) *KeyVaultStore {
 	if client == nil {
-		panic("secretstore/azure: NewKeyVaultStore: client must not be nil")
+		panic("secrets/server/azurekv: NewKeyVaultStore: client must not be nil")
 	}
 	return &KeyVaultStore{client: client}
 }
 
 // Compile-time interface check.
-var _ secretstore.SecretStore = (*KeyVaultStore)(nil)
+var _ server.SecretStore = (*KeyVaultStore)(nil)
 
 func (s *KeyVaultStore) Get(ctx context.Context, name string) (string, error) {
 	val, err := s.client.GetSecret(ctx, name, "")
 	if err != nil {
 		if errors.Is(err, ErrSecretNotFound) {
-			return "", secretstore.ErrNotFound
+			return "", server.ErrNotFound
 		}
 		return "", err
 	}

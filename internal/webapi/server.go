@@ -11,7 +11,7 @@ import (
 
 	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
 	"github.com/gambtho/cronfoundry/internal/metrics"
-	"github.com/gambtho/cronfoundry/internal/secretstore"
+	"github.com/gambtho/cronfoundry/internal/secrets/server"
 )
 
 // Deps holds everything webapi handlers need.
@@ -26,7 +26,7 @@ type Deps struct {
 	// Queries provides DB access for /api/* handlers.
 	Queries *dbgen.Queries
 	// Secrets provides secret store access for /api/secrets handlers.
-	Secrets secretstore.SecretStore
+	Secrets server.SecretStore
 	// APIBaseURL is the base URL for the internal API (used by run-now).
 	APIBaseURL string
 	// WebhookSecret is the shared HMAC secret registered with the GitHub App.

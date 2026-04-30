@@ -21,7 +21,7 @@ import (
 	"github.com/gambtho/cronfoundry/internal/llm"
 	"github.com/gambtho/cronfoundry/internal/mcp"
 	"github.com/gambtho/cronfoundry/internal/publish"
-	"github.com/gambtho/cronfoundry/internal/secrets"
+	runnersecrets "github.com/gambtho/cronfoundry/internal/secrets/runner"
 )
 
 func sig() *object.Signature {
@@ -137,7 +137,7 @@ Please write a digest using {{ include "notes.md" }}.
 		ManifestPath: "cronfoundry.yaml",
 		SkillPath:    "skills/weekly-digest",
 		ScheduleName: "mon",
-		Secrets: secrets.New(map[string]string{
+		Secrets: runnersecrets.New(map[string]string{
 			"CRONFOUNDRY_SECRET_SLACK_URL": slackSrv.URL,
 		}),
 		LLMAPIKey: "sk-test",
@@ -221,7 +221,7 @@ skills:
 	result, err := r.Run(context.Background(), RunInput{
 		RepoRoot: repoRoot, ManifestPath: "cronfoundry.yaml",
 		SkillPath: "sk", ScheduleName: "s",
-		Secrets: secrets.New(map[string]string{
+		Secrets: runnersecrets.New(map[string]string{
 			"CRONFOUNDRY_SECRET_SLACK_URL":   slackSrv.URL,
 			"CRONFOUNDRY_SECRET_DISCORD_URL": discordSrv.URL,
 		}),
@@ -555,7 +555,7 @@ skills:
 		ManifestPath: "cronfoundry.yaml",
 		SkillPath:    "skills/check",
 		ScheduleName: "daily",
-		Secrets: secrets.New(map[string]string{
+		Secrets: runnersecrets.New(map[string]string{
 			"CRONFOUNDRY_SECRET_MY_API_KEY": "super-secret-value",
 			"CRONFOUNDRY_SECRET_SLACK_URL":  slackSrv.URL,
 		}),

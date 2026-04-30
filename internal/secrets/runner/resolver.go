@@ -1,6 +1,6 @@
-// Package secrets resolves skill-declared secrets from environment variables
+// Package runner resolves skill-declared secrets from environment variables
 // in the form CRONFOUNDRY_SECRET_<UPPER(name)>.
-package secrets
+package runner
 
 import (
 	"fmt"

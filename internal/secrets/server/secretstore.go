@@ -1,8 +1,8 @@
-// Package secretstore persists and retrieves secrets under envelope
-// encryption. The SecretStore interface is the single external contract; its
-// P2 implementation is backed by Postgres (see postgres.go). P4 will add an
-// Azure Key Vault implementation without touching callers.
-package secretstore
+// Package server persists and retrieves secrets under envelope
+// encryption. The SecretStore interface is the single external contract.
+// Implementations: EnvelopePostgresStore (postgres.go) for self-hosted
+// Postgres, and azurekv.KeyVaultStore (sibling package) for Azure Key Vault.
+package server
 
 import (
 	"context"

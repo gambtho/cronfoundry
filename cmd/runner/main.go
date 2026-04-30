@@ -16,7 +16,7 @@ import (
 	"github.com/gambtho/cronfoundry/internal/publish"
 	"github.com/gambtho/cronfoundry/internal/redact"
 	"github.com/gambtho/cronfoundry/internal/runner"
-	"github.com/gambtho/cronfoundry/internal/secrets"
+	runnersecrets "github.com/gambtho/cronfoundry/internal/secrets/runner"
 )
 
 // stderr is the process-wide stderr sink. It starts as os.Stderr and is
@@ -51,7 +51,7 @@ func main() {
 			ctx := context.Background()
 
 			env := envAsMap()
-			sec := secrets.New(env)
+			sec := runnersecrets.New(env)
 
 			// Build redactor including all known secret values + LLM key + GH token.
 			redactValues := sec.AllValues()

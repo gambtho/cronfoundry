@@ -28,7 +28,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
-	"github.com/gambtho/cronfoundry/internal/secretstore"
+	"github.com/gambtho/cronfoundry/internal/secrets/server"
 	"github.com/gambtho/cronfoundry/internal/testdb"
 )
 
@@ -117,9 +117,9 @@ func TestE2E_FullScheduleFire(t *testing.T) {
 	require.NoError(t, err)
 
 	// ── 6. Store fake secrets via secretstore ────────────────────────────────
-	master, err := secretstore.ParseMasterKey(masterKey)
+	master, err := server.ParseMasterKey(masterKey)
 	require.NoError(t, err)
-	store := secretstore.NewEnvelopePostgresStore(pool, org.ID, master)
+	store := server.NewEnvelopePostgresStore(pool, org.ID, master)
 	require.NoError(t, store.Put(ctx, "openai_key", "sk-fake-e2e-key"))
 	require.NoError(t, store.Put(ctx, "discord_webhook", "http://"+fakeDiscordWebhookServer(t).Listener.Addr().String()+"/discord"))
 
@@ -515,9 +515,9 @@ func TestE2E_SuccessfulFireWithLocalClone(t *testing.T) {
 
 	// ── 5. Store secrets ─────────────────────────────────────────────────────
 	t.Log("e2e-success: phase 5 — storing secrets")
-	master, err := secretstore.ParseMasterKey(masterKey)
+	master, err := server.ParseMasterKey(masterKey)
 	require.NoError(t, err)
-	store := secretstore.NewEnvelopePostgresStore(pool, org.ID, master)
+	store := server.NewEnvelopePostgresStore(pool, org.ID, master)
 	require.NoError(t, store.Put(ctx, "openai_key", "sk-fake-smoke-key"))
 	require.NoError(t, store.Put(ctx, "slack_webhook", slackSrv.URL+"/webhook"))
 
@@ -921,9 +921,9 @@ func TestE2E_MCPToolLoop(t *testing.T) {
 
 	// ── 4. Store secrets ────────────────────────────────────────────────────
 	t.Log("e2e-mcp: phase 4 — storing secrets")
-	master, err := secretstore.ParseMasterKey(masterKey)
+	master, err := server.ParseMasterKey(masterKey)
 	require.NoError(t, err)
-	store := secretstore.NewEnvelopePostgresStore(pool, org.ID, master)
+	store := server.NewEnvelopePostgresStore(pool, org.ID, master)
 	require.NoError(t, store.Put(ctx, "anthropic_key", "sk-fake-anthropic-key"))
 
 	// ── 5. Fake Anthropic server ────────────────────────────────────────────

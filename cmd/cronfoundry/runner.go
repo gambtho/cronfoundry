@@ -26,7 +26,7 @@ import (
 	"github.com/gambtho/cronfoundry/internal/github"
 	"github.com/gambtho/cronfoundry/internal/publish"
 	"github.com/gambtho/cronfoundry/internal/runner"
-	"github.com/gambtho/cronfoundry/internal/secrets"
+	runnersecrets "github.com/gambtho/cronfoundry/internal/secrets/runner"
 )
 
 const (
@@ -168,7 +168,7 @@ func runRunnerHTTP(ctx context.Context, runIDFlag string) error {
 	// 5) Build a Resolver from the fetched secrets. P1's secrets.Resolver
 	//    expects env-var-style keys (CRONFOUNDRY_SECRET_<UPPER(name)>) so we
 	//    remap here.
-	resolver := secrets.New(envMapForSecrets(secretMap))
+	resolver := runnersecrets.New(envMapForSecrets(secretMap))
 
 	// 6) Build LLM endpoint/deployment overrides.
 	llmEndpoint := ""

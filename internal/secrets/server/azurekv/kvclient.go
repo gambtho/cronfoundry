@@ -1,5 +1,5 @@
-// Package azure provides an Azure Key Vault implementation of secretstore.SecretStore.
-package azure
+// Package azurekv provides an Azure Key Vault implementation of server.SecretStore.
+package azurekv
 
 import (
 	"context"

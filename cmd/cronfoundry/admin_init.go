@@ -14,7 +14,7 @@ import (
 
 	"github.com/gambtho/cronfoundry/internal/db"
 	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
-	"github.com/gambtho/cronfoundry/internal/secretstore"
+	"github.com/gambtho/cronfoundry/internal/secrets/server"
 )
 
 const envMasterKey = "CRONFOUNDRY_MASTER_KEY"
@@ -41,7 +41,7 @@ actually bootstrap.`,
 
 func runAdminInit(ctx context.Context, orgName string) error {
 	if os.Getenv(envMasterKey) == "" {
-		key, err := secretstore.GenerateMasterKey()
+		key, err := server.GenerateMasterKey()
 		if err != nil {
 			return fmt.Errorf("generate master key: %w", err)
 		}

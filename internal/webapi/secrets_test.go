@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
-	"github.com/gambtho/cronfoundry/internal/secretstore"
+	"github.com/gambtho/cronfoundry/internal/secrets/server"
 	"github.com/gambtho/cronfoundry/internal/testdb"
 	"github.com/gambtho/cronfoundry/internal/webapi"
 )
@@ -28,7 +28,7 @@ func TestSecretsHandler_ListEmpty(t *testing.T) {
 	require.NoError(t, err)
 
 	masterKey := make([]byte, 32)
-	store := secretstore.NewEnvelopePostgresStore(pool, org.ID, masterKey)
+	store := server.NewEnvelopePostgresStore(pool, org.ID, masterKey)
 	deps := webapi.Deps{
 		MasterKey:     masterKey,
 		OAuthClientID: "test",

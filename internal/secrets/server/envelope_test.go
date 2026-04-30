@@ -1,4 +1,4 @@
-package secretstore
+package server
 
 import (
 	"crypto/rand"

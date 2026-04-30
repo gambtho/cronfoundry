@@ -28,8 +28,8 @@ import (
 	"github.com/gambtho/cronfoundry/internal/github"
 	"github.com/gambtho/cronfoundry/internal/metrics"
 	"github.com/gambtho/cronfoundry/internal/scheduler"
-	"github.com/gambtho/cronfoundry/internal/secretstore"
-	secretstoreazure "github.com/gambtho/cronfoundry/internal/secretstore/azure"
+	"github.com/gambtho/cronfoundry/internal/secrets/server"
+	"github.com/gambtho/cronfoundry/internal/secrets/server/azurekv"
 	"github.com/gambtho/cronfoundry/internal/sync"
 	"github.com/gambtho/cronfoundry/internal/token"
 	"github.com/gambtho/cronfoundry/internal/webapi"
@@ -73,7 +73,7 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 	if masterEnc == "" {
 		return fmt.Errorf("%s is required", envMasterKey)
 	}
-	master, err := secretstore.ParseMasterKey(masterEnc)
+	master, err := server.ParseMasterKey(masterEnc)
 	if err != nil {
 		return fmt.Errorf("parse master key: %w", err)
 	}
@@ -395,20 +395,20 @@ func buildJobDispatcher() (cloud.JobDispatcher, error) {
 
 // buildSecretStore returns a KeyVaultStore when AZURE_KEYVAULT_URL is set;
 // otherwise returns an EnvelopePostgresStore for local use.
-func buildSecretStore(pool *pgxpool.Pool, orgID pgtype.UUID, master []byte) (secretstore.SecretStore, error) {
+func buildSecretStore(pool *pgxpool.Pool, orgID pgtype.UUID, master []byte) (server.SecretStore, error) {
 	kvURL := os.Getenv("AZURE_KEYVAULT_URL")
 	if kvURL == "" {
-		return secretstore.NewEnvelopePostgresStore(pool, orgID, master), nil
+		return server.NewEnvelopePostgresStore(pool, orgID, master), nil
 	}
 	cred, err := azidentity.NewDefaultAzureCredential(nil)
 	if err != nil {
 		return nil, fmt.Errorf("azure credential: %w", err)
 	}
-	kvClient, err := secretstoreazure.NewRealKVClient(kvURL, cred)
+	kvClient, err := azurekv.NewRealKVClient(kvURL, cred)
 	if err != nil {
 		return nil, fmt.Errorf("keyvault client: %w", err)
 	}
-	return secretstoreazure.NewKeyVaultStore(kvClient), nil
+	return azurekv.NewKeyVaultStore(kvClient), nil
 }
 
 func envInt(name string, def int) int {
