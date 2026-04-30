@@ -16,7 +16,7 @@ import (
 	"github.com/gambtho/cronfoundry/internal/mcp"
 	"github.com/gambtho/cronfoundry/internal/memory"
 	"github.com/gambtho/cronfoundry/internal/publish"
-	"github.com/gambtho/cronfoundry/internal/secrets"
+	runnersecrets "github.com/gambtho/cronfoundry/internal/secrets/runner"
 	"github.com/gambtho/cronfoundry/internal/template"
 	"github.com/gambtho/cronfoundry/internal/writeback"
 )
@@ -52,7 +52,7 @@ type RunInput struct {
 
 	RunID string
 
-	Secrets *secrets.Resolver
+	Secrets *runnersecrets.Resolver
 
 	LLMAPIKey     string
 	LLMEndpoint   string // Azure AI Foundry only
@@ -458,7 +458,7 @@ func resolveMaxTurns(fromSchedule, fromSkill int) int {
 	return DefaultMaxTurns
 }
 
-func resolveServerEnv(name string, mcpEnv map[string]map[string]config.EnvValue, s *secrets.Resolver) ([]string, error) {
+func resolveServerEnv(name string, mcpEnv map[string]map[string]config.EnvValue, s *runnersecrets.Resolver) ([]string, error) {
 	if mcpEnv == nil {
 		return nil, nil
 	}
