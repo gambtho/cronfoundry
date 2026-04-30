@@ -4,6 +4,7 @@ package azure
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -68,7 +69,7 @@ type MockEnvCall struct {
 func (m *MockRunner) Run(_ context.Context, name string, args ...string) ([]byte, error) {
 	m.Calls = append(m.Calls, MockCall{Name: name, Args: args})
 	if len(m.Responses) == 0 {
-		return nil, nil
+		return nil, fmt.Errorf("MockRunner: unexpected call to %q %v", name, args)
 	}
 	r := m.Responses[0]
 	m.Responses = m.Responses[1:]
@@ -86,7 +87,7 @@ func (m *MockRunner) RunStreaming(ctx context.Context, name string, args ...stri
 func (m *MockRunner) RunWithEnv(_ context.Context, env []string, name string, args ...string) error {
 	m.EnvCalls = append(m.EnvCalls, MockEnvCall{Name: name, Args: args, Env: env})
 	if len(m.Responses) == 0 {
-		return nil
+		return fmt.Errorf("MockRunner: unexpected call to %q %v", name, args)
 	}
 	r := m.Responses[0]
 	m.Responses = m.Responses[1:]

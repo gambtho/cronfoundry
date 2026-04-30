@@ -49,3 +49,17 @@ func TestMockRunner_RunWithEnv_RecordsEnv(t *testing.T) {
 	require.Equal(t, []string{"K=V"}, mr.EnvCalls[0].Env)
 	require.Equal(t, "echo", mr.EnvCalls[0].Name)
 }
+
+func TestMockRunner_Run_ErrorsOnUnscriptedCall(t *testing.T) {
+	mr := &MockRunner{}
+	_, err := mr.Run(context.Background(), "az", "weirdcmd")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unexpected call")
+}
+
+func TestMockRunner_RunWithEnv_ErrorsOnUnscriptedCall(t *testing.T) {
+	mr := &MockRunner{}
+	err := mr.RunWithEnv(context.Background(), nil, "bin", "init")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "unexpected call")
+}
