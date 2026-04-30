@@ -64,19 +64,6 @@ var DestPublish = promauto.NewCounterVec(prometheus.CounterOpts{
 	Help:      "Total destination publish attempts, partitioned by type and result (ok|error).",
 }, []string{"type", "result"})
 
-// init pre-registers zero-valued children for each labelled metric so that
-// `prometheus.DefaultGatherer.Gather()` and a fresh /metrics scrape report the
-// metric family even before the first real observation. Counters stay at 0
-// until incremented; histograms with all-zero buckets are equally inert.
-func init() {
-	RunsStarted.WithLabelValues("")
-	RunsFinished.WithLabelValues("")
-	RunDuration.WithLabelValues("")
-	LLMTokens.WithLabelValues("", "")
-	LLMCost.WithLabelValues("")
-	DestPublish.WithLabelValues("", "")
-}
-
 // Handler returns the /metrics HTTP handler. When Disabled is true, returns 404.
 func Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

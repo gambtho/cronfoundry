@@ -13,22 +13,14 @@ import (
 )
 
 func TestMetricsRegistered(t *testing.T) {
-	want := []string{
-		"cronfoundry_runs_started_total",
-		"cronfoundry_runs_finished_total",
-		"cronfoundry_run_duration_seconds",
-		"cronfoundry_llm_tokens_total",
-		"cronfoundry_llm_cost_usd_total",
-		"cronfoundry_destination_publish_total",
-	}
-	mfs, err := prometheus.DefaultGatherer.Gather()
-	require.NoError(t, err)
-	got := map[string]bool{}
-	for _, mf := range mfs {
-		got[mf.GetName()] = true
-	}
-	for _, name := range want {
-		assert.True(t, got[name], "missing metric %s", name)
+	// Re-registering each metric must fail with AlreadyRegisteredError —
+	// proving promauto already registered them on package init.
+	for _, c := range []prometheus.Collector{
+		RunsStarted, RunsFinished, RunDuration, LLMTokens, LLMCost, DestPublish,
+	} {
+		err := prometheus.DefaultRegisterer.Register(c)
+		var alreadyRegistered prometheus.AlreadyRegisteredError
+		assert.ErrorAs(t, err, &alreadyRegistered, "metric should be registered: %T", c)
 	}
 }
 
@@ -48,6 +40,10 @@ func TestHandler_PrometheusFormat(t *testing.T) {
 	assert.True(t, strings.HasPrefix(ct, "text/plain"), "got Content-Type %q", ct)
 	assert.Contains(t, rec.Body.String(), "# HELP cronfoundry_runs_started_total")
 	assert.Contains(t, rec.Body.String(), "# TYPE cronfoundry_runs_started_total counter")
+	// No empty-label series should appear in the scrape — those would only
+	// exist if something incorrectly pre-registered an empty child.
+	assert.NotContains(t, rec.Body.String(), `schedule=""`)
+	assert.NotContains(t, rec.Body.String(), `provider="",kind=""`)
 }
 
 func TestHandler_Disabled(t *testing.T) {
