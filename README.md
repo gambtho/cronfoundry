@@ -231,7 +231,7 @@ throwaway Postgres containers via testcontainers and stubs the LLM,
 Slack/Discord webhooks, and the git clone, so no external network or real
 credentials are required — but Docker must be running locally.
 
-CI runs the same target on every PR.
+CI runs the same target on every PR and on pushes to `main`.
 
 ## Design & spec
 
