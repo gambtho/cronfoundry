@@ -3,16 +3,17 @@
   "contentVersion": "1.0.0.0",
   "parameters": {
     "env": { "value": "prod" },
-    "location": { "value": "eastus" },
-    "imageTag": { "value": "v0.1.0" },
+    "location": { "value": "swedencentral" },
+    "imageTag": { "value": "latest" },
     "githubAppId": { "value": "YOUR_GITHUB_APP_ID" },
     "githubAppOAuthClientId": { "value": "YOUR_OAUTH_CLIENT_ID" },
     "githubAppOAuthClientSecret": { "value": "YOUR_OAUTH_CLIENT_SECRET" },
-    "postgresAdminPassword": { "value": "REPLACE_WITH_STRONG_PASSWORD_NO_SPECIAL_URL_CHARS" },
-    "masterKey": { "value": "RUN_cronfoundry_admin_init_TO_GENERATE" },
+    "postgresAdminPassword": { "value": "REPLACE_WITH_24_CHAR_ALPHANUMERIC" },
+    "masterKey": { "value": "" },
+    "githubAppPem": { "value": "" },
     "adminLogins": { "value": "your-github-login" },
     "viewerLogins": { "value": "" },
-    "ingressExternal": { "value": false },
+    "ingressExternal": { "value": true },
     "trustProxy": { "value": true },
     "publicBaseUrl": { "value": "" }
   }
