@@ -102,42 +102,30 @@ ok "Repo root: $REPO_ROOT"
 # ── Step 5: GitHub App ────────────────────────────────────────────────────────
 header "[step 5/17] GitHub App setup"
 echo ""
-echo "  CronFoundry uses a GitHub App (not an OAuth App) for repo access."
-echo "  You need to create one if you haven't already."
-echo ""
-echo "  1. Open: https://github.com/settings/apps/new"
-echo "     (Check the URL ends in /settings/apps/new -- not /applications/new)"
-echo "  2. Name: anything globally unique, e.g. cronfoundry-$(whoami)"
-echo "  3. Homepage URL: https://example.com  (placeholder -- you'll update after deploy)"
-echo "  4. Callback URL: https://example.com/oauth/callback"
-echo "  5. Webhook URL: https://example.com/webhook/github"
-echo "     Webhook secret: generate with: openssl rand -hex 32"
-echo "  6. Permissions -> Repository: Contents (R+W), Issues (W), Metadata (R)"
-echo "     Account: Email (R)"
-echo "  7. Subscribe to events: Push"
-echo "  8. Save, then note the App ID, generate a Client Secret, download the .pem"
-echo "  9. Install App on your skill repo and reports repo"
+echo "  Launching the browser-based setup helper. If anything goes wrong,"
+echo "  re-run with --manual on the helper for the legacy prompt flow."
 echo ""
 
 if [[ -z "${CF_GITHUB_APP_ID:-}" ]]; then
-  read -rp "GitHub App ID (numeric): " CF_GITHUB_APP_ID
-  save CF_GITHUB_APP_ID "$CF_GITHUB_APP_ID"
+  # Build the helper if needed (the binary may not exist on first run).
+  if [[ ! -x ./cronfoundry ]]; then
+    info "Building cronfoundry binary for setup helper..."
+    if ! make build >/dev/null 2>&1; then
+      go build -o cronfoundry ./cmd/cronfoundry \
+        || die "Failed to build cronfoundry binary; see §5 of $GUIDE_URL"
+    fi
+  fi
+
+  ./cronfoundry setup github-app \
+      --state-file "$STATE_FILE" \
+      --default-name "cronfoundry-$(whoami)" \
+      || die "GitHub App setup failed; re-run, or pass --manual on the next attempt.\nSee §5 of $GUIDE_URL"
+
+  # Re-source state to pick up new CF_* variables written by the helper.
+  # shellcheck disable=SC1090
+  source "$STATE_FILE"
 fi
-if [[ -z "${CF_GITHUB_CLIENT_ID:-}" ]]; then
-  read -rp "GitHub App Client ID (starts with Iv23li): " CF_GITHUB_CLIENT_ID
-  save CF_GITHUB_CLIENT_ID "$CF_GITHUB_CLIENT_ID"
-fi
-if [[ -z "${CF_GITHUB_CLIENT_SECRET:-}" ]]; then
-  read -rsp "GitHub App Client Secret: " CF_GITHUB_CLIENT_SECRET; echo
-  save CF_GITHUB_CLIENT_SECRET "$CF_GITHUB_CLIENT_SECRET"
-  warn "State file $STATE_FILE contains sensitive credentials — treat it like .env and do not commit it."
-fi
-if [[ -z "${CF_GITHUB_PEM_PATH:-}" ]]; then
-  read -rp "Path to GitHub App .pem file: " CF_GITHUB_PEM_PATH
-  [[ -f "$CF_GITHUB_PEM_PATH" ]] || die "File not found: $CF_GITHUB_PEM_PATH"
-  save CF_GITHUB_PEM_PATH "$CF_GITHUB_PEM_PATH"
-fi
-ok "GitHub App credentials collected"
+ok "GitHub App credentials collected (app=$CF_GITHUB_APP_SLUG installation=$CF_INSTALLATION_ID)"
 
 # ── Step 6: skill repo ────────────────────────────────────────────────────────
 header "[step 6/17] Skill repo"
@@ -146,6 +134,7 @@ if [[ -z "${CF_SKILL_REPO:-}" ]]; then
   save CF_SKILL_REPO "$CF_SKILL_REPO"
 fi
 if [[ -z "${CF_INSTALLATION_ID:-}" ]]; then
+  warn "Installation ID not captured automatically (helper may have been skipped)."
   read -rp "GitHub App Installation ID (number from the install URL): " CF_INSTALLATION_ID
   save CF_INSTALLATION_ID "$CF_INSTALLATION_ID"
 fi
@@ -340,11 +329,17 @@ fi
 # ── Step 16: update GitHub App URLs ──────────────────────────────────────────
 header "[step 16/17] Update GitHub App URLs"
 echo ""
-echo "  Go to your GitHub App settings and update these three URLs:"
+if [[ -n "${CF_GITHUB_APP_SLUG:-}" ]]; then
+  echo "  Open: https://github.com/settings/apps/${CF_GITHUB_APP_SLUG}"
+else
+  echo "  Open your GitHub App's settings page"
+fi
 echo ""
-echo "  Homepage URL:  https://${CF_FQDN}"
-echo "  Callback URL:  https://${CF_FQDN}/oauth/callback"
-echo "  Webhook URL:   https://${CF_FQDN}/webhook/github"
+echo "  Replace these three URLs:"
+echo ""
+echo "    Homepage URL:  https://${CF_FQDN}"
+echo "    Callback URL:  https://${CF_FQDN}/oauth/callback"
+echo "    Webhook URL:   https://${CF_FQDN}/webhook/github"
 echo ""
 read -rp "Press Enter once you have updated the GitHub App URLs..."
 
