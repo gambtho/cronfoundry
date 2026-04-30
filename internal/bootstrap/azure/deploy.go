@@ -18,9 +18,9 @@ func Deploy(ctx context.Context, r Runner, region, templateFile, paramsFile stri
 }
 
 // AllowOperatorIP creates a Postgres firewall rule for the operator's IP.
-// The rule name embeds the date so repeated runs don't collide.
+// The rule name embeds a UTC timestamp so repeated runs don't collide.
 func AllowOperatorIP(ctx context.Context, r Runner, env, ip string) error {
-	rule := "cf-bootstrap-" + time.Now().UTC().Format("20060102")
+	rule := "cf-bootstrap-" + time.Now().UTC().Format("20060102T150405")
 	_, err := r.Run(ctx,
 		"az", "postgres", "flexible-server", "firewall-rule", "create",
 		"--resource-group", fmt.Sprintf("rg-cronfoundry-%s", env),

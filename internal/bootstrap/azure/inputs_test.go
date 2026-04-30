@@ -20,12 +20,28 @@ func TestInputs_Validate_BadEnv(t *testing.T) {
 	require.Contains(t, err.Error(), "env")
 }
 
-func TestInputs_Validate_PasswordHasURLSpecialChars(t *testing.T) {
+func TestInputs_Validate_PasswordNotAlphanumeric(t *testing.T) {
 	in := goodInputs()
 	in.PostgresPassword = "Abc@123XyzAbc123XyzAbc"
 	err := in.Validate()
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "URL")
+	require.Contains(t, err.Error(), "alphanumeric")
+}
+
+func TestInputs_Validate_MissingImageOwner(t *testing.T) {
+	in := goodInputs()
+	in.ImageOwner = ""
+	err := in.Validate()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "image owner")
+}
+
+func TestInputs_Validate_MissingImageTag(t *testing.T) {
+	in := goodInputs()
+	in.ImageTag = ""
+	err := in.Validate()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "image tag")
 }
 
 func TestGeneratePassword_AlphanumericAndLongEnough(t *testing.T) {

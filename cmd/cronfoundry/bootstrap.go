@@ -43,7 +43,7 @@ func newBootstrapAzureCmd() *cobra.Command {
 			if err != nil {
 				return fmt.Errorf("generate master key: %w", err)
 			}
-			fmt.Fprintf(os.Stdout, "  generated master key: %s\n", masterKey)
+			fmt.Fprintf(os.Stdout, "  generated master key: %s\n", masterKey) //nolint:errcheck
 
 			if paramsOut == "" {
 				paramsOut = filepath.Join("deploy", fmt.Sprintf("params.%s.json", in.Env))

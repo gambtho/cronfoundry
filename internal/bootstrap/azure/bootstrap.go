@@ -3,6 +3,7 @@ package azure
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -29,6 +30,9 @@ type Bootstrap struct {
 // Run executes preflight, image probe, params write, deploy, firewall,
 // admin init, restart, and health-wait in order. Honors DryRun.
 func (b *Bootstrap) Run(ctx context.Context) error {
+	if b.Runner == nil {
+		return errors.New("Bootstrap.Runner is required")
+	}
 	if b.Stdout == nil {
 		b.Stdout = io.Discard
 	}
@@ -122,6 +126,9 @@ func detectPublicIPDefault(ctx context.Context) (string, error) {
 		return "", err
 	}
 	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("ip detect: HTTP %d %s", resp.StatusCode, resp.Status)
+	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", err

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
-	"strings"
 )
 
 // Inputs is everything bootstrap needs to deploy.
@@ -24,6 +23,7 @@ type Inputs struct {
 }
 
 var envSuffixRe = regexp.MustCompile(`^[a-z0-9]{1,10}$`)
+var alphanumericRe = regexp.MustCompile(`^[A-Za-z0-9]+$`)
 
 // Validate checks each field per the Bicep deployment's constraints.
 func (in Inputs) Validate() error {
@@ -32,6 +32,12 @@ func (in Inputs) Validate() error {
 	}
 	if in.Region == "" {
 		return errors.New("region required")
+	}
+	if in.ImageOwner == "" {
+		return errors.New("image owner required")
+	}
+	if in.ImageTag == "" {
+		return errors.New("image tag required")
 	}
 	if in.GithubAppID == "" || in.OAuthClientID == "" || in.OAuthClientSecret == "" {
 		return errors.New("github app id, oauth client id, oauth client secret all required")
@@ -45,8 +51,8 @@ func (in Inputs) Validate() error {
 	if in.PostgresPassword == "" {
 		return errors.New("postgres password required")
 	}
-	if strings.ContainsAny(in.PostgresPassword, "@:/%#?&=") {
-		return errors.New("postgres password contains URL-special characters; alphanumerics only")
+	if !alphanumericRe.MatchString(in.PostgresPassword) {
+		return errors.New("postgres password must be alphanumeric")
 	}
 	return nil
 }

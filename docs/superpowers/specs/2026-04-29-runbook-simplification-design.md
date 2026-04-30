@@ -96,7 +96,7 @@ OAuth client id/secret, PEM path, admin login, Postgres admin password.
 
 Wires the cobra command:
 
-```
+```text
 cronfoundry bootstrap azure [--params-out PATH] [--non-interactive] [--dry-run]
 ```
 
@@ -118,7 +118,7 @@ interactive.
 
 Target shape:
 
-```
+```text
 1. Prerequisites (az, bicep, gh account, Slack webhook URL, one LLM key, two GH repos)
 2. Register the GitHub App (with the GitHub-App-vs-OAuth-App callout from F10)
 3. Clone + `make build`
@@ -160,7 +160,7 @@ Move `smoke-test-mvp-azure-findings.md` here as
 
 ## Data flow
 
-```
+```text
 operator
   │
   ├─▶ ./cronfoundry bootstrap azure

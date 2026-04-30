@@ -17,19 +17,29 @@ func WaitHealthy(ctx context.Context, fqdn string, timeout time.Duration) error 
 func waitHealthyAt(ctx context.Context, scheme, host string, timeout, interval time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	url := fmt.Sprintf("%s://%s/healthz", scheme, host)
-	client := &http.Client{Timeout: 5 * time.Second}
+	const perRequestCap = 5 * time.Second
+	client := &http.Client{}
 	for {
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			return errors.New("timeout waiting for /healthz")
+		}
+		perReq := min(remaining, perRequestCap)
+		reqCtx, cancel := context.WithTimeout(ctx, perReq)
+		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, url, nil)
 		if err != nil {
+			cancel()
 			return err
 		}
 		resp, err := client.Do(req)
 		if err == nil {
 			_ = resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
+				cancel()
 				return nil
 			}
 		}
+		cancel()
 		if time.Now().After(deadline) {
 			return errors.New("timeout waiting for /healthz")
 		}
