@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/gambtho/cronfoundry/internal/bootstrap/azure"
-	"github.com/gambtho/cronfoundry/internal/secretstore"
+	"github.com/gambtho/cronfoundry/internal/secrets/server"
 )
 
 func newBootstrapCmd() *cobra.Command {
@@ -39,7 +39,7 @@ func newBootstrapAzureCmd() *cobra.Command {
 			if err := in.Validate(); err != nil {
 				return err
 			}
-			masterKey, err := secretstore.GenerateMasterKey()
+			masterKey, err := server.GenerateMasterKey()
 			if err != nil {
 				return fmt.Errorf("generate master key: %w", err)
 			}
