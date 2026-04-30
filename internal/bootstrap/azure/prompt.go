@@ -59,7 +59,7 @@ func Prompt(_ context.Context, stdin io.Reader, stdout io.Writer) (Inputs, error
 		if err != nil {
 			return in, err
 		}
-		fmt.Fprintf(stdout, "  generated postgres password: %s\n", pw)
+		fmt.Fprintf(stdout, "  generated postgres password: %s\n", pw) //nolint:errcheck
 	}
 	in.PostgresPassword = pw
 	return in, nil
@@ -67,9 +67,9 @@ func Prompt(_ context.Context, stdin io.Reader, stdout io.Writer) (Inputs, error
 
 func ask(r *bufio.Reader, w io.Writer, label, def string) (string, error) {
 	if def != "" {
-		fmt.Fprintf(w, "%s [%s]: ", label, def)
+		fmt.Fprintf(w, "%s [%s]: ", label, def) //nolint:errcheck
 	} else {
-		fmt.Fprintf(w, "%s: ", label)
+		fmt.Fprintf(w, "%s: ", label) //nolint:errcheck
 	}
 	line, err := r.ReadString('\n')
 	if err != nil && line == "" {

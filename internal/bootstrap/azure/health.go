@@ -25,7 +25,7 @@ func waitHealthyAt(ctx context.Context, scheme, host string, timeout, interval t
 		}
 		resp, err := client.Do(req)
 		if err == nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
 				return nil
 			}

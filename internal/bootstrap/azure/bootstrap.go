@@ -46,23 +46,23 @@ func (b *Bootstrap) Run(ctx context.Context) error {
 	if err := b.Inputs.Validate(); err != nil {
 		return err
 	}
-	fmt.Fprintln(b.Stdout, "==> preflight")
+	fmt.Fprintln(b.Stdout, "==> preflight") //nolint:errcheck
 	if err := Preflight(ctx, b.Runner); err != nil {
 		return err
 	}
-	fmt.Fprintln(b.Stdout, "==> probing image")
+	fmt.Fprintln(b.Stdout, "==> probing image") //nolint:errcheck
 	if err := probeImageAt(ctx, root, b.Inputs.ImageOwner, b.Inputs.ImageTag); err != nil {
 		return err
 	}
-	fmt.Fprintln(b.Stdout, "==> writing params:", b.ParamsPath)
+	fmt.Fprintln(b.Stdout, "==> writing params:", b.ParamsPath) //nolint:errcheck
 	if err := WriteParams(b.Inputs, b.MasterKey, b.ParamsPath); err != nil {
 		return err
 	}
 	if b.DryRun {
-		fmt.Fprintln(b.Stdout, "dry-run: skipping deploy")
+		fmt.Fprintln(b.Stdout, "dry-run: skipping deploy") //nolint:errcheck
 		return nil
 	}
-	fmt.Fprintln(b.Stdout, "==> deploying (this takes ~10 minutes)")
+	fmt.Fprintln(b.Stdout, "==> deploying (this takes ~10 minutes)") //nolint:errcheck
 	if err := Deploy(ctx, b.Runner, b.Inputs.Region, b.TemplateFile, b.ParamsPath); err != nil {
 		return err
 	}
@@ -70,18 +70,18 @@ func (b *Bootstrap) Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("detect public ip: %w", err)
 	}
-	fmt.Fprintln(b.Stdout, "==> opening postgres firewall to", ip)
+	fmt.Fprintln(b.Stdout, "==> opening postgres firewall to", ip) //nolint:errcheck
 	if err := AllowOperatorIP(ctx, b.Runner, b.Inputs.Env, ip); err != nil {
 		return err
 	}
 	dsn := fmt.Sprintf(
 		"postgres://cfadmin:%s@cf-pg-%s.postgres.database.azure.com:5432/cronfoundry?sslmode=require",
 		b.Inputs.PostgresPassword, b.Inputs.Env)
-	fmt.Fprintln(b.Stdout, "==> running admin init")
+	fmt.Fprintln(b.Stdout, "==> running admin init") //nolint:errcheck
 	if err := AdminInit(ctx, b.Runner, b.Binary, dsn, b.MasterKey, "default"); err != nil {
 		return err
 	}
-	fmt.Fprintln(b.Stdout, "==> restarting serve revision")
+	fmt.Fprintln(b.Stdout, "==> restarting serve revision") //nolint:errcheck
 	if err := RestartServe(ctx, b.Runner, b.Inputs.Env); err != nil {
 		return err
 	}
@@ -100,14 +100,14 @@ func (b *Bootstrap) Run(ctx context.Context) error {
 	if b.HealthHost != "" {
 		healthHost = b.HealthHost
 	}
-	fmt.Fprintln(b.Stdout, "==> waiting for /healthz at", healthHost)
+	fmt.Fprintln(b.Stdout, "==> waiting for /healthz at", healthHost) //nolint:errcheck
 	if err := waitHealthyAt(ctx, b.HealthScheme, healthHost, 5*time.Minute, 5*time.Second); err != nil {
 		return err
 	}
-	fmt.Fprintln(b.Stdout)
-	fmt.Fprintln(b.Stdout, "Deploy complete.")
-	fmt.Fprintln(b.Stdout, "  Login URL:        https://"+fqdn+"/")
-	fmt.Fprintln(b.Stdout, "  GitHub App URLs:  paste https://"+fqdn+" into Homepage / Callback / Webhook")
+	fmt.Fprintln(b.Stdout)                                                                                       //nolint:errcheck
+	fmt.Fprintln(b.Stdout, "Deploy complete.")                                                                   //nolint:errcheck
+	fmt.Fprintln(b.Stdout, "  Login URL:        https://"+fqdn+"/")                                              //nolint:errcheck
+	fmt.Fprintln(b.Stdout, "  GitHub App URLs:  paste https://"+fqdn+" into Homepage / Callback / Webhook")     //nolint:errcheck
 	return nil
 }
 
@@ -121,7 +121,7 @@ func detectPublicIPDefault(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", err

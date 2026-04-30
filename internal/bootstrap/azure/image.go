@@ -28,7 +28,7 @@ func probeImageAt(ctx context.Context, root, owner, tag string) error {
 	if err != nil {
 		return fmt.Errorf("probe %s: %w", url, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	switch resp.StatusCode {
 	case http.StatusOK:
 		return nil
