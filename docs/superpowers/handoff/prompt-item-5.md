@@ -40,7 +40,7 @@ config-validation error.
      `overlap_policy` is parsed/validated)
 4. Run the brainstorming skill — this needs a brainstorm before writing
    code:
-   ```
+   ```text
    superpowers:brainstorming
    ```
 

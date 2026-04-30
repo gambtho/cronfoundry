@@ -98,7 +98,7 @@ series, plus ~50 from Go runtime. Well within Prometheus comfort.
 ### Histogram buckets
 
 `run_duration_seconds` uses Prometheus default buckets
-(`prometheus.DefBuckets`: 0.005s … 10s) PLUS three larger buckets for
+(`prometheus.DefBuckets`: 0.005s … 10s) PLUS four larger buckets for
 long-running LLM calls: `30, 60, 300, 600`. Final list:
 
 ```text
@@ -204,7 +204,7 @@ requires).
 | `TestMetricsRegistered` | All 6 metric names appear in `prometheus.DefaultGatherer.Gather()` |
 | `TestRunsStarted_Increments` | `RunsStarted.WithLabelValues("test").Inc()` shows up in scrape output |
 | `TestHandler_PrometheusFormat` | `Handler().ServeHTTP` returns 200 with `Content-Type: text/plain; version=0.0.4` and `# HELP` / `# TYPE` lines |
-| `TestHandler_Disabled` | With `MetricsDisabled = true`, returns 404 |
+| `TestHandler_Disabled` | With `Disabled = true`, returns 404 |
 | `TestHistogramBuckets` | `RunDuration` exposes the configured 15-bucket histogram |
 
 Wiring tests (one each in the relevant package):
