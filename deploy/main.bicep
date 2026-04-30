@@ -25,6 +25,9 @@ param ingressExternal bool = false
 @description('Honor the leftmost X-Forwarded-For header for client IP. Set true behind a reverse proxy / Container Apps ingress so per-IP rate limits track real clients, not the proxy IP.')
 param trustProxy bool = false
 
+@description('Externally-reachable base URL of the service (scheme+host, e.g. https://cronfoundry.example.com). Required in production for the CSRF Origin/Referer allowlist; empty disables the Origin check (dev only).')
+param publicBaseUrl string = ''
+
 var prefix = 'cf'
 var rgName = 'rg-cronfoundry-${env}'
 
@@ -139,6 +142,7 @@ module serve 'modules/containerApp.bicep' = {
     caeDefaultDomain: cae.outputs.defaultDomain
     ingressExternal: ingressExternal
     trustProxy: trustProxy
+    publicBaseUrl: publicBaseUrl
   }
 }
 

@@ -136,6 +136,14 @@ func (h oauthHandlers) callback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "session creation failed", http.StatusInternalServerError)
 		return
 	}
+	// Mint the CSRF token before writing any cookies so a token-gen failure
+	// leaves the client fully unauthenticated rather than half-logged-in
+	// (cf_session set but cf_csrf missing → all mutations 403 until re-login).
+	csrfTok, err := NewCSRFToken()
+	if err != nil {
+		http.Error(w, "csrf token generation failed", http.StatusInternalServerError)
+		return
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name:     "cf_session",
 		Value:    session,
@@ -145,11 +153,13 @@ func (h oauthHandlers) callback(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteLaxMode,
 		Secure:   !isLocalhost(r.Host),
 	})
+	SetCSRFCookie(w, csrfTok, int(sessionDuration.Seconds()), r.Host)
 	http.Redirect(w, r, "/", http.StatusFound)
 }
 
 func (h oauthHandlers) logout(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{Name: "cf_session", MaxAge: -1, Path: "/"})
+	ClearCSRFCookie(w)
 	http.Redirect(w, r, "/oauth/login", http.StatusFound)
 }
 

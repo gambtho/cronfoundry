@@ -13,6 +13,7 @@
     "adminLogins": { "value": "your-github-login" },
     "viewerLogins": { "value": "" },
     "ingressExternal": { "value": false },
-    "trustProxy": { "value": true }
+    "trustProxy": { "value": true },
+    "publicBaseUrl": { "value": "" }
   }
 }

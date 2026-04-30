@@ -292,3 +292,80 @@ func TestOAuth_Logout_ClearsSession(t *testing.T) {
 		}
 	}
 }
+
+func TestOAuth_Callback_SetsCSRFCookie(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, cleanup := testdb.BootPG(t)
+	defer cleanup()
+	seedOrg(t, pool)
+
+	ctx := context.Background()
+	q := dbgen.New(pool)
+	org, err := q.GetFirstOrganization(ctx)
+	require.NoError(t, err)
+	_, err = q.CreateUser(ctx, dbgen.CreateUserParams{
+		OrgID:       org.ID,
+		GithubLogin: "octocat",
+		Role:        "admin",
+	})
+	require.NoError(t, err)
+
+	stub := stubGitHub(t, "octocat")
+	defer stub.Close()
+
+	mux := http.NewServeMux()
+	webapi.RegisterRoutes(mux, newTestDepsWithDB(t, pool, stub.URL))
+
+	loginReq := httptest.NewRequest("GET", "/oauth/login", nil)
+	loginRR := httptest.NewRecorder()
+	mux.ServeHTTP(loginRR, loginReq)
+	require.Equal(t, http.StatusFound, loginRR.Code)
+
+	var stateCookie *http.Cookie
+	for _, c := range loginRR.Result().Cookies() {
+		if c.Name == "oauth_state" {
+			stateCookie = c
+		}
+	}
+	require.NotNil(t, stateCookie)
+
+	cbURL := "/oauth/callback?code=testcode&state=" + url.QueryEscape(stateCookie.Value)
+	cbReq := httptest.NewRequest("GET", cbURL, nil)
+	cbReq.AddCookie(stateCookie)
+	cbRR := httptest.NewRecorder()
+	mux.ServeHTTP(cbRR, cbReq)
+
+	require.Equal(t, http.StatusFound, cbRR.Code, "body: %s", cbRR.Body.String())
+
+	var csrf *http.Cookie
+	for _, c := range cbRR.Result().Cookies() {
+		if c.Name == webapi.CSRFCookieName {
+			csrf = c
+		}
+	}
+	require.NotNil(t, csrf, "cf_csrf cookie must be set on callback")
+	assert.Len(t, csrf.Value, 43, "token must be 43 char base64url")
+	assert.False(t, csrf.HttpOnly, "MUST NOT be HttpOnly so SPA can read it")
+	assert.Equal(t, http.SameSiteLaxMode, csrf.SameSite)
+	assert.Greater(t, csrf.MaxAge, 0)
+}
+
+func TestOAuth_Logout_ClearsCSRFCookie(t *testing.T) {
+	mux := http.NewServeMux()
+	webapi.RegisterRoutes(mux, newTestDeps(t, ""))
+
+	req := httptest.NewRequest("GET", "/oauth/logout", nil)
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+
+	var found bool
+	for _, c := range rr.Result().Cookies() {
+		if c.Name == webapi.CSRFCookieName {
+			found = true
+			assert.Less(t, c.MaxAge, 0, "must be cleared (MaxAge<0)")
+		}
+	}
+	assert.True(t, found, "logout must emit cf_csrf clear cookie")
+}

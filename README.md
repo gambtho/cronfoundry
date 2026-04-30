@@ -255,6 +255,14 @@ failure), or `failed` (load/LLM error). Per-destination failures are isolated
 - `GET /api/runs/{id}/events/stream` — SSE stream consumed by the `LogTail`
   component in the Runs detail drawer for in-flight runs
 
+### CSRF & origin allowlist
+
+Set `CRONFOUNDRY_PUBLIC_BASE_URL` to the externally-reachable URL of the
+service (scheme+host, e.g. `https://cronfoundry.example.com`). The CSRF
+middleware uses this as the allowlist for the `Origin`/`Referer` check. In
+dev (no env var), the origin check is disabled; the `cf_csrf` cookie +
+`X-CSRF-Token` header double-submit check still runs.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

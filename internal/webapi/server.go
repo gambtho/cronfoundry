@@ -36,6 +36,11 @@ type Deps struct {
 	Syncer RepoSyncer
 	// RateLimit configures per-IP rate limiting on public routes.
 	RateLimit RateLimiterConfig
+	// PublicBaseURL is the externally-reachable base URL of the service
+	// (scheme+host, e.g. "https://cronfoundry.example.com"). Used by the CSRF
+	// middleware as the Origin/Referer allowlist. Empty disables the Origin
+	// check (dev mode); the cookie+header double-submit check still runs.
+	PublicBaseURL string
 }
 
 // resolveRole returns ("admin"|"viewer", nil) for allowed logins, ("", nil)
@@ -71,8 +76,9 @@ func RegisterRoutes(mux *http.ServeMux, deps Deps) {
 	session := func(h http.Handler) http.Handler {
 		return rl.Group("api", RequireSession(deps.MasterKey, h))
 	}
+	csrfMW := CSRF(CSRFConfig{AllowedOrigin: deps.PublicBaseURL})
 	adminOnly := func(h http.Handler) http.Handler {
-		return rl.Group("api", RequireRole(deps.MasterKey, "admin", h))
+		return csrfMW(rl.Group("api", RequireRole(deps.MasterKey, "admin", h)))
 	}
 
 	// P3a routes

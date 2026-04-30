@@ -272,7 +272,8 @@ per-schedule with its own secret reference:
 - NFR-2.2 No persistent filesystem in the runner; ephemeral `/work` only.
 - NFR-2.3 All inter-service traffic stays inside the Container Apps VNet;
   only the API/UI is publicly exposed.
-- NFR-2.4 CSRF protection on all mutating endpoints.
+- NFR-2.4 CSRF protection on all mutating endpoints. **Implementation:**
+  see [`2026-04-29-csrf-protection-design.md`](./2026-04-29-csrf-protection-design.md).
 - NFR-2.5 Session cookies: HttpOnly, Secure, SameSite=Lax, 7-day idle timeout.
 
 ### NFR-3: Operability
