@@ -32,6 +32,7 @@ func TestWriteParams_AllFieldsPresent(t *testing.T) {
 		"githubAppId", "githubAppOAuthClientId", "githubAppOAuthClientSecret",
 		"postgresAdminPassword", "masterKey", "githubAppPem",
 		"adminLogins", "viewerLogins", "ingressExternal",
+		"trustProxy", "publicBaseUrl",
 	}
 	for _, k := range want {
 		_, ok := doc.Parameters[k]
@@ -39,6 +40,8 @@ func TestWriteParams_AllFieldsPresent(t *testing.T) {
 	}
 
 	require.Equal(t, true, doc.Parameters["ingressExternal"].Value)
+	require.Equal(t, true, doc.Parameters["trustProxy"].Value)
+	require.Equal(t, "", doc.Parameters["publicBaseUrl"].Value)
 	require.Equal(t, "MASTERKEYBASE64==", doc.Parameters["masterKey"].Value)
 	require.Equal(t, in.PEMContents, doc.Parameters["githubAppPem"].Value)
 	require.Equal(t, "prod", doc.Parameters["env"].Value)

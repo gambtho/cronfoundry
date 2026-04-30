@@ -28,6 +28,8 @@ func WriteParams(in Inputs, masterKey, paramsPath string) error {
 			"adminLogins":                {in.AdminLogins},
 			"viewerLogins":               {""},
 			"ingressExternal":            {true},
+			"trustProxy":                 {true},
+			"publicBaseUrl":              {""},
 		},
 	}
 	body, err := json.MarshalIndent(doc, "", "  ")
