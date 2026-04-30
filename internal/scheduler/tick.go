@@ -169,7 +169,8 @@ func processOne(
 	case DecisionQueue:
 		// Leave the pending row in place. dispatchPending (invoked at the
 		// end of Tick, and on every subsequent tick) will pick it up once
-		// the prior run terminates. See TODO(P2d) in overlap.go.
+		// the prior run terminates. See the doc comment on Decide for why
+		// the queue drain lives there instead of in this loop.
 		stats.Queued++
 		return nil
 	case DecisionDispatch:
@@ -299,6 +300,9 @@ func dispatchPending(ctx context.Context, deps Deps, stats *Stats) error {
 		JOIN skill sk ON sk.id = s.skill_id
 		JOIN repo_connection rc ON rc.id = sk.repo_id
 		WHERE r.status = 'pending'
+		  -- s.enabled = true: paused schedules (auto-paused on consecutive
+		  -- failures, or manually disabled) retain their queued rows but do
+		  -- not drain. Re-enabling resumes drain oldest-first.
 		  AND s.enabled = true
 		  AND (
 		      r.fire_reason = 'manual'
