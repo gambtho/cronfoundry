@@ -126,9 +126,12 @@ need explicit `CSRF()` wrapping if added.
 New env var: `CRONFOUNDRY_PUBLIC_BASE_URL` (e.g. `https://cronfoundry.example.com`).
 
 - Read once at server start; passed into `CSRF()` middleware via `CSRFConfig`.
-- If unset and `CRONFOUNDRY_ENV != production` (or equivalent dev signal),
-  Origin check is disabled. In production we fail to start if unset, with
-  an actionable error.
+- If unset, the Origin check is skipped and the server emits a `slog.Warn`
+  at startup ("CRONFOUNDRY_PUBLIC_BASE_URL not set; CSRF Origin check
+  disabled (dev mode)"). The warning is unconditional — there is no
+  `CRONFOUNDRY_ENV` gate. Operators behind a public ingress should set
+  `CRONFOUNDRY_PUBLIC_BASE_URL` so the Origin check engages; the cookie+
+  header double-submit check runs regardless.
 - Documented in `docs/guides/deploy-azure.md` and `deploy/params.example.json`.
 
 ### Front-end

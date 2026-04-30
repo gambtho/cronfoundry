@@ -523,15 +523,19 @@ deps := webapi.Deps{
 }
 ```
 
-If `cmd/cronfoundry/serve.go` validates required env vars near startup, add a non-fatal warning when `publicBaseURL` is empty AND `os.Getenv("CRONFOUNDRY_ENV") == "production"`:
+Add a non-fatal startup warning when `publicBaseURL` is empty so operators
+have a visible signal that the Origin check is disabled:
 
 ```go
-if publicBaseURL == "" && os.Getenv("CRONFOUNDRY_ENV") == "production" {
-    return fmt.Errorf("CRONFOUNDRY_PUBLIC_BASE_URL must be set in production (CSRF Origin check)")
+if publicBaseURL == "" {
+    slog.Warn("CRONFOUNDRY_PUBLIC_BASE_URL not set; CSRF Origin check disabled (dev mode)")
 }
 ```
 
-> If serve.go doesn't already check `CRONFOUNDRY_ENV`, just emit a `slog.Warn` instead of failing — operators upgrading shouldn't have their service refuse to start because of a new env var.
+This is intentionally warn-only and unconditional — the cookie+header
+double-submit check still runs, the Origin check is the belt-and-suspenders
+layer, and operators upgrading from <0.7 shouldn't have their service refuse
+to start because of a new env var.
 
 - [ ] **Step 3: Verify compiles**
 
@@ -609,11 +613,11 @@ with:
 ```go
 csrfMW := CSRF(CSRFConfig{AllowedOrigin: deps.PublicBaseURL})
 adminOnly := func(h http.Handler) http.Handler {
-    return RequireRole(deps.MasterKey, "admin", csrfMW(h))
+    return csrfMW(RequireRole(deps.MasterKey, "admin", h))
 }
 ```
 
-The order matters: outer-to-inner is `RequireRole → csrfMW → handler`. Auth runs first; CSRF runs only after the user is established (so unauthenticated requests get a 401, not a 403). The handler runs only when both pass.
+The order matters: outer-to-inner is `csrfMW → RequireRole → handler`. CSRF runs first — an unauthenticated mutating request without a matching cookie+header gets a 403 csrf before paying any session-decoding cost. The handler runs only when both CSRF and auth pass.
 
 - [ ] **Step 4: Run, verify pass**
 
