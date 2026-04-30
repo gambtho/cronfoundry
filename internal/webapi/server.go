@@ -3,6 +3,7 @@ package webapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/jackc/pgx/v5"
@@ -33,6 +34,8 @@ type Deps struct {
 	// Syncer triggers a one-off repo sync. Injected from cmd/cronfoundry/serve.go
 	// as a thin wrapper around sync.Poller.SyncOne.
 	Syncer RepoSyncer
+	// RateLimit configures per-IP rate limiting on public routes.
+	RateLimit RateLimiterConfig
 }
 
 // resolveRole returns ("admin"|"viewer", nil) for allowed logins, ("", nil)
@@ -61,19 +64,23 @@ func (d Deps) resolveRole(ctx context.Context, orgID pgtype.UUID, login string) 
 
 // RegisterRoutes registers /oauth/*, /api/*, and /* (SPA catch-all) on mux.
 func RegisterRoutes(mux *http.ServeMux, deps Deps) {
+	rl, err := NewRateLimiter(deps.RateLimit)
+	if err != nil {
+		panic(fmt.Sprintf("webapi: rate limiter init: %v", err))
+	}
 	session := func(h http.Handler) http.Handler {
-		return RequireSession(deps.MasterKey, h)
+		return rl.Group("api", RequireSession(deps.MasterKey, h))
 	}
 	adminOnly := func(h http.Handler) http.Handler {
-		return RequireRole(deps.MasterKey, "admin", h)
+		return rl.Group("api", RequireRole(deps.MasterKey, "admin", h))
 	}
 
 	// P3a routes
 	mux.Handle("GET /api/me", session(meHandler{}))
 	oh := oauthHandlers{deps: deps}
-	mux.HandleFunc("GET /oauth/login", oh.login)
-	mux.HandleFunc("GET /oauth/callback", oh.callback)
-	mux.HandleFunc("GET /oauth/logout", oh.logout)
+	mux.Handle("GET /oauth/login", rl.Group("oauth", http.HandlerFunc(oh.login)))
+	mux.Handle("GET /oauth/callback", rl.Group("oauth", http.HandlerFunc(oh.callback)))
+	mux.HandleFunc("GET /oauth/logout", oh.logout) // intentionally not rate limited
 
 	// Repos
 	rh := &reposHandler{deps: deps}
@@ -102,7 +109,7 @@ func RegisterRoutes(mux *http.ServeMux, deps Deps) {
 	// Events
 	evh := &eventsHandler{deps: deps}
 	mux.Handle("GET /api/runs/{id}/events", session(http.HandlerFunc(evh.list)))
-	mux.Handle("GET /api/runs/{id}/events/stream", session(http.HandlerFunc(evh.stream)))
+	mux.Handle("GET /api/runs/{id}/events/stream", session(rl.SSE(http.HandlerFunc(evh.stream))))
 
 	// Secrets
 	sech := &secretsHandler{deps: deps}
@@ -124,7 +131,7 @@ func RegisterRoutes(mux *http.ServeMux, deps Deps) {
 
 	// Webhooks (unauthenticated; HMAC-verified)
 	wh := &webhookHandler{deps: deps, secret: deps.WebhookSecret, syncer: deps.Syncer}
-	mux.Handle("POST /webhook/github", wh)
+	mux.Handle("POST /webhook/github", rl.Group("webhook", wh))
 
 	// Copilot Enterprise device flow (admin-only)
 	cph := &copilotConnectHandler{deps: deps}

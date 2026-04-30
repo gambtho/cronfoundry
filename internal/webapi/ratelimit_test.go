@@ -1,6 +1,7 @@
 package webapi
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -261,4 +262,30 @@ func TestRateLimiter_SSE_DisabledByZeroCap(t *testing.T) {
 		mw.ServeHTTP(w, req)
 		assert.Equal(t, http.StatusOK, w.Code)
 	}
+}
+
+func TestRegisterRoutes_OAuthLoginRateLimited(t *testing.T) {
+	mux := http.NewServeMux()
+	deps := Deps{
+		MasterKey: bytes.Repeat([]byte("k"), 32),
+		RateLimit: RateLimiterConfig{
+			APIRPM: 60, OAuthRPM: 10, WebhookRPM: 300,
+			SSEMaxConcurrent: 5, LRUSize: 128,
+		},
+	}
+	RegisterRoutes(mux, deps)
+
+	// oauth burst = max(10/6, 3) = 3. Fire 3 then expect 429 on the 4th.
+	for i := 0; i < 3; i++ {
+		req := httptest.NewRequest("GET", "/oauth/login", nil)
+		req.RemoteAddr = "9.9.9.9:1"
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+		assert.NotEqual(t, http.StatusTooManyRequests, w.Code, "request %d", i)
+	}
+	req := httptest.NewRequest("GET", "/oauth/login", nil)
+	req.RemoteAddr = "9.9.9.9:1"
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusTooManyRequests, w.Code)
 }
