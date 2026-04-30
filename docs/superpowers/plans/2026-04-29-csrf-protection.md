@@ -4,7 +4,7 @@
 
 **Goal:** Add CSRF protection to all mutating webapi endpoints via a per-session double-submit cookie + `X-CSRF-Token` header pattern, plus an `Origin`/`Referer` allowlist check.
 
-**Architecture:** A new `csrf` middleware in `internal/webapi/csrf.go` is chained inside the existing `RequireRole` admin path. It rejects mutating requests (POST/PATCH/PUT/DELETE) lacking a matching `cf_csrf` cookie + `X-CSRF-Token` header, or whose `Origin`/`Referer` doesn't match `CRONFOUNDRY_PUBLIC_BASE_URL`. The OAuth callback issues `cf_csrf` alongside `cf_session`; logout clears both. The React SPA reads `cf_csrf` from `document.cookie` in one place (`web/src/lib/api.ts`) and sets the header on every mutating fetch.
+**Architecture:** A new `csrf` middleware in `internal/webapi/csrf.go` wraps `RequireRole` from outside, so CSRF runs before auth — an unauthenticated mutating request gets a CSRF 403 (or origin 403) without paying the cost of session decoding. It rejects mutating requests (POST/PATCH/PUT/DELETE) lacking a matching `cf_csrf` cookie + `X-CSRF-Token` header, or whose `Origin`/`Referer` doesn't match `CRONFOUNDRY_PUBLIC_BASE_URL`. The OAuth callback issues `cf_csrf` alongside `cf_session`; logout clears both. The React SPA reads `cf_csrf` from `document.cookie` in one place (`web/src/lib/api.ts`) and sets the header on every mutating fetch.
 
 **Tech Stack:** Go (`net/http`, `crypto/rand`, `crypto/subtle`), TypeScript/React (vanilla `fetch`), `stretchr/testify` for assertions. No new dependencies.
 
@@ -904,12 +904,12 @@ git commit -m "csrf: document and plumb CRONFOUNDRY_PUBLIC_BASE_URL through depl
 - [ ] **Step 1: Annotate PRD NFR-2.4**
 
 In `docs/superpowers/specs/2026-04-19-cronfoundry-prd.md`, find:
-```
+```text
 - NFR-2.4 CSRF protection on all mutating endpoints.
 ```
 
 Replace with:
-```
+```text
 - NFR-2.4 CSRF protection on all mutating endpoints. **Implementation:**
   see [`2026-04-29-csrf-protection-design.md`](./2026-04-29-csrf-protection-design.md).
 ```

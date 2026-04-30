@@ -209,6 +209,8 @@ func TestCSRF_OriginNormalization(t *testing.T) {
 		{"userinfo stripped", "https://cf.example.com", "https://user:pass@cf.example.com", http.StatusOK},
 		{"hostname case-insensitive", "https://cf.example.com", "https://CF.Example.COM", http.StatusOK},
 		{"scheme mismatch", "https://cf.example.com", "http://cf.example.com", http.StatusForbidden},
+		{"malformed AllowedOrigin fails closed", "://not-a-url", "https://cf.example.com", http.StatusForbidden},
+		{"empty-host AllowedOrigin fails closed", "https://", "https://cf.example.com", http.StatusForbidden},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -34,4 +34,27 @@ describe('apiFetch CSRF behavior', () => {
     const headers = new Headers(init?.headers)
     expect(headers.get('X-CSRF-Token')).toBeNull()
   })
+
+  it('redirects to /oauth/login on 403 csrf response', async () => {
+    fetchSpy.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: 'csrf cookie missing' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    const originalLocation = window.location
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    delete (window as any).location
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(window as any).location = { href: '' }
+
+    const { api } = await import('./api')
+    await expect(api.repos.connect({ install_id: 1, owner: 'a', name: 'b' })).rejects.toThrow(
+      /csrf rejected/,
+    )
+    expect(window.location.href).toBe('/oauth/login')
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(window as any).location = originalLocation
+  })
 })

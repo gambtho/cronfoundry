@@ -57,7 +57,7 @@ predictable but the request originates off-origin.
 
 Issued in the OAuth callback handler immediately after `cf_session`:
 
-```
+```ini
 Name:     cf_csrf
 Value:    base64url(crypto/rand 32 bytes)
 HttpOnly: false        ← so the SPA can read via document.cookie
@@ -78,7 +78,8 @@ cronfoundry origin*; an attacker on a different origin cannot read or set it.
 `internal/webapi/csrf.go`:
 
 ```go
-func csrf(allowedOrigin string, next http.Handler) http.Handler { ... }
+func CSRF(cfg CSRFConfig) func(http.Handler) http.Handler
+// where CSRFConfig{ AllowedOrigin string }
 ```
 
 Logic:
@@ -101,13 +102,15 @@ which check failed. Token values are never logged. The 403 body is JSON:
 
 ### Wiring
 
-`internal/webapi/server.go` chains CSRF inside the existing `adminOnly`
-helper, so every privileged route is protected by default and no per-route
-opt-in is required:
+`internal/webapi/server.go` wraps `RequireRole` from outside with the CSRF
+middleware so CSRF runs *before* auth — an unauthenticated mutating
+request gets a CSRF 403 (or origin 403) without paying session decoding
+costs:
 
 ```go
+csrfMW := CSRF(CSRFConfig{AllowedOrigin: deps.PublicBaseURL})
 adminOnly := func(h http.Handler) http.Handler {
-    return session(roleCheck("admin", csrf(allowedOrigin, h)))
+    return csrfMW(RequireRole(deps.MasterKey, "admin", h))
 }
 ```
 
@@ -116,13 +119,13 @@ secrets, users, copilot-connect) are covered automatically. `POST /webhook/githu
 is wired with the raw webhook handler, not `adminOnly`, and remains
 out-of-scope. The session-only mutating routes — there are currently none in
 `server.go`; all GETs use `session()`, all mutations use `adminOnly()` — would
-need explicit `csrf()` wrapping if added.
+need explicit `CSRF()` wrapping if added.
 
 ### Configuration
 
 New env var: `CRONFOUNDRY_PUBLIC_BASE_URL` (e.g. `https://cronfoundry.example.com`).
 
-- Read once at server start; passed into `csrf()` middleware.
+- Read once at server start; passed into `CSRF()` middleware via `CSRFConfig`.
 - If unset and `CRONFOUNDRY_ENV != production` (or equivalent dev signal),
   Origin check is disabled. In production we fail to start if unset, with
   an actionable error.
@@ -199,11 +202,11 @@ verify mutating fetches set `X-CSRF-Token`, verify GETs do not.
 - No data migration. Existing live sessions don't have `cf_csrf` — first
   mutating request post-deploy 403s, the SPA redirects to login, user
   re-auths. Documented in release notes.
-- Rollout: ship behind a `CRONFOUNDRY_CSRF_ENFORCE` env var defaulting to
-  `true`. Operators upgrading from <0.7 can flip to `false` for one release
-  cycle if they need to re-auth a fleet without disruption — though for a
-  self-hosted single-tenant tool with a handful of admins, just shipping
-  enforced is also fine. Decision deferred to implementation.
+- Rollout: enforced by default; no flag. The plan considered a
+  `CRONFOUNDRY_CSRF_ENFORCE` toggle for a transitional release cycle but
+  shipped enforced — for a self-hosted single-tenant tool with a handful
+  of admins, the SPA's 403→/oauth/login redirect is a sufficient re-auth
+  path with no operator-side toggle needed.
 - Audit log: existing audit middleware logs admin mutations. CSRF rejection
   happens before the audit middleware (it's chained inside `adminOnly` but
   before the role-checked handler runs), so failed CSRF attempts produce
