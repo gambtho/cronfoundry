@@ -112,6 +112,7 @@ func TestE2E_FullScheduleFire(t *testing.T) {
 		DestinationsJson: destsJSON,
 		WritebackJson:    []byte(`null`),
 		EnvJson:          []byte(`{}`),
+		McpEnvJson:       []byte(`{}`),
 	})
 	require.NoError(t, err)
 
@@ -186,6 +187,9 @@ func TestE2E_FullScheduleFire(t *testing.T) {
 		"CRONFOUNDRY_GITHUB_APP_PEM":  pemPath,
 		"CRONFOUNDRY_GITHUB_BASE_URL": ghServer.URL,
 		"CRONFOUNDRY_OPENAI_BASE_URL": openaiServer.URL,
+		"CRONFOUNDRY_GITHUB_OAUTH_CLIENT_ID":     "fake-client-id",
+		"CRONFOUNDRY_GITHUB_OAUTH_CLIENT_SECRET": "fake-client-secret",
+		"CRONFOUNDRY_ADMIN_LOGINS":               "smoke-admin",
 		// Shorten the tick so the test is fast.
 		"HOME": os.Getenv("HOME"),
 		"PATH": os.Getenv("PATH"),
@@ -489,6 +493,7 @@ func TestE2E_SuccessfulFireWithLocalClone(t *testing.T) {
 		DestinationsJson: destsJSON,
 		WritebackJson:    []byte(`null`),
 		EnvJson:          []byte(`{}`),
+		McpEnvJson:       []byte(`{}`),
 	})
 	require.NoError(t, err)
 
@@ -890,7 +895,10 @@ func TestE2E_MCPToolLoop(t *testing.T) {
 	llmRef := "anthropic_key"
 	maxTurns := int32(5)
 	stubCallCountFile := filepath.Join(t.TempDir(), "stub-call-count")
-	mcpEnvJSON := fmt.Sprintf(`{"stub":{"MCP_STUB_CALL_COUNT_FILE":{"literal":"%s"}}}`, stubCallCountFile)
+	mcpEnvJSON, err := json.Marshal(map[string]map[string]string{
+		"stub": {"MCP_STUB_CALL_COUNT_FILE": stubCallCountFile},
+	})
+	require.NoError(t, err)
 	schedRow, err := q.UpsertSchedule(ctx, dbgen.UpsertScheduleParams{
 		OrgID:            org.ID,
 		SkillID:          skillRow.ID,
@@ -906,7 +914,7 @@ func TestE2E_MCPToolLoop(t *testing.T) {
 		DestinationsJson: []byte(`[]`),
 		WritebackJson:    []byte(`null`),
 		EnvJson:          []byte(`{}`),
-		McpEnvJson:       []byte(mcpEnvJSON),
+		McpEnvJson:       mcpEnvJSON,
 		MaxTurns:         &maxTurns,
 	})
 	require.NoError(t, err)

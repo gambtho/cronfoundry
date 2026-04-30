@@ -224,6 +224,15 @@ A run's status is one of `succeeded`, `partial_failure` (publish or writeback
 failure), or `failed` (load/LLM error). Per-destination failures are isolated
 — one broken webhook does not prevent other destinations from publishing.
 
+## End-to-end tests
+
+`make e2e` runs the `TestE2E_*` suite under the `e2e` build tag. It boots
+throwaway Postgres containers via testcontainers and stubs the LLM,
+Slack/Discord webhooks, and the git clone, so no external network or real
+credentials are required — but Docker must be running locally.
+
+CI runs the same target on every PR and on pushes to `main`.
+
 ## Design & spec
 
 - Technical design: [`docs/superpowers/specs/2026-04-19-cronfoundry-design.md`](docs/superpowers/specs/2026-04-19-cronfoundry-design.md)
