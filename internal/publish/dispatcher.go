@@ -39,7 +39,17 @@ func (d *Dispatcher) Dispatch(ctx context.Context, dests []config.Destination, o
 			if !res.OK {
 				label = "error"
 			}
-			metrics.DestPublish.WithLabelValues(res.Type, label).Inc()
+			// publishOne can return early with empty Type when destType()
+			// fails to classify the destination; recover the type from the
+			// dest itself so the metric label is never blank.
+			destLabel := res.Type
+			if destLabel == "" {
+				destLabel = mustDestType(dest)
+			}
+			if destLabel == "" {
+				destLabel = "unknown"
+			}
+			metrics.DestPublish.WithLabelValues(destLabel, label).Inc()
 		}()
 	}
 	wg.Wait()

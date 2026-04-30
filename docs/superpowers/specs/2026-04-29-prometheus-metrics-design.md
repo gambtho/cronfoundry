@@ -44,7 +44,7 @@ endpoint identically.
 
 ## Endpoint
 
-```
+```http
 GET /metrics
 ```
 
@@ -64,7 +64,7 @@ GET /metrics
 | `cronfoundry_runs_started_total` | counter | `schedule` (schedule name) | `internal/scheduler/tick.go` when a run is dispatched |
 | `cronfoundry_runs_finished_total` | counter | `status` (succeeded \| partial_failure \| failed) | `internal/api` finalize handler when run completes |
 | `cronfoundry_run_duration_seconds` | histogram | `status` | finalize handler — `started_at` to `finished_at` delta |
-| `cronfoundry_llm_tokens_total` | counter | `provider` (openai\|anthropic\|azure\|copilot\|openrouter), `kind` (input\|output) | finalize handler from run summary |
+| `cronfoundry_llm_tokens_total` | counter | `provider` (openai\|anthropic\|azure\|copilot\|openrouter\|unknown), `kind` (input\|output) | finalize handler from run summary |
 | `cronfoundry_llm_cost_usd_total` | counter | `provider` | finalize handler |
 | `cronfoundry_destination_publish_total` | counter | `type` (slack\|discord\|teams\|github_issue\|http\|email), `result` (ok\|error) | per-destination publisher |
 
@@ -72,20 +72,27 @@ Plus the default Go runtime collectors (`go_goroutines`,
 `go_gc_duration_seconds`, `process_resident_memory_bytes`, etc.) that
 ship with `promhttp.HandlerFor(prometheus.DefaultGatherer, ...)`.
 
+> **Provider label note.** The finalize handler currently emits
+> `provider="unknown"` for every run because the provider isn't on the
+> finalize row today. A follow-up will plumb provider through (either on
+> the row or in the finalize body) and then the values listed above
+> become the true emitted set. Until then, expect `provider="unknown"`
+> for all LLM series.
+
 ### Cardinality bounds
 
 - `schedule` — bounded by the number of schedules in the manifest (small
   for any real deploy; documented as "if you have 10K+ schedules, this
   metric will create 10K+ series — acceptable trade-off for visibility").
 - `status` — 3 values total.
-- `provider` — fixed enum of 5.
+- `provider` — fixed enum of 6 (5 named + `unknown`).
 - `kind` — 2 values.
 - `type` — fixed enum of 6.
 - `result` — 2 values.
 
 Worst case for a 100-schedule deploy: ~100 (started) + 3 (finished
-status) + 30 (duration histogram buckets × statuses) + 10 (5 providers
-× 2 kinds) + 5 (cost per provider) + 12 (6 types × 2 results) ≈ 160
+status) + 30 (duration histogram buckets × statuses) + 12 (6 providers
+× 2 kinds) + 6 (cost per provider) + 12 (6 types × 2 results) ≈ 163
 series, plus ~50 from Go runtime. Well within Prometheus comfort.
 
 ### Histogram buckets
@@ -94,7 +101,7 @@ series, plus ~50 from Go runtime. Well within Prometheus comfort.
 (`prometheus.DefBuckets`: 0.005s … 10s) PLUS three larger buckets for
 long-running LLM calls: `30, 60, 300, 600`. Final list:
 
-```
+```text
 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 300, 600
 ```
 
@@ -107,7 +114,7 @@ A new package: `internal/metrics`. Not under `internal/webapi` because
 the runner (`cmd/runner`) and the scheduler (`internal/scheduler`) both
 emit metrics — webapi is just one consumer.
 
-```
+```text
 internal/metrics/
 ├── metrics.go        // declares all metrics as package-level vars; init() registers them
 └── metrics_test.go   // smoke tests verifying registration + sample expositions
@@ -176,10 +183,13 @@ overhead is paid.
 
 ## Configuration
 
-- `CRONFOUNDRY_METRICS_DISABLED` (bool, default `false`) — kill switch.
-  When true, `metrics.Handler()` returns 404, and increments are no-ops
-  (cheap branch on a package var). Operators with strict no-metrics
-  policies can flip this without removing the route plumbing.
+- `CRONFOUNDRY_METRICS_DISABLED` (bool, default `false`) — endpoint kill
+  switch. When true, `metrics.Handler()` returns 404; producer-side
+  increments still record into the registry (they're cheap and
+  contention-free), so flipping the env var disables the scrape endpoint
+  without stopping metric collection. Operators with strict no-metrics
+  policies who need increments themselves stopped should not deploy this
+  build, or omit the producer wiring at fork time.
 
 That's it. No tunable scrape interval (Prometheus client side concern),
 no histogram bucket overrides (we can revise in code if real data
@@ -228,7 +238,7 @@ documenting:
 
 `README.md` operator-endpoints block adds:
 
-```
+```text
 - GET /metrics — Prometheus text-format scrape endpoint
 ```
 

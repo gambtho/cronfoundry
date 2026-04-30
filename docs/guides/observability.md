@@ -91,23 +91,23 @@ Plus standard Go runtime metrics (`go_goroutines`, `go_gc_duration_seconds`,
 ### Example queries
 
 7-day run success rate:
-```
+```promql
 sum(rate(cronfoundry_runs_finished_total{status="succeeded"}[7d]))
   / sum(rate(cronfoundry_runs_finished_total[7d]))
 ```
 
 P95 run duration:
-```
+```promql
 histogram_quantile(0.95, sum by (le) (rate(cronfoundry_run_duration_seconds_bucket[1h])))
 ```
 
 Daily LLM cost by provider:
-```
+```promql
 sum by (provider) (increase(cronfoundry_llm_cost_usd_total[1d]))
 ```
 
 Destination failure rate (last hour):
-```
+```promql
 sum by (type) (rate(cronfoundry_destination_publish_total{result="error"}[1h]))
   / sum by (type) (rate(cronfoundry_destination_publish_total[1h]))
 ```

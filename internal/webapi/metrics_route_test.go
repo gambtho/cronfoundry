@@ -12,6 +12,10 @@ import (
 )
 
 func TestMetricsRouteServed(t *testing.T) {
+	old := metrics.Disabled
+	metrics.Disabled = false
+	defer func() { metrics.Disabled = old }()
+
 	mux := http.NewServeMux()
 	webapi.RegisterRoutes(mux, webapi.Deps{
 		MasterKey: make([]byte, 32),

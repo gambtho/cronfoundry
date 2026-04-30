@@ -4,7 +4,7 @@
 
 **Goal:** Expose a Prometheus `/metrics` endpoint with 6 business counters + 1 histogram covering run starts, finishes, duration, LLM tokens/cost, and destination publishes — plus the default Go runtime collectors that ship with `promhttp`.
 
-**Architecture:** A new `internal/metrics` package declares all metrics as package-level `*prometheus.CounterVec` / `*HistogramVec` vars, registered automatically via `promauto`. Producers (scheduler, finalize handler, publishers) call `metrics.RunsStarted.WithLabelValues(...).Inc()` etc. The webapi mounts `metrics.Handler()` at `/metrics` outside any auth/rate-limit middleware. A `MetricsDisabled` package var flips the handler to 404 and short-circuits all increments when set.
+**Architecture:** A new `internal/metrics` package declares all metrics as package-level `*prometheus.CounterVec` / `*HistogramVec` vars, registered automatically via `promauto`. Producers (scheduler, finalize handler, publishers) call `metrics.RunsStarted.WithLabelValues(...).Inc()` etc. The webapi mounts `metrics.Handler()` at `/metrics` outside any auth/rate-limit middleware. A `Disabled` package var flips the handler to 404 — producer increments still record into the registry; only the scrape endpoint is gated.
 
 **Tech Stack:** Go (`github.com/prometheus/client_golang`, `net/http`), `stretchr/testify`. One new direct dep with one transitive (`prometheus/common`).
 
