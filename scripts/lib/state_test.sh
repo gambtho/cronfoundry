@@ -68,11 +68,22 @@ test_state_path_for() {
   [[ "$result" == *".cronfoundry-quickstart-state-copilot1" ]]
 }
 
+test_prefix_collision() {
+  state_init
+  state_save "CF_FOO" "first"
+  state_save "CF_FOO_BAR" "second"
+  state_save "CF_FOO" "third"
+  unset CF_FOO CF_FOO_BAR
+  state_load
+  [[ "$CF_FOO" == "third" ]] && [[ "$CF_FOO_BAR" == "second" ]]
+}
+
 run_test "state_save and reload round-trips a value" test_round_trip
 run_test "state_save quotes special characters" test_special_chars
 run_test "state_init creates file with mode 600" test_mode_600
 run_test "state_clear removes the file" test_state_clear
 run_test "state_path_for env returns per-env file" test_state_path_for
+run_test "state_save with prefix-colliding keys updates only the exact key" test_prefix_collision
 
 echo
 echo "${PASS} passed, ${FAIL} failed"

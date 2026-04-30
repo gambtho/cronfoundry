@@ -44,3 +44,14 @@ teardown() {
   result=$(state_path_for "copilot1")
   [[ "$result" == *".cronfoundry-quickstart-state-copilot1" ]]
 }
+
+@test "state_save with prefix-colliding keys updates only the exact key" {
+  state_init
+  state_save "CF_FOO" "first"
+  state_save "CF_FOO_BAR" "second"
+  state_save "CF_FOO" "third"
+  unset CF_FOO CF_FOO_BAR
+  state_load
+  [ "$CF_FOO" = "third" ]
+  [ "$CF_FOO_BAR" = "second" ]
+}

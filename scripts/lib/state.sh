@@ -29,11 +29,16 @@ state_load() {
 state_save() {
   local key="$1" val="$2"
   state_init
-  # Remove any existing line with this key, then append.
-  if grep -q "^${key}=" "$STATE_FILE" 2>/dev/null; then
-    grep -v "^${key}=" "$STATE_FILE" > "${STATE_FILE}.tmp" && mv "${STATE_FILE}.tmp" "$STATE_FILE"
+  # Build new file contents in a single tmp file, then rename atomically.
+  # Using awk with index() avoids regex interpretation of the key.
+  local tmp="${STATE_FILE}.tmp.$$"
+  if [[ -f "$STATE_FILE" ]]; then
+    awk -v k="$key" 'BEGIN{p=k"="} index($0, p)!=1' "$STATE_FILE" > "$tmp"
+  else
+    : > "$tmp"
   fi
-  printf '%s=%q\n' "$key" "$val" >> "$STATE_FILE"
+  printf '%s=%q\n' "$key" "$val" >> "$tmp"
+  mv "$tmp" "$STATE_FILE"
   chmod 600 "$STATE_FILE"
   # Also export for in-process reads.
   export "${key}=${val}"
