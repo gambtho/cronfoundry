@@ -1,6 +1,6 @@
 # CronFoundry P2 — Service Layer Design
 
-**Status:** Proposed
+**Status:** Shipped (3b246ff)
 **Date:** 2026-04-19
 **Companion documents:**
 - [P1 design](./2026-04-19-cronfoundry-design.md) (master architecture)

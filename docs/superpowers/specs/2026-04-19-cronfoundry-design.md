@@ -1,6 +1,6 @@
 # CronFoundry — Design
 
-**Status:** Proposed
+**Status:** Shipped (fd91fd6)
 **Date:** 2026-04-19
 **Author:** gambtho (brainstormed with Claude)
 

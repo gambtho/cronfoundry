@@ -12,6 +12,8 @@
     "masterKey": { "value": "RUN_cronfoundry_admin_init_TO_GENERATE" },
     "adminLogins": { "value": "your-github-login" },
     "viewerLogins": { "value": "" },
-    "ingressExternal": { "value": false }
+    "ingressExternal": { "value": false },
+    "trustProxy": { "value": true },
+    "publicBaseUrl": { "value": "" }
   }
 }

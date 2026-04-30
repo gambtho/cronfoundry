@@ -1,6 +1,6 @@
 # CronFoundry GitHub Pages Site — Design
 
-**Status:** Approved  
+**Status:** Shipped (16c2af3)
 **Date:** 2026-04-20  
 **Author:** gambtho
 

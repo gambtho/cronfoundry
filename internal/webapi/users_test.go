@@ -43,6 +43,9 @@ func doUsersReq(t *testing.T, mux *http.ServeMux, masterKey []byte, method, path
 		r.Header.Set("Content-Type", "application/json")
 	}
 	addTestSession(t, r, masterKey, login, role)
+	if method != http.MethodGet && method != http.MethodHead && method != http.MethodOptions {
+		r = withCSRF(t, r)
+	}
 	rr := httptest.NewRecorder()
 	mux.ServeHTTP(rr, r)
 	return rr

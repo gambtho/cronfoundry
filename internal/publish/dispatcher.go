@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"github.com/gambtho/cronfoundry/internal/config"
+	"github.com/gambtho/cronfoundry/internal/metrics"
 	"github.com/gambtho/cronfoundry/internal/template"
 )
 
@@ -31,7 +32,24 @@ func (d *Dispatcher) Dispatch(ctx context.Context, dests []config.Destination, o
 				results[i] = Result{Type: mustDestType(dest), OK: true, Skipped: true, SkipReason: "condition:" + dest.When + " not met"}
 				return
 			}
-			results[i] = d.publishOne(ctx, dest, outputFor(dest), tctx, secrets)
+			res := d.publishOne(ctx, dest, outputFor(dest), tctx, secrets)
+			results[i] = res
+			// Skipped results aren't counted — only actual publish attempts.
+			label := "ok"
+			if !res.OK {
+				label = "error"
+			}
+			// publishOne can return early with empty Type when destType()
+			// fails to classify the destination; recover the type from the
+			// dest itself so the metric label is never blank.
+			destLabel := res.Type
+			if destLabel == "" {
+				destLabel = mustDestType(dest)
+			}
+			if destLabel == "" {
+				destLabel = "unknown"
+			}
+			metrics.DestPublish.WithLabelValues(destLabel, label).Inc()
 		}()
 	}
 	wg.Wait()

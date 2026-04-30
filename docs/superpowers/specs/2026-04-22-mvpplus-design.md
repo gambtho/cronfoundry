@@ -1,6 +1,6 @@
 # CronFoundry mvpplus — Design
 
-**Status:** Proposed  
+**Status:** Shipped (fea9ec2)
 **Date:** 2026-04-22  
 **Author:** gambtho (brainstormed with Claude)
 

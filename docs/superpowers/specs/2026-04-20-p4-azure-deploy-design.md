@@ -1,6 +1,6 @@
 # P4 — Azure Deployment — Design
 
-**Status:** Proposed
+**Status:** Shipped (071966b)
 **Date:** 2026-04-20
 **Author:** gambtho (brainstormed with Claude)
 

@@ -224,6 +224,15 @@ A run's status is one of `succeeded`, `partial_failure` (publish or writeback
 failure), or `failed` (load/LLM error). Per-destination failures are isolated
 — one broken webhook does not prevent other destinations from publishing.
 
+## End-to-end tests
+
+`make e2e` runs the `TestE2E_*` suite under the `e2e` build tag. It boots
+throwaway Postgres containers via testcontainers and stubs the LLM,
+Slack/Discord webhooks, and the git clone, so no external network or real
+credentials are required — but Docker must be running locally.
+
+CI runs the same target on every PR and on pushes to `main`.
+
 ## Design & spec
 
 - Technical design: [`docs/superpowers/specs/2026-04-19-cronfoundry-design.md`](docs/superpowers/specs/2026-04-19-cronfoundry-design.md)
@@ -254,7 +263,17 @@ failure), or `failed` (load/LLM error). Per-destination failures are isolated
   touched
 - `GET /api/runs/{id}/events/stream` — SSE stream consumed by the `LogTail`
   component in the Runs detail drawer for in-flight runs
+- `GET /metrics` — Prometheus text-format scrape endpoint (see
+  [`docs/guides/observability.md`](docs/guides/observability.md))
+
+### CSRF & origin allowlist
+
+Set `CRONFOUNDRY_PUBLIC_BASE_URL` to the externally-reachable URL of the
+service (scheme+host, e.g. `https://cronfoundry.example.com`). The CSRF
+middleware uses this as the allowlist for the `Origin`/`Referer` check. In
+dev (no env var), the origin check is disabled; the `cf_csrf` cookie +
+`X-CSRF-Token` header double-submit check still runs.
 
 ## License
 
-TBD.
+MIT — see [LICENSE](LICENSE).

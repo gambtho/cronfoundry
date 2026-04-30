@@ -1,6 +1,6 @@
 # GitHub Copilot Enterprise Provider — Design
 
-**Status:** Proposed
+**Status:** Shipped (c86f48a)
 **Date:** 2026-04-22
 **Author:** gambtho (brainstormed with Claude)
 

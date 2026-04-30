@@ -49,10 +49,25 @@ jobs:
         with:
           version: v2.11.0
 
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: make e2e
+        run: make e2e
+
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: test
+    needs: [test, e2e]
     steps:
       - uses: actions/checkout@v4
 
