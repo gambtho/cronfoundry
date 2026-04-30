@@ -1,4 +1,4 @@
-package azure_test
+package azurekv_test
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gambtho/cronfoundry/internal/secrets/server"
-	azuresecretstore "github.com/gambtho/cronfoundry/internal/secretstore/azure"
+	azuresecretstore "github.com/gambtho/cronfoundry/internal/secrets/server/azurekv"
 )
 
 type fakeKVClient struct {

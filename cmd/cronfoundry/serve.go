@@ -27,7 +27,7 @@ import (
 	"github.com/gambtho/cronfoundry/internal/github"
 	"github.com/gambtho/cronfoundry/internal/scheduler"
 	"github.com/gambtho/cronfoundry/internal/secrets/server"
-	secretstoreazure "github.com/gambtho/cronfoundry/internal/secretstore/azure"
+	"github.com/gambtho/cronfoundry/internal/secrets/server/azurekv"
 	"github.com/gambtho/cronfoundry/internal/sync"
 	"github.com/gambtho/cronfoundry/internal/token"
 	"github.com/gambtho/cronfoundry/internal/webapi"
@@ -378,9 +378,9 @@ func buildSecretStore(pool *pgxpool.Pool, orgID pgtype.UUID, master []byte) (ser
 	if err != nil {
 		return nil, fmt.Errorf("azure credential: %w", err)
 	}
-	kvClient, err := secretstoreazure.NewRealKVClient(kvURL, cred)
+	kvClient, err := azurekv.NewRealKVClient(kvURL, cred)
 	if err != nil {
 		return nil, fmt.Errorf("keyvault client: %w", err)
 	}
-	return secretstoreazure.NewKeyVaultStore(kvClient), nil
+	return azurekv.NewKeyVaultStore(kvClient), nil
 }
