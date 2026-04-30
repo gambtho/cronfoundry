@@ -26,6 +26,7 @@ import (
 	"github.com/gambtho/cronfoundry/internal/jobdispatch/k8sjobs"
 	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
 	"github.com/gambtho/cronfoundry/internal/github"
+	"github.com/gambtho/cronfoundry/internal/metrics"
 	"github.com/gambtho/cronfoundry/internal/scheduler"
 	"github.com/gambtho/cronfoundry/internal/secretstore"
 	secretstoreazure "github.com/gambtho/cronfoundry/internal/secretstore/azure"
@@ -48,6 +49,7 @@ const (
 	envRateLRUSize       = "CRONFOUNDRY_RATE_LRU_SIZE"
 	envRateDisabled      = "CRONFOUNDRY_RATE_DISABLED"
 	envPublicBaseURL     = "CRONFOUNDRY_PUBLIC_BASE_URL"
+	envMetricsDisabled   = "CRONFOUNDRY_METRICS_DISABLED"
 )
 
 func newServeCmd() *cobra.Command {
@@ -225,6 +227,7 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 	if os.Getenv(envPublicBaseURL) == "" {
 		slog.Warn("CRONFOUNDRY_PUBLIC_BASE_URL not set; CSRF Origin check disabled (dev mode)")
 	}
+	metrics.Disabled = envBool(envMetricsDisabled)
 	webapi.RegisterRoutes(mux, webapi.Deps{
 		MasterKey:         master,
 		OAuthClientID:     oauthClientID,
