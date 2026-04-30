@@ -41,6 +41,11 @@ check_cmd git     "Install: https://git-scm.com/downloads"
 check_cmd python3 "Install: https://www.python.org/downloads/"
 check_cmd openssl "Usually pre-installed. Install via your OS package manager."
 check_cmd go      "Install: https://golang.org/dl/ (need >= 1.21)"
+check_cmd gh "Install: https://cli.github.com/"
+if ! gh auth status &>/dev/null; then
+  die "gh is installed but not authenticated. Run: gh auth login\nThen re-run this script."
+fi
+ok "gh authenticated as $(gh api /user --jq .login)"
 
 # az version check (need >= 2.60)
 AZ_VER=$(az version --query '"azure-cli"' -o tsv 2>/dev/null || echo "0.0.0")
