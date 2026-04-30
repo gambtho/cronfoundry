@@ -14,7 +14,7 @@
 2. Set name: `cronfoundry-<yourname>`
 3. Homepage URL: your fork or self-hosted URL (e.g. `https://github.com/yourname/cronfoundry`)
 4. Callback URL: `https://<your-serve-fqdn>/oauth/callback` (update after deploy)
-5. Webhook URL: `https://<your-serve-fqdn>/webhooks/github` (update after deploy)
+5. Webhook URL: `https://<your-serve-fqdn>/webhook/github` (update after deploy)
 6. Permissions:
    - Repository contents: Read & write
    - Issues: Write
@@ -28,6 +28,31 @@ cp deploy/params.example.json deploy/params.json
 # Edit deploy/params.json with your values
 # Never commit deploy/params.json (it contains secrets)
 ```
+
+Required-in-production parameters worth calling out:
+
+| Param | Notes |
+|---|---|
+| `ingressExternal` | Set `true` for any deploy that needs the GitHub push webhook to reach it. The default `false` produces an internal-only FQDN. |
+| `trustProxy` | Set `true` for any deploy behind a reverse proxy or Container Apps ingress so the leftmost `X-Forwarded-For` is used for rate limiting. The default `false` makes the limiter see the proxy IP and uselessly limit one shared bucket. |
+
+### Rate-limit tuning (rarely needed)
+
+The serve container reads these env vars at startup. Defaults match the
+release-readiness sizing for a single-operator deploy:
+
+| Env var | Default | What it controls |
+|---|---|---|
+| `CRONFOUNDRY_RATE_API_RPM` | 60 | Per-IP `/api/*` requests per minute |
+| `CRONFOUNDRY_RATE_OAUTH_RPM` | 10 | Per-IP `/oauth/login` + `/oauth/callback` per minute |
+| `CRONFOUNDRY_RATE_WEBHOOK_RPM` | 300 | Per-IP `/webhook/github` per minute (sized for GitHub fan-out) |
+| `CRONFOUNDRY_RATE_SSE_MAX_CONCURRENT` | 5 | Concurrent live-tail streams per IP |
+| `CRONFOUNDRY_RATE_LRU_SIZE` | 4096 | Per-group LRU map size (memory bound) |
+| `CRONFOUNDRY_RATE_DISABLED` | false | Kill switch — middleware passes through entirely |
+
+Set any RPM to `0` to disable rate limiting on that group only. These are
+operator overrides not exposed as Bicep params; set them via
+`containerApp.bicep`'s env block if you need persistent values.
 
 ## 3. Deploy
 

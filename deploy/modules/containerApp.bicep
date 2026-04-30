@@ -20,6 +20,7 @@ param azureSubscriptionId string
 param azureResourceGroup string
 param azureCaeJobName string
 param caeDefaultDomain string = ''
+param trustProxy bool = false
 
 resource app 'Microsoft.App/containerApps@2024-03-01' = {
   name: name
@@ -73,6 +74,7 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
             { name: 'AZURE_CAE_JOB_NAME', value: azureCaeJobName }
             { name: 'AZURE_CAE_JOB_IMAGE', value: 'ghcr.io/gambtho/cronfoundry:${imageTag}' }
             { name: 'CRONFOUNDRY_API_BASE_URL', value: caeDefaultDomain != '' ? 'https://${name}.${caeDefaultDomain}' : '' }
+            { name: 'CRONFOUNDRY_TRUST_PROXY', value: string(trustProxy) }
             { name: 'AZURE_CLIENT_ID', value: cfServeClientId }
             { name: 'DISPATCHER', value: 'azure' }
             { name: 'SECRET_STORE', value: 'keyvault' }

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -39,6 +40,13 @@ const (
 	envAdminLogins       = "CRONFOUNDRY_ADMIN_LOGINS"
 	envViewerLogins      = "CRONFOUNDRY_VIEWER_LOGINS"
 	envWebhookSecret     = "CRONFOUNDRY_GITHUB_WEBHOOK_SECRET"
+	envTrustProxy        = "CRONFOUNDRY_TRUST_PROXY"
+	envRateAPIRPM        = "CRONFOUNDRY_RATE_API_RPM"
+	envRateOAuthRPM      = "CRONFOUNDRY_RATE_OAUTH_RPM"
+	envRateWebhookRPM    = "CRONFOUNDRY_RATE_WEBHOOK_RPM"
+	envRateSSEConcurrent = "CRONFOUNDRY_RATE_SSE_MAX_CONCURRENT"
+	envRateLRUSize       = "CRONFOUNDRY_RATE_LRU_SIZE"
+	envRateDisabled      = "CRONFOUNDRY_RATE_DISABLED"
 )
 
 func newServeCmd() *cobra.Command {
@@ -204,6 +212,15 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 		Installations: installs,
 		RunnerAPIKey:  os.Getenv("CRONFOUNDRY_RUNNER_API_KEY"),
 	})
+	rateCfg := webapi.RateLimiterConfig{
+		TrustProxy:       envBool(envTrustProxy),
+		Disabled:         envBool(envRateDisabled),
+		APIRPM:           envInt(envRateAPIRPM, 60),
+		OAuthRPM:         envInt(envRateOAuthRPM, 10),
+		WebhookRPM:       envInt(envRateWebhookRPM, 300),
+		SSEMaxConcurrent: envInt(envRateSSEConcurrent, 5),
+		LRUSize:          envInt(envRateLRUSize, 4096),
+	}
 	webapi.RegisterRoutes(mux, webapi.Deps{
 		MasterKey:         master,
 		OAuthClientID:     oauthClientID,
@@ -215,6 +232,7 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 		APIBaseURL:        "http://" + addr,
 		WebhookSecret:     []byte(os.Getenv(envWebhookSecret)),
 		Syncer:            poller,
+		RateLimit:         rateCfg,
 	})
 	srv := &http.Server{
 		Addr:              addr,
@@ -383,4 +401,21 @@ func buildSecretStore(pool *pgxpool.Pool, orgID pgtype.UUID, master []byte) (sec
 		return nil, fmt.Errorf("keyvault client: %w", err)
 	}
 	return secretstoreazure.NewKeyVaultStore(kvClient), nil
+}
+
+func envInt(name string, def int) int {
+	if v := os.Getenv(name); v != "" {
+		if i, err := strconv.Atoi(v); err == nil {
+			return i
+		}
+	}
+	return def
+}
+
+func envBool(name string) bool {
+	switch strings.ToLower(os.Getenv(name)) {
+	case "1", "true", "yes":
+		return true
+	}
+	return false
 }
