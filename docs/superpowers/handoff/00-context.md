@@ -36,8 +36,9 @@ in this session; four remain.
 | 9 | Spec status headers + index | [#37](https://github.com/gambtho/cronfoundry/pull/37) | `docs/spec-status-index` | `.worktrees/spec-index` |
 
 All six branches were off `main` and don't depend on each other; they should
-merge cleanly modulo a small `cmd/cronfoundry/serve.go` overlap between #2,
-#3, and #4 (each adds env-var reads in the same Deps construction block).
+merge cleanly modulo a small `cmd/cronfoundry/serve.go` overlap between
+items #2, #3, and #4 (each adds env-var reads in the same Deps construction
+block).
 
 ### Remaining (4 items)
 
