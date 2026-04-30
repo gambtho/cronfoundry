@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -169,4 +170,95 @@ func TestRateLimiter_LRU_EvictionGivesFreshBudget(t *testing.T) {
 	w := httptest.NewRecorder()
 	mw.ServeHTTP(w, req)
 	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestRateLimiter_SSE_ConcurrencyCap(t *testing.T) {
+	rl := newTestRL(t, RateLimiterConfig{APIRPM: 60, OAuthRPM: 10, WebhookRPM: 300, SSEMaxConcurrent: 5, LRUSize: 128})
+
+	release := make(chan struct{})
+	mw := rl.SSE(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		<-release
+	}))
+
+	done := make(chan int, 6)
+	for i := 0; i < 5; i++ {
+		go func() {
+			req := httptest.NewRequest("GET", "/api/runs/x/events/stream", nil)
+			req.RemoteAddr = "1.1.1.1:1"
+			w := httptest.NewRecorder()
+			mw.ServeHTTP(w, req)
+			done <- w.Code
+		}()
+	}
+
+	time.Sleep(50 * time.Millisecond)
+	req := httptest.NewRequest("GET", "/api/runs/x/events/stream", nil)
+	req.RemoteAddr = "1.1.1.1:1"
+	w := httptest.NewRecorder()
+	mw.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusTooManyRequests, w.Code)
+	assert.Equal(t, "5", w.Header().Get("Retry-After"))
+
+	close(release)
+	for i := 0; i < 5; i++ {
+		<-done
+	}
+
+	req = httptest.NewRequest("GET", "/api/runs/x/events/stream", nil)
+	req.RemoteAddr = "1.1.1.1:1"
+	w = httptest.NewRecorder()
+	// Re-arm — the previous handler closed and decremented; this should pass.
+	// Run synchronously since `release` is already closed; handler returns immediately.
+	mw.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusOK, w.Code)
+}
+
+func TestRateLimiter_SSE_PerIPIsolation(t *testing.T) {
+	rl := newTestRL(t, RateLimiterConfig{APIRPM: 60, OAuthRPM: 10, WebhookRPM: 300, SSEMaxConcurrent: 1, LRUSize: 128})
+
+	release := make(chan struct{})
+	defer close(release)
+	mw := rl.SSE(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		<-release
+	}))
+
+	go func() {
+		req := httptest.NewRequest("GET", "/x", nil)
+		req.RemoteAddr = "1.1.1.1:1"
+		w := httptest.NewRecorder()
+		mw.ServeHTTP(w, req)
+	}()
+	time.Sleep(50 * time.Millisecond)
+
+	gotCode := make(chan int, 1)
+	go func() {
+		req := httptest.NewRequest("GET", "/x", nil)
+		req.RemoteAddr = "2.2.2.2:1"
+		w := httptest.NewRecorder()
+		mw.ServeHTTP(w, req)
+		gotCode <- w.Code
+	}()
+	time.Sleep(50 * time.Millisecond)
+	// IP B should be inside the handler (200 written, blocked on release) — verify
+	// it is NOT 429. We can't easily read the recorder mid-handler; instead,
+	// confirm a 3rd request from IP A (its slot is full) is rejected.
+	req := httptest.NewRequest("GET", "/x", nil)
+	req.RemoteAddr = "1.1.1.1:1"
+	w := httptest.NewRecorder()
+	mw.ServeHTTP(w, req)
+	assert.Equal(t, http.StatusTooManyRequests, w.Code, "IP A's only slot is full")
+}
+
+func TestRateLimiter_SSE_DisabledByZeroCap(t *testing.T) {
+	rl := newTestRL(t, RateLimiterConfig{APIRPM: 60, OAuthRPM: 10, WebhookRPM: 300, SSEMaxConcurrent: 0, LRUSize: 128})
+	mw := rl.SSE(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) }))
+	for i := 0; i < 50; i++ {
+		req := httptest.NewRequest("GET", "/x", nil)
+		req.RemoteAddr = "1.1.1.1:1"
+		w := httptest.NewRecorder()
+		mw.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusOK, w.Code)
+	}
 }

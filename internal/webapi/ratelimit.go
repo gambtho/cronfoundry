@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	lru "github.com/hashicorp/golang-lru/v2"
 	"golang.org/x/time/rate"
@@ -136,4 +137,26 @@ func rejectRateLimit(w http.ResponseWriter, r *http.Request, group, ip, retryAft
 	w.Header().Set("Retry-After", retryAfter)
 	w.WriteHeader(http.StatusTooManyRequests)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": "rate limited"})
+}
+
+// SSE returns a middleware enforcing a per-IP concurrent-stream cap.
+// Increments at request start, decrements when the handler returns.
+// 5-second Retry-After to discourage browser reconnect storms.
+func (rl *RateLimiter) SSE(next http.Handler) http.Handler {
+	if rl.cfg.Disabled || rl.cfg.SSEMaxConcurrent <= 0 {
+		return next
+	}
+	cap64 := int64(rl.cfg.SSEMaxConcurrent)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ip := clientIP(r, rl.cfg.TrustProxy)
+		counterAny, _ := rl.sseConcurrent.LoadOrStore(ip, new(int64))
+		counter := counterAny.(*int64)
+		if v := atomic.AddInt64(counter, 1); v > cap64 {
+			atomic.AddInt64(counter, -1)
+			rejectRateLimit(w, r, "sse", ip, "5")
+			return
+		}
+		defer atomic.AddInt64(counter, -1)
+		next.ServeHTTP(w, r)
+	})
 }
