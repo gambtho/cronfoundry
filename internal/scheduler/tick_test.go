@@ -610,3 +610,90 @@ func TestTick_DispatchPending_NilInstallations(t *testing.T) {
 			"GITHUB_TOKEN should not appear when Installations is nil via dispatchPending")
 	}
 }
+
+// TestTick_QueueOverlapDispatchesAfterPriorTerminates pins the cross-tick
+// handoff for overlap_policy=queue: when a queue-policy schedule fires while
+// a prior run is still active, the new pending row is left in place
+// (stats.Queued++); on a subsequent tick after the prior run terminates,
+// dispatchPending picks the queued row up and dispatches it.
+func TestTick_QueueOverlapDispatchesAfterPriorTerminates(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, cleanup := testdb.BootPG(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	schedID := seedDueSchedule(t, pool, "queue")
+
+	// Seed a prior 'running' run for this schedule. Its created_at is in the
+	// past so dispatchPending's "earlier same-schedule pending/running"
+	// guard treats it as the blocker for any queued row inserted by Tick.
+	var orgID pgtype.UUID
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT org_id FROM schedule WHERE id = $1`, schedID).Scan(&orgID))
+	var priorID pgtype.UUID
+	priorCreated := time.Now().Add(-2 * time.Minute)
+	require.NoError(t, pool.QueryRow(ctx,
+		`INSERT INTO run (org_id, schedule_id, skill_sha, status, fire_reason, fire_time,
+			runner_token_hash, started_at, created_at)
+		 VALUES ($1, $2, 'sha-prior', 'running', 'schedule', $3, 'hash-prior', $3, $3)
+		 RETURNING id`, orgID, schedID, priorCreated).Scan(&priorID))
+
+	mock := &mockDispatcher{}
+	deps := Deps{
+		Pool:         pool,
+		Signer:       newSigner(t),
+		Dispatcher:   mock,
+		APIBaseURL:   "http://127.0.0.1:8080",
+		RunnerBinary: "/usr/bin/true",
+	}
+
+	// First tick: schedule is due, processOne inserts a pending row, Decide
+	// returns DecisionQueue (prior 'running' run blocks dispatch), pending
+	// row stays. dispatchPending's NOT EXISTS clause keeps it queued because
+	// the prior running row is older.
+	stats, err := Tick(ctx, deps)
+	require.NoError(t, err)
+	assert.Equal(t, 0, stats.Dispatched, "first tick must not dispatch the queued row")
+	assert.Equal(t, 1, stats.Queued, "first tick must record one Queued decision")
+
+	mock.mu.Lock()
+	assert.Empty(t, mock.calls, "no dispatch should happen while prior is running")
+	mock.mu.Unlock()
+
+	var pendingCount int
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM run WHERE schedule_id = $1 AND status='pending'`,
+		schedID).Scan(&pendingCount))
+	assert.Equal(t, 1, pendingCount, "exactly one queued pending row should exist")
+
+	// Terminate the prior run.
+	_, err = pool.Exec(ctx,
+		`UPDATE run SET status='succeeded', finished_at=now() WHERE id=$1`, priorID)
+	require.NoError(t, err)
+
+	// Push schedule's next_fire_at into the future so processOne does not
+	// fire a new run on the second tick. We're isolating dispatchPending's
+	// drain behavior.
+	_, err = pool.Exec(ctx,
+		`UPDATE schedule SET next_fire_at = now() + interval '1 hour' WHERE id=$1`,
+		schedID)
+	require.NoError(t, err)
+
+	// Second tick: dispatchPending should pick up the previously-queued
+	// pending row.
+	stats, err = Tick(ctx, deps)
+	require.NoError(t, err)
+	assert.Equal(t, 1, stats.Dispatched, "second tick must dispatch the queued row")
+
+	mock.mu.Lock()
+	require.Len(t, mock.calls, 1, "exactly one dispatch on second tick")
+	mock.mu.Unlock()
+
+	var status string
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT status FROM run WHERE schedule_id=$1 AND status<>'succeeded'`,
+		schedID).Scan(&status))
+	assert.Equal(t, "running", status, "queued row should now be running")
+}

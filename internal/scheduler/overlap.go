@@ -27,13 +27,14 @@ const (
 //
 // Empty or unknown policies fail closed to the skip semantics.
 //
-// TODO(P2d): queued runs are left pending by processOne and then picked up
-// by tick.dispatchPending on a subsequent tick once prior runs finish. The
-// two paths are split deliberately: Tick's primary loop only walks schedules
-// whose next_fire_at is due, so a run that was queued (and has no further
+// Queued runs are left pending by processOne and picked up by
+// tick.dispatchPending on a subsequent tick once prior runs finish. The
+// split is deliberate: Tick's primary loop only walks schedules whose
+// next_fire_at is due, so a run that was queued (and has no further
 // scheduled fire until its cron boundary) would otherwise never get picked
 // up. The trade-off is a one-tick latency between prior-run-finish and
-// queued-run-dispatch; a dedicated queue-drain loop would close that gap.
+// queued-run-dispatch; a dedicated queue-drain loop would close that gap
+// but is not worth the complexity at MVP scale.
 func Decide(policy Policy, activeCount int) Decision {
 	switch policy {
 	case PolicyConcurrent:
