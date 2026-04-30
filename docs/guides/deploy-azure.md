@@ -1,43 +1,91 @@
-# Deploying CronFoundry to Azure
+# Deploy CronFoundry to Azure (Reference)
 
-## Prerequisites
+The happy path is in [`quickstart-azure.md`](./quickstart-azure.md). This
+doc covers non-default deployments, operational tuning, and troubleshooting.
 
-- Azure CLI (`az`) logged in: `az login`
-- Azure Developer CLI (`azd`): https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd
-- Docker (for local testing only)
-- A GitHub App registered (see below)
-- A GitHub OAuth App or the same GitHub App's OAuth credentials
+## Manual deploy (without `cronfoundry bootstrap azure`)
 
-## 1. Register a GitHub App
+If you can't or don't want to use the bootstrap command:
 
-1. Go to https://github.com/settings/apps/new
-2. Set name: `cronfoundry-<yourname>`
-3. Homepage URL: your fork or self-hosted URL (e.g. `https://github.com/yourname/cronfoundry`)
-4. Callback URL: `https://<your-serve-fqdn>/oauth/callback` (update after deploy)
-5. Webhook URL: `https://<your-serve-fqdn>/webhook/github` (update after deploy)
-6. Permissions:
-   - Repository contents: Read & write
-   - Issues: Write
-7. Generate and download the private key PEM file
-8. Note the App ID and OAuth client ID/secret
+1. **Generate a master key:** `openssl rand -base64 32`. Save it; encrypted
+   secrets in the database become unrecoverable if it's lost.
+2. **Copy and edit the params file:**
 
-## 2. Prepare parameters
+   ```bash
+   cp deploy/params.example.json deploy/params.prod.json
+   ```
 
-```bash
-cp deploy/params.example.json deploy/params.json
-# Edit deploy/params.json with your values
-# Never commit deploy/params.json (it contains secrets)
-```
+   Fill in:
+   - `githubAppId`, `githubAppOAuthClientId`, `githubAppOAuthClientSecret`
+   - `postgresAdminPassword` — 24+ alphanumerics, no `@ : / % # ? & =`
+   - `masterKey` — your generated key
+   - `githubAppPem` — full contents of the .pem file (use a small Python
+     helper to embed newlines as `\n`)
+   - `adminLogins` — comma-separated GitHub logins (not a JSON array)
+   - `ingressExternal` — leave at `true` unless fronting with a private
+     gateway
 
-Required-in-production parameters worth calling out:
+3. **Deploy:**
+
+   ```bash
+   az deployment sub create \
+     --location swedencentral \
+     --template-file deploy/main.bicep \
+     --parameters @deploy/params.prod.json
+   ```
+
+   Takes ~10 minutes.
+
+4. **Open Postgres to your IP:**
+
+   ```bash
+   MY_IP=$(curl -s https://ifconfig.me)
+   az postgres flexible-server firewall-rule create \
+     --resource-group rg-cronfoundry-<env> --name cf-pg-<env> \
+     --rule-name op --start-ip-address "$MY_IP" --end-ip-address "$MY_IP"
+   ```
+
+5. **Run admin init locally:**
+
+   ```bash
+   CRONFOUNDRY_DATABASE_URL="postgres://cfadmin:<pw>@cf-pg-<env>.postgres.database.azure.com:5432/cronfoundry?sslmode=require" \
+   CRONFOUNDRY_MASTER_KEY="<your master key>" \
+   ./cronfoundry admin init
+   ```
+
+6. **Force a serve revision restart so the migrated schema is picked up:**
+
+   ```bash
+   az containerapp update \
+     --resource-group rg-cronfoundry-<env> --name cf-serve-<env> \
+     --set-env-vars RESTART_TRIGGER=$(date +%s)
+   ```
+
+7. **Discover the FQDN:**
+
+   ```bash
+   az containerapp show \
+     --resource-group rg-cronfoundry-<env> --name cf-serve-<env> \
+     --query properties.configuration.ingress.fqdn -o tsv
+   ```
+
+## Required Bicep parameters worth calling out
 
 | Param | Notes |
 |---|---|
-| `ingressExternal` | Set `true` for any deploy that needs the GitHub push webhook to reach it. The default `false` produces an internal-only FQDN. |
-<<<<<<< HEAD
+| `ingressExternal` | Set `true` for any deploy that needs the GitHub push webhook to reach it. The default `false` produces an internal-only FQDN. The bootstrap command and `params.example.json` set this to `true`. |
 | `trustProxy` | Set `true` for any deploy behind a reverse proxy or Container Apps ingress so the leftmost `X-Forwarded-For` is used for rate limiting. The default `false` makes the limiter see the proxy IP and uselessly limit one shared bucket. |
+| `publicBaseUrl` | Externally-reachable URL of the service (scheme+host, e.g. `https://cronfoundry.example.com`). Used as the CSRF middleware `Origin`/`Referer` allowlist. Empty disables the Origin check (local dev only); the cookie+header double-submit check still runs. After the first deploy, find the FQDN with `az containerapp show -n <name> -g <rg> --query properties.configuration.ingress.fqdn -o tsv` and re-deploy with that value set. |
 
-### Rate-limit tuning (rarely needed)
+## Region selection
+
+`Microsoft.DBforPostgreSQL/flexibleServers` is offer-restricted in some
+subscriptions. The reliable probe is a synchronous create; the listing
+APIs return SKUs your subscription cannot actually provision.
+`swedencentral` is known-good for Microsoft-internal subscriptions;
+`eastus`/`eastus2` were observed restricted.
+
+## Rate-limit tuning (rarely needed)
 
 The serve container reads these env vars at startup. Defaults match the
 release-readiness sizing for a single-operator deploy:
@@ -54,94 +102,62 @@ release-readiness sizing for a single-operator deploy:
 Set any RPM to `0` to disable rate limiting on that group only. These are
 operator overrides not exposed as Bicep params; set them via
 `containerApp.bicep`'s env block if you need persistent values.
-=======
-| `publicBaseUrl` | Externally-reachable URL of the service (scheme+host, e.g. `https://cronfoundry.example.com`). Used as the CSRF middleware `Origin`/`Referer` allowlist. Empty disables the Origin check (local dev only); the cookie+header double-submit check still runs. After the first deploy, find the FQDN with `az containerapp show -n <name> -g <rg> --query properties.configuration.ingress.fqdn -o tsv` and re-deploy with that value set. |
->>>>>>> 0edf3de (csrf: document and plumb CRONFOUNDRY_PUBLIC_BASE_URL through deploy)
 
-## 3. Deploy
+## Custom domain / VNet
 
-```bash
-# Using azd (recommended):
-azd up
+Out of the box the Container App uses the
+`<env>.<random>.azurecontainerapps.io` FQDN. To put it behind a custom
+domain, follow the
+[Container Apps custom domain docs](https://learn.microsoft.com/azure/container-apps/custom-domains-certificates)
+after the bootstrap completes. The Bicep does not yet wire VNet
+integration; pass real `subnetId`/`privateDnsZoneId` to
+`modules/postgres.bicep` if you need it.
 
-# Or directly with Azure CLI (--name main ensures you can reference outputs later):
-az deployment sub create \
-  --name main \
-  --location eastus \
-  --template-file deploy/main.bicep \
-  --parameters deploy/params.json
-```
-
-## 4. Post-deploy: store the GitHub App PEM
+## Upgrading the image
 
 ```bash
-KV_NAME=$(az deployment sub show -n main \
-  --query "properties.outputs.kvUrl.value" -o tsv \
-  | sed 's|https://||;s|.vault.azure.net/||')
-
-az keyvault secret set \
-  --vault-name "$KV_NAME" \
-  --name github-app-pem \
-  --file /path/to/github-app.pem
-```
-
-## 5. Initialize the database
-
-CronFoundry auto-runs migrations on startup. Seed the first organization.
-
-> **Note:** Replace `cf-serve-prod` and `rg-cronfoundry-prod` with the actual names derived from
-> your `prefix` and `env` params (defaults: prefix=`cf`, env=`prod`).
-
-```bash
-az containerapp exec \
-  --name cf-serve-prod \
-  --resource-group rg-cronfoundry-prod \
-  --command "/cronfoundry admin init --org-name myorg"
-```
-
-## 6. Connect a repo
-
-```bash
-az containerapp exec \
-  --name cf-serve-prod \
-  --resource-group rg-cronfoundry-prod \
-  --command "/cronfoundry admin connect-repo --install-id <github_install_id> --owner myorg --repo myrepo"
-```
-
-## Upgrading
-
-```bash
-az containerapp update \
-  --name cf-serve-prod \
-  --resource-group rg-cronfoundry-prod \
-  --image ghcr.io/gambtho/cronfoundry:v0.X.Y
-
-az containerapp job update \
-  --name cf-runner-prod \
-  --resource-group rg-cronfoundry-prod \
-  --image ghcr.io/gambtho/cronfoundry:v0.X.Y
+az containerapp update --resource-group rg-cronfoundry-<env> --name cf-serve-<env> \
+  --image ghcr.io/gambtho/cronfoundry:0.X.Y
+az containerapp job update --resource-group rg-cronfoundry-<env> --name cf-runner-<env> \
+  --image ghcr.io/gambtho/cronfoundry:0.X.Y
 ```
 
 ## Teardown
 
-> **WARNING:** `azd down` deletes the entire resource group including the Postgres database. Back up first.
->
-> **Key Vault note:** If `enablePurgeProtection` was set to `true` in params, the soft-deleted vault
-> cannot be purged for `softDeleteRetentionDays` (default 7). Re-deploying with the same `prefix`/`env`
-> will fail with a vault name conflict until the retention window expires.
-
 ```bash
-azd down
+az group delete --name rg-cronfoundry-<env> --yes --no-wait
 ```
 
-## Enabling the Web UI
+Note: Key Vault and Postgres soft-delete pin the resource names for 7 days.
+Re-deploys with the same `env` need to wait the retention window or use a
+different suffix.
 
-Once the React UI is deployed, open ingress to the public:
+## Troubleshooting
 
-```bash
-az deployment sub create \
-  --location eastus \
-  --template-file deploy/main.bicep \
-  --parameters deploy/params.json \
-  --parameters ingressExternal=true
-```
+- **`az deployment sub create` complains about `ingressExternal`** — the
+  default `params.example.json` ships `true`; if you flipped it, the GitHub
+  webhook can't reach your API. Set `true` and redeploy.
+- **`docker manifest inspect ghcr.io/gambtho/cronfoundry:v0.7.0` returns
+  `manifest unknown`** — `docker/metadata-action` strips the `v` prefix.
+  Use `0.7.0`, `0.7`, or `latest`.
+- **`LocationIsOfferRestricted`** — your subscription can't provision
+  Postgres Flexible Server in this region. Try `swedencentral`.
+- **GHCR pull fails with `denied`** — the package may be private. Visit
+  `https://github.com/users/<owner>/packages/container/cronfoundry/settings`
+  → Danger Zone → *Change visibility* → Public.
+- **OAuth Client ID starts with `Ov23li`, not `Iv23li`** — you registered
+  an OAuth App, not a GitHub App. Start over at
+  `https://github.com/settings/apps/new`.
+- **Container App stuck on the previous revision after `admin init`** —
+  trigger a restart with `--set-env-vars RESTART_TRIGGER=$(date +%s)`.
+- **Rate limiter treats every request as the same IP** — set
+  `trustProxy: true` so the limiter reads the leftmost `X-Forwarded-For`.
+- **CSRF requests rejected with `bad origin`** — set `publicBaseUrl` to
+  the externally-reachable URL (scheme+host) and redeploy.
+
+## Maintainers: end-to-end smoke test
+
+Periodic full-deploy testing is documented in `internal/bootstrap/azure/`
+(unit-tested under `go test ./...`; an integration test gated on
+`CRONFOUNDRY_E2E=1` exercises a real subscription). Historical
+play-by-plays are in `.smoke-history/`.
