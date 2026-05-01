@@ -21,7 +21,7 @@ source "${SCRIPT_DIR}/lib/state.sh"
 source "${SCRIPT_DIR}/lib/steps.sh"
 state_init
 state_load
-save() { state_save "$1" "$2"; }   # legacy alias used elsewhere in script
+save() { state_save "$1" "$2"; }   # shorthand for state_save
 
 GUIDE_URL="https://gambtho.github.io/cronfoundry/guides/quickstart-copilot.html"
 
@@ -40,6 +40,7 @@ check_cmd az      "Install: https://learn.microsoft.com/cli/azure/install-azure-
 check_cmd git     "Install: https://git-scm.com/downloads"
 check_cmd python3 "Install: https://www.python.org/downloads/"
 check_cmd openssl "Usually pre-installed. Install via your OS package manager."
+check_cmd curl    "Install via your OS package manager."
 check_cmd go      "Install: https://golang.org/dl/ (need >= 1.21)"
 check_cmd gh "Install: https://cli.github.com/"
 check_cmd jq "Install: https://stedolan.github.io/jq/download/"
@@ -153,7 +154,12 @@ if [[ "$STATE_FILE" != "$PER_ENV_STATE" ]]; then
   STATE_FILE="$PER_ENV_STATE"
   export STATE_FILE
   state_init
+  state_load
 fi
+# Compute resource names once so later steps reference instead of redefining.
+KV_NAME="cf-kv-${CF_ENV}"
+CA_NAME="cf-serve-${CF_ENV}"
+RG="rg-cronfoundry-${CF_ENV}"
 warn "Key Vault soft-delete retains the name 'cf-kv-${CF_ENV}' for 7 days after teardown."
 warn "Re-runs after teardown need a new suffix (e.g. copilot2)."
 ok "Env: $CF_ENV"
@@ -196,11 +202,15 @@ ok "Postgres password generated (saved to state file)"
 # ── Step 12: build params file ────────────────────────────────────────────────
 header "[step 12/25] Build params file"
 PARAMS_FILE="deploy/params.quickstart-${CF_ENV}.json"
-ADMIN_LOGIN=$(git config user.name 2>/dev/null) || {
-  warn "git config user.name is not set; using 'admin' as adminLogins value."
+ADMIN_LOGIN=$(gh api /user --jq .login 2>/dev/null) || ADMIN_LOGIN=""
+if [[ -z "$ADMIN_LOGIN" ]]; then
+  ADMIN_LOGIN=$(git config user.name 2>/dev/null) || ADMIN_LOGIN=""
+fi
+if [[ -z "$ADMIN_LOGIN" ]]; then
+  warn "Could not infer GitHub login from gh or git config; using 'admin' as adminLogins value."
   warn "You may want to set it: git config --global user.name 'Your GitHub login'"
   ADMIN_LOGIN="admin"
-}
+fi
 PARAMS_TMP="${PARAMS_FILE}.tmp.$$"
 # GitHub App fields are intentionally empty here: Bicep deploys before the
 # GitHub App exists. Task 6 of the manifest flow pushes real values via
@@ -276,36 +286,41 @@ if [[ "$DRY_RUN" != "true" ]]; then
       || die "Binary build failed. Ensure go >= 1.21 is installed.\nSee §14 of $GUIDE_URL"
   fi
 
-  CRONFOUNDRY_DATABASE_URL="$CF_DB_URL" \
-  CRONFOUNDRY_MASTER_KEY="$CF_MASTER_KEY" \
-  ./cronfoundry admin init
+  if [[ "${CF_DB_INITIALIZED:-0}" == "1" ]]; then
+    ok "Database already initialized (CF_DB_INITIALIZED=1); skipping admin init + restart"
+  else
+    CRONFOUNDRY_DATABASE_URL="$CF_DB_URL" \
+    CRONFOUNDRY_MASTER_KEY="$CF_MASTER_KEY" \
+    ./cronfoundry admin init
 
-  RESTART_TS=$(date +%s)
-  az containerapp update \
-    --resource-group "rg-cronfoundry-${CF_ENV}" \
-    --name "cf-serve-${CF_ENV}" \
-    --set-env-vars "RESTART_TRIGGER=${RESTART_TS}" \
-    || die "Failed to trigger Container App restart.\nSee §14 of $GUIDE_URL"
-
-  info "Waiting for Container App to become healthy..."
-  HEALTH="unknown"
-  # shellcheck disable=SC2034
-  for i in $(seq 1 12); do
-    HEALTH=$(az containerapp revision list \
+    RESTART_TS=$(date +%s)
+    az containerapp update \
       --resource-group "rg-cronfoundry-${CF_ENV}" \
       --name "cf-serve-${CF_ENV}" \
-      --query '[?properties.trafficWeight>`0`].properties.healthState' \
-      -o tsv 2>/dev/null | head -1 || echo "unknown")
-    [[ "$HEALTH" == "Healthy" ]] && break
-    sleep 10
-  done
-  if [[ "$HEALTH" != "Healthy" ]]; then
-    warn "Container App did not become Healthy after 120 s (last state: $HEALTH)."
-    warn "Note: until GitHub App creds are pushed (next steps) the serve binary will fail startup — this is expected."
-    warn "Check: az containerapp logs show --resource-group rg-cronfoundry-${CF_ENV} --name cf-serve-${CF_ENV} --follow"
-    warn "Continuing. See §14 of $GUIDE_URL"
-  else
-    ok "Container App health: $HEALTH"
+      --set-env-vars "RESTART_TRIGGER=${RESTART_TS}" \
+      || die "Failed to trigger Container App restart.\nSee §14 of $GUIDE_URL"
+
+    info "Waiting for Container App to become healthy..."
+    HEALTH="unknown"
+    # shellcheck disable=SC2034
+    for i in $(seq 1 12); do
+      HEALTH=$(az containerapp revision list \
+        --resource-group "rg-cronfoundry-${CF_ENV}" \
+        --name "cf-serve-${CF_ENV}" \
+        --query '[?properties.trafficWeight>`0`].properties.healthState' \
+        -o tsv 2>/dev/null | head -1 || echo "unknown")
+      [[ "$HEALTH" == "Healthy" ]] && break
+      sleep 10
+    done
+    if [[ "$HEALTH" != "Healthy" ]]; then
+      warn "Container App did not become Healthy after 120 s (last state: $HEALTH)."
+      warn "Note: until GitHub App creds are pushed (next steps) the serve binary will fail startup — this is expected."
+      warn "Check: az containerapp logs show --resource-group rg-cronfoundry-${CF_ENV} --name cf-serve-${CF_ENV} --follow"
+      warn "Continuing. See §14 of $GUIDE_URL"
+    else
+      ok "Container App health: $HEALTH"
+    fi
+    save CF_DB_INITIALIZED 1
   fi
 fi
 
@@ -336,7 +351,9 @@ fi
 
 # ── Step 16: GitHub App ───────────────────────────────────────────────────────
 header "[step 16/25] Register GitHub App (manifest flow)"
-if [[ -z "${CF_GITHUB_APP_ID:-}" ]]; then
+if [[ "$DRY_RUN" == "true" ]]; then
+  warn "--dry-run: skipping GitHub App registration"
+elif [[ -z "${CF_GITHUB_APP_ID:-}" ]]; then
   ./cronfoundry setup github-app \
     --state-file "$STATE_FILE" \
     --pem-dir "${HOME}/.cronfoundry" \
@@ -345,47 +362,56 @@ if [[ -z "${CF_GITHUB_APP_ID:-}" ]]; then
     --webhook-url "https://${CF_FQDN}/webhook/github" \
     || die "GitHub App manifest flow failed. Re-run with --manual to use the legacy paste prompts."
   state_load   # pick up CF_GITHUB_APP_ID, CF_GITHUB_CLIENT_ID, etc. that the command wrote
+  ok "GitHub App registered: App ID ${CF_GITHUB_APP_ID}"
 fi
-ok "GitHub App registered: App ID ${CF_GITHUB_APP_ID}"
 
 # ── Step 17: Push GitHub App credentials to deployed container ───────────────
 header "[step 17/25] Push GitHub App credentials to deployed container"
-KV_NAME="cf-kv-${CF_ENV}"
-CA_NAME="cf-serve-${CF_ENV}"
-RG="rg-cronfoundry-${CF_ENV}"
+# KV_NAME, CA_NAME, RG were computed once just after CF_ENV was set.
+if [[ "$DRY_RUN" == "true" ]]; then
+  warn "--dry-run: skipping Container App credential push"
+elif [[ "${CF_CREDS_PUSHED:-0}" == "1" ]]; then
+  ok "Container App credentials already pushed (CF_CREDS_PUSHED=1); skipping"
+else
+  [[ -f "${CF_GITHUB_PEM_PATH:-}" ]] \
+    || die "CF_GITHUB_PEM_PATH not set or file missing; was the manifest flow successful?"
 
-# 1. PEM into Key Vault (already wired as secretRef in Bicep)
-az keyvault secret set --vault-name "$KV_NAME" --name github-app-pem \
-  --file "${CF_GITHUB_PEM_PATH}" --output none \
-  || die "Failed to upload PEM to Key Vault $KV_NAME"
+  # 1. PEM into Key Vault (already wired as secretRef in Bicep)
+  az keyvault secret set --vault-name "$KV_NAME" --name github-app-pem \
+    --file "${CF_GITHUB_PEM_PATH}" --output none \
+    || die "Failed to upload PEM to Key Vault $KV_NAME"
 
-# 2. OAuth client secret is a Container App secret (Bicep set it to empty at deploy)
-az containerapp secret set --resource-group "$RG" --name "$CA_NAME" \
-  --secrets "oauth-client-secret=${CF_GITHUB_CLIENT_SECRET}" --output none \
-  || die "Failed to update Container App OAuth secret"
+  # 2. OAuth client secret is a Container App secret (Bicep set it to empty at deploy)
+  az containerapp secret set --resource-group "$RG" --name "$CA_NAME" \
+    --secrets "oauth-client-secret=${CF_GITHUB_CLIENT_SECRET}" --output none \
+    || die "Failed to update Container App OAuth secret"
 
-# 3. Plain env vars (App ID, OAuth client ID, webhook secret)
-az containerapp update --resource-group "$RG" --name "$CA_NAME" \
-  --set-env-vars \
-    "CRONFOUNDRY_GITHUB_APP_ID=${CF_GITHUB_APP_ID}" \
-    "CRONFOUNDRY_GITHUB_OAUTH_CLIENT_ID=${CF_GITHUB_CLIENT_ID}" \
-    "CRONFOUNDRY_GITHUB_WEBHOOK_SECRET=${CF_GITHUB_WEBHOOK_SECRET}" \
-  --output none \
-  || die "Failed to update Container App env vars"
-ok "Container App credentials applied; new revision rolling out"
+  # 3. Plain env vars (App ID, OAuth client ID, webhook secret)
+  az containerapp update --resource-group "$RG" --name "$CA_NAME" \
+    --set-env-vars \
+      "CRONFOUNDRY_GITHUB_APP_ID=${CF_GITHUB_APP_ID}" \
+      "CRONFOUNDRY_GITHUB_OAUTH_CLIENT_ID=${CF_GITHUB_CLIENT_ID}" \
+      "CRONFOUNDRY_GITHUB_WEBHOOK_SECRET=${CF_GITHUB_WEBHOOK_SECRET}" \
+    --output none \
+    || die "Failed to update Container App env vars"
+  ok "Container App credentials applied; new revision rolling out"
 
-# 4. Wait for /healthz
-HEALTHY=0
-for i in {1..60}; do
-  STATUS=$(curl -fsS -o /dev/null -w "%{http_code}" "https://${CF_FQDN}/healthz" 2>/dev/null || echo "000")
-  if [[ "$STATUS" == "200" ]]; then ok "Serve healthy at https://${CF_FQDN}"; HEALTHY=1; break; fi
-  sleep 5
-done
-[[ "$HEALTHY" == "1" ]] || warn "Serve did not become healthy in 5 minutes; check 'az containerapp logs show --name $CA_NAME --resource-group $RG'"
+  # 4. Wait for /healthz
+  HEALTHY=0
+  for i in {1..60}; do
+    STATUS=$(curl -fsS -o /dev/null -w "%{http_code}" "https://${CF_FQDN}/healthz" 2>/dev/null || echo "000")
+    if [[ "$STATUS" == "200" ]]; then ok "Serve healthy at https://${CF_FQDN}"; HEALTHY=1; break; fi
+    sleep 5
+  done
+  [[ "$HEALTHY" == "1" ]] || warn "Serve did not become healthy in 5 minutes; check 'az containerapp logs show --name $CA_NAME --resource-group $RG'"
+  save CF_CREDS_PUSHED 1
+fi
 
 # ── Step 18: Discover GitHub App installation ───────────────────────────────
 header "[step 18/25] Discover GitHub App installation"
-if [[ -z "${CF_INSTALLATION_ID:-}" ]]; then
+if [[ "$DRY_RUN" == "true" ]]; then
+  warn "--dry-run: skipping GitHub App installation discovery"
+elif [[ -z "${CF_INSTALLATION_ID:-}" ]]; then
   JWT=$(./cronfoundry setup mint-jwt --app-id "$CF_GITHUB_APP_ID" --pem "$CF_GITHUB_PEM_PATH") \
     || die "Failed to mint App JWT"
 
@@ -423,11 +449,10 @@ if [[ -z "${CF_INSTALLATION_ID:-}" ]]; then
   fi
   save CF_INSTALLATION_ID "$CF_INSTALLATION_ID"
 fi
-ok "Installation ID: ${CF_INSTALLATION_ID}"
+ok "Installation ID: ${CF_INSTALLATION_ID:-<dry-run>}"
 
 # ── Step 19: Grant operator KV access ─────────────────────────────────────────
 header "[step 19/25] Grant operator Key Vault access"
-KV_NAME="${KV_NAME:-cf-kv-${CF_ENV}}"
 if [[ "$DRY_RUN" != "true" ]]; then
   KV_ID=$(az keyvault show --name "$KV_NAME" --query id -o tsv) \
     || die "Could not resolve Key Vault $KV_NAME"
@@ -493,6 +518,7 @@ if [[ "$DRY_RUN" != "true" ]]; then
   else
     TMP_YAML=$(mktemp)
     TMP_SKILL=$(mktemp)
+    trap 'rm -f "$TMP_YAML" "$TMP_SKILL"' EXIT
     sed "s|__REPORTS_REPO__|${CF_REPORTS_REPO}|g" "$TPL_DIR/cronfoundry.yaml.tmpl" > "$TMP_YAML"
     cp "$TPL_DIR/smoke-skill.md.tmpl" "$TMP_SKILL"
 
@@ -504,8 +530,9 @@ if [[ "$DRY_RUN" != "true" ]]; then
       -f ref="refs/heads/cronfoundry-quickstart" \
       -f sha="${BASE_SHA}" &>/dev/null || true
 
-    YAML_B64=$(base64 -w0 < "$TMP_YAML")
-    SKILL_B64=$(base64 -w0 < "$TMP_SKILL")
+    # base64 -w0 is GNU-only; pipe through tr for macOS/BSD portability.
+    YAML_B64=$(base64 < "$TMP_YAML" | tr -d '\n')
+    SKILL_B64=$(base64 < "$TMP_SKILL" | tr -d '\n')
 
     gh api -X PUT "repos/${CF_SKILL_REPO}/contents/cronfoundry.yaml" \
       -f message="Add starter cronfoundry.yaml" \
@@ -524,7 +551,7 @@ if [[ "$DRY_RUN" != "true" ]]; then
       --base "${DEFAULT_BRANCH}" \
       --head "cronfoundry-quickstart" \
       --title "CronFoundry quickstart: starter cronfoundry.yaml + smoke skill" \
-      --body "Auto-generated by the CronFoundry quickstart installer. Merge to enable the every-5-minute smoke run.") \
+      --body "Auto-generated by the CronFoundry quickstart installer. Merge to enable the daily smoke run.") \
       || die "gh pr create failed"
 
     rm -f "$TMP_YAML" "$TMP_SKILL"
