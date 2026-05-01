@@ -10,6 +10,11 @@ source "${SCRIPT_DIR}/lib/state.sh"
 ENV_SUFFIX="${1:-}"
 [[ -z "$ENV_SUFFIX" ]] && { echo "usage: $0 <env-suffix>"; exit 1; }
 
+if [[ ! "$ENV_SUFFIX" =~ ^[a-z0-9-]{1,10}$ ]]; then
+  echo "error: env-suffix must match ^[a-z0-9-]{1,10}$ (got: '$ENV_SUFFIX')" >&2
+  exit 1
+fi
+
 # state.sh helpers read STATE_FILE from the environment.
 STATE_FILE="$(state_path_for "$ENV_SUFFIX")"
 export STATE_FILE

@@ -16,8 +16,9 @@ teardown() {
 }
 
 @test "step_run runs body when verifier fails, then re-verifies" {
-  step_run "create marker" "test -f $WORK/marker" "touch $WORK/marker"
+  step_run "create marker" 'echo x >> "$WORK/calls"; test -f "$WORK/marker"' 'touch "$WORK/marker"'
   [ -f "$WORK/marker" ]
+  [ "$(wc -l < "$WORK/calls")" -eq 2 ]
 }
 
 @test "step_run aborts when verifier still fails after body" {

@@ -38,8 +38,9 @@ test_skips_body_when_verifier_passes() {
 }
 
 test_runs_body_then_reverifies() {
-  step_run "create marker" "test -f $WORK/marker" "touch $WORK/marker" >/dev/null
+  step_run "create marker" 'echo x >> "$WORK/calls"; test -f "$WORK/marker"' 'touch "$WORK/marker"' >/dev/null
   [[ -f "$WORK/marker" ]]
+  [[ "$(wc -l < "$WORK/calls")" -eq 2 ]]
 }
 
 test_aborts_when_verifier_still_fails() {
