@@ -40,9 +40,13 @@ resource app 'Microsoft.App/containerApps@2024-03-01' = {
         targetPort: 8080
         transport: 'http'
       }
+      // ACA rejects empty-string secret values at validation time. When the
+      // GitHub App is not yet registered (Phase 1 deploy-first flow), we seed
+      // 'oauth-client-secret' with a placeholder; the install script overwrites
+      // it via `az containerapp secret set` after the manifest flow.
       secrets: [
         { name: 'master-key', value: masterKey }
-        { name: 'oauth-client-secret', value: oauthClientSecret }
+        { name: 'oauth-client-secret', value: empty(oauthClientSecret) ? 'placeholder-set-after-manifest-flow' : oauthClientSecret }
         {
           name: 'github-app-pem'
           keyVaultUrl: '${kvUrl}secrets/${githubAppPemSecretName}'

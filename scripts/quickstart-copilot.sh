@@ -107,7 +107,28 @@ ok "Repo root: $REPO_ROOT"
 # ── Step 5: skill repo ────────────────────────────────────────────────────────
 header "[step 5/25] Skill repo"
 if [[ -z "${CF_SKILL_REPO:-}" ]]; then
-  read -rp "Skill repo (owner/repo, e.g. acme/cronfoundry-skills): " CF_SKILL_REPO
+  echo "  CronFoundry pulls scheduled skill definitions (cronfoundry.yaml + skills/) from"
+  echo "  a GitHub repo. The installer will open a PR there with a starter smoke skill."
+  while true; do
+    read -rp "Skill repo (owner/repo) or 'create <owner>/<name>' for a new private repo: " CF_SKILL_REPO_INPUT
+    if [[ "$CF_SKILL_REPO_INPUT" =~ ^create[[:space:]]+([^/[:space:]]+/[^/[:space:]]+)$ ]]; then
+      NEW_REPO="${BASH_REMATCH[1]}"
+      info "Creating private repo $NEW_REPO..."
+      gh repo create "$NEW_REPO" --private --add-readme \
+        || die "gh repo create failed for $NEW_REPO; verify you have permission and the name is available."
+      CF_SKILL_REPO="$NEW_REPO"
+      break
+    elif [[ "$CF_SKILL_REPO_INPUT" =~ ^[^/[:space:]]+/[^/[:space:]]+$ ]]; then
+      if gh api "repos/${CF_SKILL_REPO_INPUT}" --silent 2>/dev/null; then
+        CF_SKILL_REPO="$CF_SKILL_REPO_INPUT"
+        break
+      else
+        warn "Repo $CF_SKILL_REPO_INPUT not visible to gh — check the name and your auth, or use 'create $CF_SKILL_REPO_INPUT' to make it."
+      fi
+    else
+      warn "Expected 'owner/repo' or 'create owner/repo'; got '$CF_SKILL_REPO_INPUT'."
+    fi
+  done
   save CF_SKILL_REPO "$CF_SKILL_REPO"
 fi
 ok "Skill repo: $CF_SKILL_REPO"
@@ -115,7 +136,17 @@ ok "Skill repo: $CF_SKILL_REPO"
 # ── Step 6: reports repo ──────────────────────────────────────────────────────
 header "[step 6/25] Reports repo"
 if [[ -z "${CF_REPORTS_REPO:-}" ]]; then
-  read -rp "Reports repo (owner/repo, e.g. acme/cronfoundry-reports): " CF_REPORTS_REPO
+  echo "  Reports repo receives the GitHub issues filed by the smoke skill."
+  echo "  Default is the same as the skill repo (recommended for quickstart)."
+  while true; do
+    read -rp "Reports repo (owner/repo) [default: ${CF_SKILL_REPO}]: " CF_REPORTS_REPO_INPUT
+    CF_REPORTS_REPO_INPUT="${CF_REPORTS_REPO_INPUT:-$CF_SKILL_REPO}"
+    if [[ "$CF_REPORTS_REPO_INPUT" =~ ^[^/[:space:]]+/[^/[:space:]]+$ ]]; then
+      CF_REPORTS_REPO="$CF_REPORTS_REPO_INPUT"
+      break
+    fi
+    warn "Expected 'owner/repo'; got '$CF_REPORTS_REPO_INPUT'."
+  done
   save CF_REPORTS_REPO "$CF_REPORTS_REPO"
 fi
 ok "Reports repo: $CF_REPORTS_REPO"
@@ -171,8 +202,8 @@ if [[ -z "${CF_REGION:-}" ]]; then
   CF_REGION="${CF_REGION:-swedencentral}"
   save CF_REGION "$CF_REGION"
 fi
-info "Note: Postgres Flexible Server offer restrictions vary by subscription."
-info "swedencentral is known-good for Microsoft-internal subs. See §10 of $GUIDE_URL"
+info "Note: Postgres Flexible Server SKU/quota varies by region; swedencentral and eastus2 are widely available."
+info "See §10 of $GUIDE_URL"
 ok "Region: $CF_REGION"
 
 # ── Step 10: image tag ────────────────────────────────────────────────────────
