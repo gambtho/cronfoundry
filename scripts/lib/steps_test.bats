@@ -28,5 +28,6 @@ teardown() {
 
 @test "step_run prints expected/got on failure" {
   run bash -c "source '${BATS_TEST_DIRNAME}/steps.sh'; step_run 'broken' 'false' 'echo doing stuff; false' 2>&1"
+  [ "$status" -ne 0 ]
   [[ "$output" == *"step: broken"* ]]
 }

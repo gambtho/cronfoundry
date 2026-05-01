@@ -51,7 +51,7 @@ test_aborts_when_verifier_still_fails() {
 test_prints_step_name_on_failure() {
   local output status
   output=$(step_run "broken" "false" "echo doing stuff; false" 2>&1) && status=0 || status=$?
-  [[ "$output" == *"step: broken"* ]]
+  [[ "$status" -ne 0 ]] && [[ "$output" == *"step: broken"* ]]
 }
 
 run_test "step_run skips body when verifier passes" test_skips_body_when_verifier_passes
