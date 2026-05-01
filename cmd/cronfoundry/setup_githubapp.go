@@ -87,7 +87,7 @@ func newSetupGithubAppCmd() *cobra.Command {
 					"  automatically, copy the URL above. Re-run the install script\n"+
 					"  to resume from this step if the timeout fires.\n"+
 					"  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n",
-				srv.URL(), timeout)
+				srv.URL(), srv.Timeout())
 
 			ctx, cancel := context.WithCancel(cmd.Context())
 			defer cancel()

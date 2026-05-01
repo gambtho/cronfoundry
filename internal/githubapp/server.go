@@ -83,8 +83,9 @@ func NewServer(opts Options) (*Server, error) {
 	return s, nil
 }
 
-func (s *Server) URL() string   { return "http://" + s.listener.Addr().String() }
-func (s *Server) State() string { return s.state }
+func (s *Server) URL() string             { return "http://" + s.listener.Addr().String() }
+func (s *Server) State() string           { return s.state }
+func (s *Server) Timeout() time.Duration  { return s.opts.Timeout }
 
 func (s *Server) signalDone() { s.doneOnce.Do(func() { close(s.doneCh) }) }
 
