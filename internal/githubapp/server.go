@@ -61,7 +61,7 @@ func NewServer(opts Options) (*Server, error) {
 		return nil, errors.New("githubapp: Options.Converter required")
 	}
 	if opts.Timeout == 0 {
-		opts.Timeout = 10 * time.Minute
+		opts.Timeout = 30 * time.Minute
 	}
 	addr := fmt.Sprintf("127.0.0.1:%d", opts.Port)
 	ln, err := net.Listen("tcp", addr)
@@ -83,8 +83,9 @@ func NewServer(opts Options) (*Server, error) {
 	return s, nil
 }
 
-func (s *Server) URL() string   { return "http://" + s.listener.Addr().String() }
-func (s *Server) State() string { return s.state }
+func (s *Server) URL() string             { return "http://" + s.listener.Addr().String() }
+func (s *Server) State() string           { return s.state }
+func (s *Server) Timeout() time.Duration  { return s.opts.Timeout }
 
 func (s *Server) signalDone() { s.doneOnce.Do(func() { close(s.doneCh) }) }
 
