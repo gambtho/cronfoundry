@@ -5,7 +5,7 @@ param cfServePrincipalId string
 param enablePurgeProtection bool = false
 param softDeleteRetentionDays int = 7
 @secure()
-@description('GitHub App private key (PEM). Seeded into the vault as secret "github-app-pem" so the serve Container App can resolve its Key Vault secret reference at creation time. Pass empty string only if you plan to az keyvault secret set before the Container App is deployed.')
+@description('GitHub App private key (PEM). Seeded into the vault as secret "github-app-pem" so the serve Container App can resolve its Key Vault secret reference at creation time. Pass empty string for the deploy-first flow: a placeholder is pre-seeded and the install script overwrites it via "az keyvault secret set" after the manifest flow.')
 param githubAppPem string = ''
 
 // Key Vault Secrets Officer — the serve app creates secrets via the web UI
