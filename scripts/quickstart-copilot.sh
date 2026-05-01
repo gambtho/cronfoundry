@@ -336,8 +336,43 @@ if [[ -z "${CF_GITHUB_APP_ID:-}" ]]; then
 fi
 ok "GitHub App registered: App ID ${CF_GITHUB_APP_ID}"
 
-# ── Step 17: UI checklist ─────────────────────────────────────────────────────
-header "[step 17/19] Complete setup in the web UI"
+# ── Step 17: Push GitHub App credentials to deployed container ───────────────
+header "[step 17/19] Push GitHub App credentials to deployed container"
+KV_NAME="cf-kv-${CF_ENV}"
+CA_NAME="cf-serve-${CF_ENV}"
+RG="rg-cronfoundry-${CF_ENV}"
+
+# 1. PEM into Key Vault (already wired as secretRef in Bicep)
+az keyvault secret set --vault-name "$KV_NAME" --name github-app-pem \
+  --file "${CF_GITHUB_PEM_PATH}" --output none \
+  || die "Failed to upload PEM to Key Vault $KV_NAME"
+
+# 2. OAuth client secret is a Container App secret (Bicep set it to empty at deploy)
+az containerapp secret set --resource-group "$RG" --name "$CA_NAME" \
+  --secrets "oauth-client-secret=${CF_GITHUB_CLIENT_SECRET}" --output none \
+  || die "Failed to update Container App OAuth secret"
+
+# 3. Plain env vars (App ID, OAuth client ID, webhook secret)
+az containerapp update --resource-group "$RG" --name "$CA_NAME" \
+  --set-env-vars \
+    "CRONFOUNDRY_GITHUB_APP_ID=${CF_GITHUB_APP_ID}" \
+    "CRONFOUNDRY_GITHUB_OAUTH_CLIENT_ID=${CF_GITHUB_CLIENT_ID}" \
+    "CRONFOUNDRY_GITHUB_WEBHOOK_SECRET=${CF_GITHUB_WEBHOOK_SECRET}" \
+  --output none \
+  || die "Failed to update Container App env vars"
+ok "Container App credentials applied; new revision rolling out"
+
+# 4. Wait for /healthz
+HEALTHY=0
+for i in {1..60}; do
+  STATUS=$(curl -fsS -o /dev/null -w "%{http_code}" "https://${CF_FQDN}/healthz" 2>/dev/null || echo "000")
+  if [[ "$STATUS" == "200" ]]; then ok "Serve healthy at https://${CF_FQDN}"; HEALTHY=1; break; fi
+  sleep 5
+done
+[[ "$HEALTHY" == "1" ]] || warn "Serve did not become healthy in 5 minutes; check 'az containerapp logs show --name $CA_NAME --resource-group $RG'"
+
+# ── Step 18: UI checklist ─────────────────────────────────────────────────────
+header "[step 18/19] Complete setup in the web UI"
 echo ""
 echo "  Open: https://${CF_FQDN}/"
 echo ""
