@@ -1,0 +1,283 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/spf13/cobra"
+
+	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
+	"github.com/gambtho/cronfoundry/internal/secrets/server"
+)
+
+// copilotClientIDDefault matches the value used by the webapi handler
+// (internal/webapi/copilot_connect.go). Kept local because that constant is
+// unexported.
+const copilotClientIDDefault = "cronfoundry"
+
+// connectCopilotDeps captures the injectable dependencies for the
+// connect-copilot command so tests can stub the GitHub endpoints and the
+// secret-store side effect.
+type connectCopilotDeps struct {
+	DeviceCodeURL string
+	TokenURL      string
+	ClientID      string
+	Scope         string
+	PollInterval  time.Duration
+	HTTPClient    *http.Client
+	StoreTokens   func(ctx context.Context, prefix, accessToken, refreshToken string, expiresIn int) error
+}
+
+func (d *connectCopilotDeps) applyDefaults() {
+	if d.DeviceCodeURL == "" {
+		d.DeviceCodeURL = "https://github.com/login/device/code"
+	}
+	if d.TokenURL == "" {
+		d.TokenURL = "https://github.com/login/oauth/access_token"
+	}
+	if d.ClientID == "" {
+		d.ClientID = copilotClientIDDefault
+	}
+	if d.Scope == "" {
+		d.Scope = "copilot"
+	}
+	// PollInterval is intentionally not defaulted: a zero value means
+	// "poll as fast as ctx allows" (used by tests). Production callers
+	// set an explicit cadence via prodConnectCopilotDeps.
+	if d.HTTPClient == nil {
+		d.HTTPClient = http.DefaultClient
+	}
+	if d.StoreTokens == nil {
+		d.StoreTokens = func(ctx context.Context, prefix, accessToken, refreshToken string, expiresIn int) error {
+			return nil
+		}
+	}
+}
+
+type deviceCodeResp struct {
+	DeviceCode      string `json:"device_code"`
+	UserCode        string `json:"user_code"`
+	VerificationURI string `json:"verification_uri"`
+	ExpiresIn       int    `json:"expires_in"`
+	Interval        int    `json:"interval"`
+}
+
+type tokenResp struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	ExpiresIn    int    `json:"expires_in"`
+	Error        string `json:"error"`
+}
+
+func newAdminConnectCopilotCmd(deps connectCopilotDeps) *cobra.Command {
+	deps.applyDefaults()
+	var prefix string
+	var timeout time.Duration
+
+	cmd := &cobra.Command{
+		Use:   "connect-copilot",
+		Short: "Run the GitHub device-flow OAuth for Copilot Enterprise and store tokens",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAdminConnectCopilot(cmd.Context(), deps, prefix, timeout, cmd.OutOrStdout())
+		},
+	}
+	cmd.Flags().StringVar(&prefix, "prefix", "copilot", "secret-name prefix to store tokens under")
+	cmd.Flags().DurationVar(&timeout, "timeout", 15*time.Minute, "overall timeout for the device flow")
+	return cmd
+}
+
+func runAdminConnectCopilot(ctx context.Context, deps connectCopilotDeps, prefix string, timeout time.Duration, out io.Writer) error {
+	if prefix == "" {
+		return fmt.Errorf("--prefix must not be empty")
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	dc, err := requestDeviceCode(ctx, deps)
+	if err != nil {
+		return fmt.Errorf("request device code: %w", err)
+	}
+
+	if _, err := fmt.Fprintf(out, "Visit %s and enter code %s\n", dc.VerificationURI, dc.UserCode); err != nil {
+		return fmt.Errorf("write output: %w", err)
+	}
+
+	tok, err := pollForToken(ctx, deps, dc)
+	if err != nil {
+		return fmt.Errorf("poll for token: %w", err)
+	}
+
+	if err := deps.StoreTokens(ctx, prefix, tok.AccessToken, tok.RefreshToken, tok.ExpiresIn); err != nil {
+		return fmt.Errorf("store tokens: %w", err)
+	}
+	if _, err := fmt.Fprintf(out, "Stored tokens with prefix %q\n", prefix); err != nil {
+		return fmt.Errorf("write output: %w", err)
+	}
+	return nil
+}
+
+func requestDeviceCode(ctx context.Context, deps connectCopilotDeps) (*deviceCodeResp, error) {
+	body := url.Values{
+		"client_id": {deps.ClientID},
+		"scope":     {deps.Scope},
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, deps.DeviceCodeURL,
+		strings.NewReader(body.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := deps.HTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode/100 != 2 {
+		return nil, fmt.Errorf("device-code endpoint returned %d", resp.StatusCode)
+	}
+	var dc deviceCodeResp
+	if err := json.NewDecoder(resp.Body).Decode(&dc); err != nil {
+		return nil, fmt.Errorf("decode device-code response: %w", err)
+	}
+	if dc.DeviceCode == "" {
+		return nil, errors.New("device-code response missing device_code")
+	}
+	return &dc, nil
+}
+
+func pollForToken(ctx context.Context, deps connectCopilotDeps, dc *deviceCodeResp) (*tokenResp, error) {
+	interval := deps.PollInterval
+	if dc.Interval > 0 && deps.PollInterval > 0 {
+		interval = time.Duration(dc.Interval) * time.Second
+	}
+	for {
+		params := url.Values{
+			"client_id":   {deps.ClientID},
+			"device_code": {dc.DeviceCode},
+			"grant_type":  {"urn:ietf:params:oauth:grant-type:device_code"},
+		}
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, deps.TokenURL,
+			strings.NewReader(params.Encode()))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+		resp, err := deps.HTTPClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		var tr tokenResp
+		decErr := json.NewDecoder(resp.Body).Decode(&tr)
+		_ = resp.Body.Close()
+		if decErr != nil {
+			return nil, fmt.Errorf("decode token response: %w", decErr)
+		}
+
+		switch tr.Error {
+		case "":
+			if tr.AccessToken == "" {
+				return nil, errors.New("token response missing access_token")
+			}
+			return &tr, nil
+		case "authorization_pending", "slow_down":
+			// keep polling
+		default:
+			return nil, fmt.Errorf("token endpoint error: %s", tr.Error)
+		}
+
+		if interval <= 0 {
+			// Tight loop for tests; still respect ctx.
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			default:
+			}
+			continue
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(interval):
+		}
+	}
+}
+
+// prodConnectCopilotDeps wires the production StoreTokens closure that opens a
+// pgx pool, locates the seeded organization, and writes the three secrets
+// expected by the webapi token-refresh path.
+func prodConnectCopilotDeps() connectCopilotDeps {
+	return connectCopilotDeps{
+		PollInterval: 5 * time.Second,
+		StoreTokens:  storeCopilotTokensProd,
+	}
+}
+
+func storeCopilotTokensProd(ctx context.Context, prefix, accessToken, refreshToken string, expiresIn int) error {
+	dsn := os.Getenv(envDatabaseURL)
+	if dsn == "" {
+		return fmt.Errorf("%s is required", envDatabaseURL)
+	}
+
+	var master []byte
+	if os.Getenv("AZURE_KEYVAULT_URL") == "" {
+		encodedMaster := os.Getenv(envMasterKey)
+		if encodedMaster == "" {
+			return fmt.Errorf("%s is required; run `cronfoundry admin init` first", envMasterKey)
+		}
+		var err error
+		master, err = server.ParseMasterKey(encodedMaster)
+		if err != nil {
+			return fmt.Errorf("parse %s: %w", envMasterKey, err)
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		return fmt.Errorf("open pool: %w", err)
+	}
+	defer pool.Close()
+
+	q := dbgen.New(pool)
+	org, err := q.GetFirstOrganization(ctx)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("no organization seeded; run `cronfoundry admin init` first: %w", err)
+		}
+		return fmt.Errorf("load organization: %w", err)
+	}
+
+	store, err := buildSecretStore(pool, org.ID, master)
+	if err != nil {
+		return fmt.Errorf("build secret store: %w", err)
+	}
+
+	expiresAt := time.Now().Add(time.Duration(expiresIn) * time.Second)
+	if err := store.Put(ctx, prefix+"_access_token", accessToken); err != nil {
+		return fmt.Errorf("put access token: %w", err)
+	}
+	if err := store.Put(ctx, prefix+"_refresh_token", refreshToken); err != nil {
+		return fmt.Errorf("put refresh token: %w", err)
+	}
+	if err := store.Put(ctx, prefix+"_expiry", strconv.FormatInt(expiresAt.Unix(), 10)); err != nil {
+		return fmt.Errorf("put expiry: %w", err)
+	}
+	return nil
+}
