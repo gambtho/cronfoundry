@@ -119,10 +119,12 @@ if [[ -z "${CF_SKILL_REPO:-}" ]]; then
       CF_SKILL_REPO="$NEW_REPO"
       break
     elif [[ "$CF_SKILL_REPO_INPUT" =~ ^[^/[:space:]]+/[^/[:space:]]+$ ]]; then
-      CF_SKILL_REPO="$CF_SKILL_REPO_INPUT"
-      gh api "repos/${CF_SKILL_REPO}" --silent 2>/dev/null \
-        || warn "Repo $CF_SKILL_REPO not visible to gh — check the name or your auth before continuing."
-      break
+      if gh api "repos/${CF_SKILL_REPO_INPUT}" --silent 2>/dev/null; then
+        CF_SKILL_REPO="$CF_SKILL_REPO_INPUT"
+        break
+      else
+        warn "Repo $CF_SKILL_REPO_INPUT not visible to gh — check the name and your auth, or use 'create $CF_SKILL_REPO_INPUT' to make it."
+      fi
     else
       warn "Expected 'owner/repo' or 'create owner/repo'; got '$CF_SKILL_REPO_INPUT'."
     fi
@@ -136,8 +138,15 @@ header "[step 6/25] Reports repo"
 if [[ -z "${CF_REPORTS_REPO:-}" ]]; then
   echo "  Reports repo receives the GitHub issues filed by the smoke skill."
   echo "  Default is the same as the skill repo (recommended for quickstart)."
-  read -rp "Reports repo (owner/repo) [default: ${CF_SKILL_REPO}]: " CF_REPORTS_REPO
-  CF_REPORTS_REPO="${CF_REPORTS_REPO:-$CF_SKILL_REPO}"
+  while true; do
+    read -rp "Reports repo (owner/repo) [default: ${CF_SKILL_REPO}]: " CF_REPORTS_REPO_INPUT
+    CF_REPORTS_REPO_INPUT="${CF_REPORTS_REPO_INPUT:-$CF_SKILL_REPO}"
+    if [[ "$CF_REPORTS_REPO_INPUT" =~ ^[^/[:space:]]+/[^/[:space:]]+$ ]]; then
+      CF_REPORTS_REPO="$CF_REPORTS_REPO_INPUT"
+      break
+    fi
+    warn "Expected 'owner/repo'; got '$CF_REPORTS_REPO_INPUT'."
+  done
   save CF_REPORTS_REPO "$CF_REPORTS_REPO"
 fi
 ok "Reports repo: $CF_REPORTS_REPO"
