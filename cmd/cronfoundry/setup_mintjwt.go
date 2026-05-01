@@ -23,7 +23,9 @@ func newSetupMintJWTCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			_, _ = fmt.Fprintln(cmd.OutOrStdout(), jwt)
+			if _, err := fmt.Fprintln(cmd.OutOrStdout(), jwt); err != nil {
+				return fmt.Errorf("write jwt: %w", err)
+			}
 			return nil
 		},
 	}
