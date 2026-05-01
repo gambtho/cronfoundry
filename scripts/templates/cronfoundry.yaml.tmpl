@@ -1,9 +1,10 @@
+# Starter smoke skill — adjust cron, destinations, and writeback before going live.
 version: 1
 skills:
   - path: skills/smoke
     schedules:
-      - name: every-5
-        cron: "*/5 * * * *"
+      - name: daily-smoke
+        cron: "0 9 * * *"
         timezone: UTC
         provider: copilot-enterprise
         copilot_prefix: copilot

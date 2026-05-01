@@ -16,6 +16,10 @@ export STATE_FILE
 # state_load tolerates a missing file, so no init required.
 state_load
 
+# Track whether teardown completed without errors. If anything we care about
+# fails, leave the state file in place so the user can retry.
+TEARDOWN_OK=1
+
 # 1. Delete resource group (no-wait)
 echo "Deleting resource group rg-cronfoundry-${ENV_SUFFIX}..."
 az group delete --name "rg-cronfoundry-${ENV_SUFFIX}" --yes --no-wait || true
@@ -28,20 +32,30 @@ if [[ -n "${CF_GITHUB_APP_ID:-}" && -n "${CF_INSTALLATION_ID:-}" && -n "${CF_GIT
     CF_BIN="$(cd "${SCRIPT_DIR}/.." && pwd)/cronfoundry"
   fi
   if [[ -x "$CF_BIN" ]]; then
-    JWT=$("$CF_BIN" setup mint-jwt --app-id "$CF_GITHUB_APP_ID" --pem "$CF_GITHUB_PEM_PATH") || true
-    if [[ -n "${JWT:-}" ]]; then
-      curl -fsS -X DELETE \
-        -H "Accept: application/vnd.github+json" \
-        -H "Authorization: Bearer ${JWT}" \
-        "https://api.github.com/app/installations/${CF_INSTALLATION_ID}" || true
+    if JWT=$("$CF_BIN" setup mint-jwt --app-id "$CF_GITHUB_APP_ID" --pem "$CF_GITHUB_PEM_PATH"); then
+      if ! curl -fsS -X DELETE \
+          -H "Accept: application/vnd.github+json" \
+          -H "Authorization: Bearer ${JWT}" \
+          "https://api.github.com/app/installations/${CF_INSTALLATION_ID}"; then
+        echo "warn: failed to revoke GitHub App installation; preserving state for retry." >&2
+        TEARDOWN_OK=0
+      fi
+    else
+      echo "warn: failed to mint App JWT; preserving state for retry." >&2
+      TEARDOWN_OK=0
     fi
   else
-    echo "cronfoundry binary not found; skipping App install revoke."
+    echo "warn: cronfoundry binary not found; cannot revoke App install. Preserving state for retry." >&2
+    TEARDOWN_OK=0
   fi
 fi
 
-# 3. Remove state file
-state_clear
+# 3. Remove state file (only on a clean run)
+if [[ "$TEARDOWN_OK" == "1" ]]; then
+  state_clear
+else
+  echo "Teardown incomplete; state file preserved at $STATE_FILE for retry."
+fi
 
 echo "Done. The GitHub App registration itself remains; delete it manually if desired:"
 echo "  https://github.com/settings/apps/${CF_GITHUB_APP_SLUG:-<your-app-name>}"
