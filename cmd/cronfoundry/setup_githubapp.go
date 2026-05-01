@@ -80,8 +80,14 @@ func newSetupGithubAppCmd() *cobra.Command {
 			}
 
 			_, _ = fmt.Fprintf(cmd.OutOrStdout(),
-				"Starting local GitHub App setup helper at %s\nIf your browser doesn't open, visit that URL manually.\n",
-				srv.URL())
+				"\n  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"+
+					"  GitHub App registration — open this URL in your browser:\n\n"+
+					"    %s\n\n"+
+					"  Waiting up to %s for completion. If your browser didn't open\n"+
+					"  automatically, copy the URL above. Re-run the install script\n"+
+					"  to resume from this step if the timeout fires.\n"+
+					"  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n",
+				srv.URL(), timeout)
 
 			ctx, cancel := context.WithCancel(cmd.Context())
 			defer cancel()
@@ -100,7 +106,7 @@ func newSetupGithubAppCmd() *cobra.Command {
 	cmd.Flags().IntVar(&port, "port", 8765, "localhost port for callback server")
 	cmd.Flags().StringVar(&pemDir, "pem-dir", "", "directory to write the .pem file (default ~/.cronfoundry)")
 	cmd.Flags().BoolVar(&manual, "manual", false, "skip the browser flow; prompt for credentials manually")
-	cmd.Flags().DurationVar(&timeout, "timeout", 10*time.Minute, "abort if the user doesn't complete the flow in this time")
+	cmd.Flags().DurationVar(&timeout, "timeout", 30*time.Minute, "abort if the user doesn't complete the flow in this time")
 	cmd.Flags().StringVar(&baseAPI, "github-api", "https://api.github.com", "GitHub API base URL (override for testing)")
 	cmd.Flags().StringVar(&homepageURL, "homepage-url", "", "production homepage URL written into the manifest (default: local server URL)")
 	cmd.Flags().StringVar(&callbackURL, "callback-url", "", "production OAuth callback URL written into the manifest (default: local server /oauth/callback)")

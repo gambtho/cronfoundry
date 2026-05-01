@@ -391,7 +391,7 @@ elif [[ -z "${CF_GITHUB_APP_ID:-}" ]]; then
     --homepage-url "https://${CF_FQDN}" \
     --callback-url "https://${CF_FQDN}/oauth/callback" \
     --webhook-url "https://${CF_FQDN}/webhook/github" \
-    || die "GitHub App manifest flow failed. Re-run with --manual to use the legacy paste prompts."
+    || die "GitHub App manifest flow failed.\n  Your Azure resources are preserved. Just re-run this script to retry only this step:\n    bash scripts/quickstart-copilot.sh\n  Or use --manual for legacy paste prompts."
   state_load   # pick up CF_GITHUB_APP_ID, CF_GITHUB_CLIENT_ID, etc. that the command wrote
   ok "GitHub App registered: App ID ${CF_GITHUB_APP_ID}"
 fi
