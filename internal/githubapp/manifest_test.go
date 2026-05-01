@@ -53,3 +53,26 @@ func TestBuildManifest_RequiredFields(t *testing.T) {
 		t.Errorf("hook url = %v", hook["url"])
 	}
 }
+
+func TestBuildManifest_ExplicitProductionURLs(t *testing.T) {
+	m := BuildManifest(ManifestInput{
+		Name:             "cronfoundry-tng",
+		CallbackURL:      "http://localhost:8765",
+		HomepageURL:      "https://cf.example.com",
+		WebhookURL:       "https://cf.example.com/webhook/github",
+		OAuthCallbackURL: "https://cf.example.com/oauth/callback",
+	})
+	if m.URL != "https://cf.example.com" {
+		t.Errorf("URL = %q, want production homepage", m.URL)
+	}
+	if m.HookAttributes.URL != "https://cf.example.com/webhook/github" {
+		t.Errorf("HookAttributes.URL = %q", m.HookAttributes.URL)
+	}
+	if len(m.CallbackURLs) != 1 || m.CallbackURLs[0] != "https://cf.example.com/oauth/callback" {
+		t.Errorf("CallbackURLs = %v", m.CallbackURLs)
+	}
+	// RedirectURL must remain the LOCAL handshake URL.
+	if m.RedirectURL != "http://localhost:8765/callback" {
+		t.Errorf("RedirectURL = %q, want local handshake URL", m.RedirectURL)
+	}
+}

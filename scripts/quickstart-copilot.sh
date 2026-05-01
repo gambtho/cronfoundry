@@ -323,48 +323,18 @@ if [[ "$DRY_RUN" != "true" ]]; then
 fi
 
 # ── Step 16: GitHub App ───────────────────────────────────────────────────────
-header "[step 16/19] GitHub App setup"
-echo ""
-echo "  CronFoundry uses a GitHub App (not an OAuth App) for repo access."
-echo "  You need to create one if you haven't already."
-echo ""
-echo "  1. Open: https://github.com/settings/apps/new"
-echo "     (Check the URL ends in /settings/apps/new -- not /applications/new)"
-echo "  2. Name: anything globally unique, e.g. cronfoundry-$(whoami)"
-echo "  3. Homepage URL: https://${CF_FQDN}"
-echo "  4. Callback URL: https://${CF_FQDN}/oauth/callback"
-echo "  5. Webhook URL: https://${CF_FQDN}/webhook/github"
-echo "     Webhook secret: generate with: openssl rand -hex 32"
-echo "  6. Permissions -> Repository: Contents (R+W), Issues (W), Metadata (R)"
-echo "     Account: Email (R)"
-echo "  7. Subscribe to events: Push"
-echo "  8. Save, then note the App ID, generate a Client Secret, download the .pem"
-echo "  9. Install App on your skill repo and reports repo"
-echo ""
-
+header "[step 16/19] Register GitHub App (manifest flow)"
 if [[ -z "${CF_GITHUB_APP_ID:-}" ]]; then
-  read -rp "GitHub App ID (numeric): " CF_GITHUB_APP_ID
-  save CF_GITHUB_APP_ID "$CF_GITHUB_APP_ID"
+  ./cronfoundry setup github-app \
+    --state-file "$STATE_FILE" \
+    --pem-dir "${HOME}/.cronfoundry" \
+    --homepage-url "https://${CF_FQDN}" \
+    --callback-url "https://${CF_FQDN}/oauth/callback" \
+    --webhook-url "https://${CF_FQDN}/webhook/github" \
+    || die "GitHub App manifest flow failed. Re-run with --manual to use the legacy paste prompts."
+  state_load   # pick up CF_GITHUB_APP_ID, CF_GITHUB_CLIENT_ID, etc. that the command wrote
 fi
-if [[ -z "${CF_GITHUB_CLIENT_ID:-}" ]]; then
-  read -rp "GitHub App Client ID (starts with Iv23li): " CF_GITHUB_CLIENT_ID
-  save CF_GITHUB_CLIENT_ID "$CF_GITHUB_CLIENT_ID"
-fi
-if [[ -z "${CF_GITHUB_CLIENT_SECRET:-}" ]]; then
-  read -rsp "GitHub App Client Secret: " CF_GITHUB_CLIENT_SECRET; echo
-  save CF_GITHUB_CLIENT_SECRET "$CF_GITHUB_CLIENT_SECRET"
-  warn "State file $STATE_FILE contains sensitive credentials — treat it like .env and do not commit it."
-fi
-if [[ -z "${CF_GITHUB_PEM_PATH:-}" ]]; then
-  read -rp "Path to GitHub App .pem file: " CF_GITHUB_PEM_PATH
-  [[ -f "$CF_GITHUB_PEM_PATH" ]] || die "File not found: $CF_GITHUB_PEM_PATH"
-  save CF_GITHUB_PEM_PATH "$CF_GITHUB_PEM_PATH"
-fi
-if [[ -z "${CF_INSTALLATION_ID:-}" ]]; then
-  read -rp "GitHub App Installation ID (number from the install URL): " CF_INSTALLATION_ID
-  save CF_INSTALLATION_ID "$CF_INSTALLATION_ID"
-fi
-ok "GitHub App credentials collected"
+ok "GitHub App registered: App ID ${CF_GITHUB_APP_ID}"
 
 # ── Step 17: UI checklist ─────────────────────────────────────────────────────
 header "[step 17/19] Complete setup in the web UI"
