@@ -16,7 +16,7 @@ param postgresAdminPassword string
 @secure()
 param masterKey string
 @secure()
-@description('Contents of the GitHub App private key PEM file. Seeded into Key Vault as secret "github-app-pem". Pass "" to skip (operator must then upload before the Container App is created).')
+@description('Contents of the GitHub App private key PEM file. Seeded into Key Vault as secret "github-app-pem". Pass "" for the deploy-first flow: a placeholder secret is pre-seeded so the Container App\'s secret reference resolves at deploy time, and the install script overwrites it via "az keyvault secret set" after the manifest flow.')
 param githubAppPem string = ''
 param adminLogins string
 param viewerLogins string = ''
