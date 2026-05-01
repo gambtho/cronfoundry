@@ -6,11 +6,11 @@ targetScope = 'subscription'
 param env string = 'prod'
 param location string = 'eastus'
 param imageTag string = 'latest'
-param githubAppId string
+param githubAppId string = ''
 @secure()
-param githubAppOAuthClientId string
+param githubAppOAuthClientId string = ''
 @secure()
-param githubAppOAuthClientSecret string
+param githubAppOAuthClientSecret string = ''
 @secure()
 param postgresAdminPassword string
 @secure()

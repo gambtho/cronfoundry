@@ -14,21 +14,19 @@ header()  { echo -e "\n${BOLD}$*${RESET}"; }
 DRY_RUN=false
 for arg in "$@"; do [[ "$arg" == "--dry-run" ]] && DRY_RUN=true; done
 
-STATE_FILE="${HOME}/.cronfoundry-quickstart-state"
-# shellcheck disable=SC1090
-[[ -f "$STATE_FILE" ]] || { touch "$STATE_FILE" && chmod 600 "$STATE_FILE"; }
-[[ -f "$STATE_FILE" ]] && source "$STATE_FILE"
-chmod 600 "$STATE_FILE" 2>/dev/null || true
-
-save() {
-  printf '%s=%q\n' "$1" "$2" >> "$STATE_FILE"
-  chmod 600 "$STATE_FILE" 2>/dev/null || true
-}
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/state.sh
+source "${SCRIPT_DIR}/lib/state.sh"
+# shellcheck source=lib/steps.sh
+source "${SCRIPT_DIR}/lib/steps.sh"
+state_init
+state_load
+save() { state_save "$1" "$2"; }   # shorthand for state_save
 
 GUIDE_URL="https://gambtho.github.io/cronfoundry/guides/quickstart-copilot.html"
 
 # ── Step 1: prereq check ─────────────────────────────────────────────────────
-header "[step 1/17] Checking prerequisites"
+header "[step 1/25] Checking prerequisites"
 
 check_cmd() {
   local cmd=$1 hint=$2
@@ -42,7 +40,14 @@ check_cmd az      "Install: https://learn.microsoft.com/cli/azure/install-azure-
 check_cmd git     "Install: https://git-scm.com/downloads"
 check_cmd python3 "Install: https://www.python.org/downloads/"
 check_cmd openssl "Usually pre-installed. Install via your OS package manager."
+check_cmd curl    "Install via your OS package manager."
 check_cmd go      "Install: https://golang.org/dl/ (need >= 1.21)"
+check_cmd gh "Install: https://cli.github.com/"
+check_cmd jq "Install: https://stedolan.github.io/jq/download/"
+if ! gh auth status &>/dev/null; then
+  die "gh is installed but not authenticated. Run: gh auth login\nThen re-run this script."
+fi
+ok "gh authenticated as $(gh api /user --jq .login)"
 
 # az version check (need >= 2.60)
 AZ_VER=$(az version --query '"azure-cli"' -o tsv 2>/dev/null || echo "0.0.0")
@@ -68,7 +73,7 @@ ok "bicep $BICEP_VER"
 ok "All prerequisites satisfied"
 
 # ── Step 2: az login ──────────────────────────────────────────────────────────
-header "[step 2/17] Azure login"
+header "[step 2/25] Azure login"
 if az account show &>/dev/null; then
   CURRENT_ACCOUNT=$(az account show --query '[name, id]' -o tsv | tr '\t' ' / ')
   ok "Already logged in: $CURRENT_ACCOUNT"
@@ -78,7 +83,7 @@ else
 fi
 
 # ── Step 3: subscription ──────────────────────────────────────────────────────
-header "[step 3/17] Select subscription"
+header "[step 3/25] Select subscription"
 if [[ -z "${CF_SUBSCRIPTION_ID:-}" ]]; then
   az account list --query '[].{Name:name, ID:id}' -o table
   read -rp "Enter subscription ID or name: " CF_SUBSCRIPTION_ID
@@ -92,75 +97,31 @@ fi
 ok "Subscription: $CF_SUBSCRIPTION_ID"
 
 # ── Step 4: clone check ───────────────────────────────────────────────────────
-header "[step 4/17] Verify cronfoundry clone"
+header "[step 4/25] Verify cronfoundry clone"
 if [[ ! -f "deploy/main.bicep" ]]; then
   die "Run this script from inside a cronfoundry clone.\n  git clone https://github.com/gambtho/cronfoundry && cd cronfoundry\nSee §4 of $GUIDE_URL"
 fi
 REPO_ROOT=$(git rev-parse --show-toplevel)
 ok "Repo root: $REPO_ROOT"
 
-# ── Step 5: GitHub App ────────────────────────────────────────────────────────
-header "[step 5/17] GitHub App setup"
-echo ""
-echo "  CronFoundry uses a GitHub App (not an OAuth App) for repo access."
-echo "  You need to create one if you haven't already."
-echo ""
-echo "  1. Open: https://github.com/settings/apps/new"
-echo "     (Check the URL ends in /settings/apps/new -- not /applications/new)"
-echo "  2. Name: anything globally unique, e.g. cronfoundry-$(whoami)"
-echo "  3. Homepage URL: https://example.com  (placeholder -- you'll update after deploy)"
-echo "  4. Callback URL: https://example.com/oauth/callback"
-echo "  5. Webhook URL: https://example.com/webhook/github"
-echo "     Webhook secret: generate with: openssl rand -hex 32"
-echo "  6. Permissions -> Repository: Contents (R+W), Issues (W), Metadata (R)"
-echo "     Account: Email (R)"
-echo "  7. Subscribe to events: Push"
-echo "  8. Save, then note the App ID, generate a Client Secret, download the .pem"
-echo "  9. Install App on your skill repo and reports repo"
-echo ""
-
-if [[ -z "${CF_GITHUB_APP_ID:-}" ]]; then
-  read -rp "GitHub App ID (numeric): " CF_GITHUB_APP_ID
-  save CF_GITHUB_APP_ID "$CF_GITHUB_APP_ID"
-fi
-if [[ -z "${CF_GITHUB_CLIENT_ID:-}" ]]; then
-  read -rp "GitHub App Client ID (starts with Iv23li): " CF_GITHUB_CLIENT_ID
-  save CF_GITHUB_CLIENT_ID "$CF_GITHUB_CLIENT_ID"
-fi
-if [[ -z "${CF_GITHUB_CLIENT_SECRET:-}" ]]; then
-  read -rsp "GitHub App Client Secret: " CF_GITHUB_CLIENT_SECRET; echo
-  save CF_GITHUB_CLIENT_SECRET "$CF_GITHUB_CLIENT_SECRET"
-  warn "State file $STATE_FILE contains sensitive credentials — treat it like .env and do not commit it."
-fi
-if [[ -z "${CF_GITHUB_PEM_PATH:-}" ]]; then
-  read -rp "Path to GitHub App .pem file: " CF_GITHUB_PEM_PATH
-  [[ -f "$CF_GITHUB_PEM_PATH" ]] || die "File not found: $CF_GITHUB_PEM_PATH"
-  save CF_GITHUB_PEM_PATH "$CF_GITHUB_PEM_PATH"
-fi
-ok "GitHub App credentials collected"
-
-# ── Step 6: skill repo ────────────────────────────────────────────────────────
-header "[step 6/17] Skill repo"
+# ── Step 5: skill repo ────────────────────────────────────────────────────────
+header "[step 5/25] Skill repo"
 if [[ -z "${CF_SKILL_REPO:-}" ]]; then
   read -rp "Skill repo (owner/repo, e.g. acme/cronfoundry-skills): " CF_SKILL_REPO
   save CF_SKILL_REPO "$CF_SKILL_REPO"
 fi
-if [[ -z "${CF_INSTALLATION_ID:-}" ]]; then
-  read -rp "GitHub App Installation ID (number from the install URL): " CF_INSTALLATION_ID
-  save CF_INSTALLATION_ID "$CF_INSTALLATION_ID"
-fi
-ok "Skill repo: $CF_SKILL_REPO (installation $CF_INSTALLATION_ID)"
+ok "Skill repo: $CF_SKILL_REPO"
 
-# ── Step 7: reports repo ──────────────────────────────────────────────────────
-header "[step 7/17] Reports repo"
+# ── Step 6: reports repo ──────────────────────────────────────────────────────
+header "[step 6/25] Reports repo"
 if [[ -z "${CF_REPORTS_REPO:-}" ]]; then
   read -rp "Reports repo (owner/repo, e.g. acme/cronfoundry-reports): " CF_REPORTS_REPO
   save CF_REPORTS_REPO "$CF_REPORTS_REPO"
 fi
 ok "Reports repo: $CF_REPORTS_REPO"
 
-# ── Step 8: master key ────────────────────────────────────────────────────────
-header "[step 8/17] Generate master key"
+# ── Step 7: master key ────────────────────────────────────────────────────────
+header "[step 7/25] Generate master key"
 if [[ -z "${CF_MASTER_KEY:-}" ]]; then
   CF_MASTER_KEY=$(openssl rand -base64 32)
   save CF_MASTER_KEY "$CF_MASTER_KEY"
@@ -169,8 +130,8 @@ if [[ -z "${CF_MASTER_KEY:-}" ]]; then
 fi
 ok "Master key ready"
 
-# ── Step 9: env suffix ────────────────────────────────────────────────────────
-header "[step 9/17] Environment suffix"
+# ── Step 8: env suffix ────────────────────────────────────────────────────────
+header "[step 8/25] Environment suffix"
 if [[ -z "${CF_ENV:-}" ]]; then
   while true; do
     read -rp "Env suffix (<=10 chars, lowercase/numbers/hyphens, default: copilot1): " CF_ENV
@@ -182,12 +143,29 @@ if [[ -z "${CF_ENV:-}" ]]; then
   done
   save CF_ENV "$CF_ENV"
 fi
+# Migrate state to per-env path so quickstart-down.sh can find it via
+# state_path_for "$CF_ENV". The default file (~/.cronfoundry-quickstart-state)
+# is used until CF_ENV is known; rename it now and re-init at the new path.
+PER_ENV_STATE="$(state_path_for "$CF_ENV")"
+if [[ "$STATE_FILE" != "$PER_ENV_STATE" ]]; then
+  if [[ -f "$STATE_FILE" && ! -f "$PER_ENV_STATE" ]]; then
+    mv "$STATE_FILE" "$PER_ENV_STATE"
+  fi
+  STATE_FILE="$PER_ENV_STATE"
+  export STATE_FILE
+  state_init
+  state_load
+fi
+# Compute resource names once so later steps reference instead of redefining.
+KV_NAME="cf-kv-${CF_ENV}"
+CA_NAME="cf-serve-${CF_ENV}"
+RG="rg-cronfoundry-${CF_ENV}"
 warn "Key Vault soft-delete retains the name 'cf-kv-${CF_ENV}' for 7 days after teardown."
 warn "Re-runs after teardown need a new suffix (e.g. copilot2)."
 ok "Env: $CF_ENV"
 
-# ── Step 10: region ───────────────────────────────────────────────────────────
-header "[step 10/17] Region"
+# ── Step 9: region ───────────────────────────────────────────────────────────
+header "[step 9/25] Region"
 if [[ -z "${CF_REGION:-}" ]]; then
   read -rp "Azure region (default: swedencentral): " CF_REGION
   CF_REGION="${CF_REGION:-swedencentral}"
@@ -197,8 +175,8 @@ info "Note: Postgres Flexible Server offer restrictions vary by subscription."
 info "swedencentral is known-good for Microsoft-internal subs. See §10 of $GUIDE_URL"
 ok "Region: $CF_REGION"
 
-# ── Step 11: image tag ────────────────────────────────────────────────────────
-header "[step 11/17] Image tag"
+# ── Step 10: image tag ────────────────────────────────────────────────────────
+header "[step 10/25] Image tag"
 if [[ -z "${CF_IMAGE_TAG:-}" ]]; then
   CF_IMAGE_TAG=$(curl -fsSL "https://api.github.com/repos/gambtho/cronfoundry/releases/latest" \
     2>/dev/null \
@@ -213,31 +191,35 @@ if [[ -z "${CF_IMAGE_TAG:-}" ]]; then
 fi
 ok "Image tag: $CF_IMAGE_TAG"
 
-# ── Step 12: postgres password ────────────────────────────────────────────────
-header "[step 12/17] Generate Postgres password"
+# ── Step 11: postgres password ────────────────────────────────────────────────
+header "[step 11/25] Generate Postgres password"
 if [[ -z "${CF_PG_PASSWORD:-}" ]]; then
   CF_PG_PASSWORD=$(openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c24)
   save CF_PG_PASSWORD "$CF_PG_PASSWORD"
 fi
 ok "Postgres password generated (saved to state file)"
 
-# ── Step 13: build params file ────────────────────────────────────────────────
-header "[step 13/17] Build params file"
+# ── Step 12: build params file ────────────────────────────────────────────────
+header "[step 12/25] Build params file"
 PARAMS_FILE="deploy/params.quickstart-${CF_ENV}.json"
-ADMIN_LOGIN=$(git config user.name 2>/dev/null) || {
-  warn "git config user.name is not set; using 'admin' as adminLogins value."
+ADMIN_LOGIN=$(gh api /user --jq .login 2>/dev/null) || ADMIN_LOGIN=""
+if [[ -z "$ADMIN_LOGIN" ]]; then
+  ADMIN_LOGIN=$(git config user.name 2>/dev/null) || ADMIN_LOGIN=""
+fi
+if [[ -z "$ADMIN_LOGIN" ]]; then
+  warn "Could not infer GitHub login from gh or git config; using 'admin' as adminLogins value."
   warn "You may want to set it: git config --global user.name 'Your GitHub login'"
   ADMIN_LOGIN="admin"
-}
+fi
 PARAMS_TMP="${PARAMS_FILE}.tmp.$$"
-python3 - "$CF_GITHUB_PEM_PATH" "$PARAMS_TMP" \
+# GitHub App fields are intentionally empty here: Bicep deploys before the
+# GitHub App exists. Task 6 of the manifest flow pushes real values via
+# `az containerapp update --set-env-vars` after registration.
+python3 - "$PARAMS_TMP" \
     "$CF_ENV" "$CF_REGION" "$CF_IMAGE_TAG" \
-    "$CF_GITHUB_APP_ID" "$CF_GITHUB_CLIENT_ID" "$CF_GITHUB_CLIENT_SECRET" \
     "$CF_PG_PASSWORD" "$CF_MASTER_KEY" "$ADMIN_LOGIN" << 'PYEOF'
 import json, sys
-pem_path, out_path, env, region, tag, app_id, client_id, client_secret, pg_pw, master_key, admin = sys.argv[1:]
-with open(pem_path) as pf:
-    pem = pf.read()
+out_path, env, region, tag, pg_pw, master_key, admin = sys.argv[1:]
 params = {
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
   "contentVersion": "1.0.0.0",
@@ -245,15 +227,15 @@ params = {
     "env":                        {"value": env},
     "location":                   {"value": region},
     "imageTag":                   {"value": tag},
-    "githubAppId":                {"value": app_id},
-    "githubAppOAuthClientId":     {"value": client_id},
-    "githubAppOAuthClientSecret": {"value": client_secret},
+    "githubAppId":                {"value": ""},
+    "githubAppOAuthClientId":     {"value": ""},
+    "githubAppOAuthClientSecret": {"value": ""},
+    "githubAppPem":               {"value": ""},
     "postgresAdminPassword":      {"value": pg_pw},
     "masterKey":                  {"value": master_key},
     "adminLogins":                {"value": admin},
     "viewerLogins":               {"value": ""},
     "ingressExternal":            {"value": True},
-    "githubAppPem":               {"value": pem},
   }
 }
 with open(out_path, "w") as f:
@@ -264,10 +246,10 @@ mv "$PARAMS_TMP" "$PARAMS_FILE"
 chmod 600 "$PARAMS_FILE"
 ok "Params file: $PARAMS_FILE"
 
-# ── Step 14: deploy ───────────────────────────────────────────────────────────
-header "[step 14/17] Deploy to Azure (~10 min)"
+# ── Step 13: deploy ───────────────────────────────────────────────────────────
+header "[step 13/25] Deploy to Azure (~10 min)"
 if [[ "$DRY_RUN" == "true" ]]; then
-  warn "--dry-run: skipping deploy; steps 16–17 will use a placeholder FQDN"
+  warn "--dry-run: skipping deploy; later steps will use a placeholder FQDN"
   CF_FQDN="<not-yet-deployed>"
 else
   az deployment sub create \
@@ -278,13 +260,14 @@ else
     --resource-group "rg-cronfoundry-${CF_ENV}" \
     --name "cf-serve-${CF_ENV}" \
     --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null || echo "")
-  [[ -n "$CF_FQDN" ]] || die "Could not retrieve FQDN after deploy. Check rg-cronfoundry-${CF_ENV}.\nSee §14 of $GUIDE_URL"
+  [[ -n "$CF_FQDN" ]] || die "Could not retrieve FQDN after deploy. Check rg-cronfoundry-${CF_ENV}.\nSee §13 of $GUIDE_URL"
 fi
 save CF_FQDN "$CF_FQDN"
 ok "Deployed. FQDN: $CF_FQDN"
 
-# ── Step 15: admin init ───────────────────────────────────────────────────────
-header "[step 15/17] Initialize database"
+# ── Step 14: admin init ───────────────────────────────────────────────────────
+header "[step 14/25] Initialize database"
+CF_DB_URL="postgres://cfadmin:${CF_PG_PASSWORD}@cf-pg-${CF_ENV}.postgres.database.azure.com:5432/cronfoundry?sslmode=require"
 if [[ "$DRY_RUN" != "true" ]]; then
   # WSL2-safe: use broad rule -- WSL2 NAT may present a different source IP to Azure
   warn "Opening Postgres firewall to 0.0.0.0/0 for WSL2 NAT compatibility."
@@ -297,71 +280,345 @@ if [[ "$DRY_RUN" != "true" ]]; then
     --end-ip-address "255.255.255.255" \
     || warn "Firewall rule creation failed (may already exist) — database init may fail if connectivity is blocked."
 
-  CF_DB_URL="postgres://cfadmin:${CF_PG_PASSWORD}@cf-pg-${CF_ENV}.postgres.database.azure.com:5432/cronfoundry?sslmode=require"
-
   if ! make build; then
     warn "make build failed; falling back to go build"
     go build -o cronfoundry ./cmd/cronfoundry \
-      || die "Binary build failed. Ensure go >= 1.21 is installed.\nSee §15 of $GUIDE_URL"
+      || die "Binary build failed. Ensure go >= 1.21 is installed.\nSee §14 of $GUIDE_URL"
   fi
 
-  CRONFOUNDRY_DATABASE_URL="$CF_DB_URL" \
-  CRONFOUNDRY_MASTER_KEY="$CF_MASTER_KEY" \
-  ./cronfoundry admin init
+  if [[ "${CF_DB_INITIALIZED:-0}" == "1" ]]; then
+    ok "Database already initialized (CF_DB_INITIALIZED=1); skipping admin init + restart"
+  else
+    CRONFOUNDRY_DATABASE_URL="$CF_DB_URL" \
+    CRONFOUNDRY_MASTER_KEY="$CF_MASTER_KEY" \
+    ./cronfoundry admin init
 
-  RESTART_TS=$(date +%s)
-  az containerapp update \
-    --resource-group "rg-cronfoundry-${CF_ENV}" \
-    --name "cf-serve-${CF_ENV}" \
-    --set-env-vars "RESTART_TRIGGER=${RESTART_TS}" \
-    || die "Failed to trigger Container App restart.\nSee §15 of $GUIDE_URL"
-
-  info "Waiting for Container App to become healthy..."
-  HEALTH="unknown"
-  # shellcheck disable=SC2034
-  for i in $(seq 1 12); do
-    HEALTH=$(az containerapp revision list \
+    RESTART_TS=$(date +%s)
+    az containerapp update \
       --resource-group "rg-cronfoundry-${CF_ENV}" \
       --name "cf-serve-${CF_ENV}" \
-      --query '[?properties.trafficWeight>`0`].properties.healthState' \
-      -o tsv 2>/dev/null | head -1 || echo "unknown")
-    [[ "$HEALTH" == "Healthy" ]] && break
-    sleep 10
-  done
-  if [[ "$HEALTH" != "Healthy" ]]; then
-    warn "Container App did not become Healthy after 120 s (last state: $HEALTH)."
-    warn "Check: az containerapp logs show --resource-group rg-cronfoundry-${CF_ENV} --name cf-serve-${CF_ENV} --follow"
-    warn "Continuing, but the app may not be ready. See §15 of $GUIDE_URL"
-  else
-    ok "Container App health: $HEALTH"
+      --set-env-vars "RESTART_TRIGGER=${RESTART_TS}" \
+      || die "Failed to trigger Container App restart.\nSee §14 of $GUIDE_URL"
+
+    info "Waiting for Container App to become healthy..."
+    HEALTH="unknown"
+    # shellcheck disable=SC2034
+    for i in $(seq 1 12); do
+      HEALTH=$(az containerapp revision list \
+        --resource-group "rg-cronfoundry-${CF_ENV}" \
+        --name "cf-serve-${CF_ENV}" \
+        --query '[?properties.trafficWeight>`0`].properties.healthState' \
+        -o tsv 2>/dev/null | head -1 || echo "unknown")
+      [[ "$HEALTH" == "Healthy" ]] && break
+      sleep 10
+    done
+    if [[ "$HEALTH" != "Healthy" ]]; then
+      warn "Container App did not become Healthy after 120 s (last state: $HEALTH)."
+      warn "Note: until GitHub App creds are pushed (next steps) the serve binary will fail startup — this is expected."
+      warn "Check: az containerapp logs show --resource-group rg-cronfoundry-${CF_ENV} --name cf-serve-${CF_ENV} --follow"
+      warn "Continuing. See §14 of $GUIDE_URL"
+    else
+      ok "Container App health: $HEALTH"
+    fi
+    save CF_DB_INITIALIZED 1
   fi
 fi
 
-# ── Step 16: update GitHub App URLs ──────────────────────────────────────────
-header "[step 16/17] Update GitHub App URLs"
-echo ""
-echo "  Go to your GitHub App settings and update these three URLs:"
-echo ""
-echo "  Homepage URL:  https://${CF_FQDN}"
-echo "  Callback URL:  https://${CF_FQDN}/oauth/callback"
-echo "  Webhook URL:   https://${CF_FQDN}/webhook/github"
-echo ""
-read -rp "Press Enter once you have updated the GitHub App URLs..."
+# ── Step 15: tighten Postgres firewall ───────────────────────────────────────
+header "[step 15/25] Tighten Postgres firewall"
+if [[ "$DRY_RUN" != "true" ]]; then
+  OPERATOR_IP=$(curl -fsSL https://api.ipify.org 2>/dev/null || echo "")
+  if [[ -n "$OPERATOR_IP" ]]; then
+    info "Narrowing Postgres firewall to operator IP: $OPERATOR_IP"
+    az postgres flexible-server firewall-rule create \
+      --resource-group "rg-cronfoundry-${CF_ENV}" \
+      --name "cf-pg-${CF_ENV}" \
+      --rule-name AllowOperatorIP \
+      --start-ip-address "$OPERATOR_IP" \
+      --end-ip-address "$OPERATOR_IP" \
+      || warn "Could not create AllowOperatorIP rule."
+    az postgres flexible-server firewall-rule delete \
+      --resource-group "rg-cronfoundry-${CF_ENV}" \
+      --name "cf-pg-${CF_ENV}" \
+      --rule-name AllowOperator \
+      --yes 2>/dev/null || true
+    ok "Postgres firewall tightened to $OPERATOR_IP"
+  else
+    warn "Could not resolve operator IP via api.ipify.org; leaving broad firewall rule in place."
+    warn "Tighten manually: az postgres flexible-server firewall-rule update ..."
+  fi
+fi
 
-# ── Step 17: UI checklist ─────────────────────────────────────────────────────
-header "[step 17/17] Complete setup in the web UI"
+# ── Step 16: GitHub App ───────────────────────────────────────────────────────
+header "[step 16/25] Register GitHub App (manifest flow)"
+if [[ "$DRY_RUN" == "true" ]]; then
+  warn "--dry-run: skipping GitHub App registration"
+elif [[ -z "${CF_GITHUB_APP_ID:-}" ]]; then
+  ./cronfoundry setup github-app \
+    --state-file "$STATE_FILE" \
+    --pem-dir "${HOME}/.cronfoundry" \
+    --homepage-url "https://${CF_FQDN}" \
+    --callback-url "https://${CF_FQDN}/oauth/callback" \
+    --webhook-url "https://${CF_FQDN}/webhook/github" \
+    || die "GitHub App manifest flow failed. Re-run with --manual to use the legacy paste prompts."
+  state_load   # pick up CF_GITHUB_APP_ID, CF_GITHUB_CLIENT_ID, etc. that the command wrote
+  ok "GitHub App registered: App ID ${CF_GITHUB_APP_ID}"
+fi
+
+# ── Step 17: Push GitHub App credentials to deployed container ───────────────
+header "[step 17/25] Push GitHub App credentials to deployed container"
+# KV_NAME, CA_NAME, RG were computed once just after CF_ENV was set.
+if [[ "$DRY_RUN" == "true" ]]; then
+  warn "--dry-run: skipping Container App credential push"
+elif [[ "${CF_CREDS_PUSHED:-0}" == "1" ]]; then
+  ok "Container App credentials already pushed (CF_CREDS_PUSHED=1); skipping"
+else
+  [[ -f "${CF_GITHUB_PEM_PATH:-}" ]] \
+    || die "CF_GITHUB_PEM_PATH not set or file missing; was the manifest flow successful?"
+  : "${CF_GITHUB_APP_ID:?CF_GITHUB_APP_ID not set; manifest flow may have failed}"
+  : "${CF_GITHUB_CLIENT_ID:?CF_GITHUB_CLIENT_ID not set; manifest flow may have failed}"
+  : "${CF_GITHUB_CLIENT_SECRET:?CF_GITHUB_CLIENT_SECRET not set; manifest flow may have failed}"
+  : "${CF_GITHUB_WEBHOOK_SECRET:?CF_GITHUB_WEBHOOK_SECRET not set; manifest flow may have failed}"
+
+  # 1. PEM into Key Vault (already wired as secretRef in Bicep)
+  az keyvault secret set --vault-name "$KV_NAME" --name github-app-pem \
+    --file "${CF_GITHUB_PEM_PATH}" --output none \
+    || die "Failed to upload PEM to Key Vault $KV_NAME"
+
+  # 2. OAuth client secret is a Container App secret (Bicep set it to empty at deploy)
+  az containerapp secret set --resource-group "$RG" --name "$CA_NAME" \
+    --secrets "oauth-client-secret=${CF_GITHUB_CLIENT_SECRET}" --output none \
+    || die "Failed to update Container App OAuth secret"
+
+  # 3. Plain env vars (App ID, OAuth client ID, webhook secret)
+  az containerapp update --resource-group "$RG" --name "$CA_NAME" \
+    --set-env-vars \
+      "CRONFOUNDRY_GITHUB_APP_ID=${CF_GITHUB_APP_ID}" \
+      "CRONFOUNDRY_GITHUB_OAUTH_CLIENT_ID=${CF_GITHUB_CLIENT_ID}" \
+      "CRONFOUNDRY_GITHUB_WEBHOOK_SECRET=${CF_GITHUB_WEBHOOK_SECRET}" \
+    --output none \
+    || die "Failed to update Container App env vars"
+  ok "Container App credentials applied; new revision rolling out"
+
+  # 4. Wait for /healthz
+  HEALTHY=0
+  for i in {1..60}; do
+    STATUS=$(curl -fsS -o /dev/null -w "%{http_code}" "https://${CF_FQDN}/healthz" 2>/dev/null || echo "000")
+    if [[ "$STATUS" == "200" ]]; then ok "Serve healthy at https://${CF_FQDN}"; HEALTHY=1; break; fi
+    sleep 5
+  done
+  [[ "$HEALTHY" == "1" ]] || warn "Serve did not become healthy in 5 minutes; check 'az containerapp logs show --name $CA_NAME --resource-group $RG'"
+  save CF_CREDS_PUSHED 1
+fi
+
+# ── Step 18: Discover GitHub App installation ───────────────────────────────
+header "[step 18/25] Discover GitHub App installation"
+if [[ "$DRY_RUN" == "true" ]]; then
+  warn "--dry-run: skipping GitHub App installation discovery"
+elif [[ -z "${CF_INSTALLATION_ID:-}" ]]; then
+  JWT=$(./cronfoundry setup mint-jwt --app-id "$CF_GITHUB_APP_ID" --pem "$CF_GITHUB_PEM_PATH") \
+    || die "Failed to mint App JWT"
+
+  fetch_installs() {
+    curl -fsS \
+      -H "Accept: application/vnd.github+json" \
+      -H "Authorization: Bearer ${JWT}" \
+      https://api.github.com/app/installations
+  }
+  INSTALL_JSON=$(fetch_installs) || die "Failed to list App installations"
+  INSTALL_COUNT=$(echo "$INSTALL_JSON" | jq 'length')
+
+  if [[ "$INSTALL_COUNT" -eq 0 ]]; then
+    warn "No installations found yet."
+    SLUG="${CF_GITHUB_APP_SLUG:-}"
+    if [[ -n "$SLUG" ]]; then
+      echo "Open this URL to install the App on your skill repo:"
+      echo "  https://github.com/apps/${SLUG}/installations/new"
+    else
+      echo "Open the GitHub App's install page from the manifest-flow output."
+    fi
+    read -rp "Press Enter once installed..."
+    INSTALL_JSON=$(fetch_installs) || die "Failed to list App installations after install"
+    INSTALL_COUNT=$(echo "$INSTALL_JSON" | jq 'length')
+  fi
+
+  if [[ "$INSTALL_COUNT" -eq 1 ]]; then
+    CF_INSTALLATION_ID=$(echo "$INSTALL_JSON" | jq '.[0].id')
+  elif [[ "$INSTALL_COUNT" -gt 1 ]]; then
+    echo "Multiple installations found:"
+    echo "$INSTALL_JSON" | jq '.[] | {id, account: .account.login}'
+    read -rp "Enter installation ID for ${CF_SKILL_REPO}: " CF_INSTALLATION_ID
+  else
+    die "Still no installations after retry"
+  fi
+  save CF_INSTALLATION_ID "$CF_INSTALLATION_ID"
+fi
+ok "Installation ID: ${CF_INSTALLATION_ID:-<dry-run>}"
+
+# ── Step 19: Grant operator KV access ─────────────────────────────────────────
+header "[step 19/25] Grant operator Key Vault access"
+if [[ "$DRY_RUN" != "true" ]]; then
+  KV_ID=$(az keyvault show --name "$KV_NAME" --query id -o tsv) \
+    || die "Could not resolve Key Vault $KV_NAME"
+  OPERATOR_OBJ_ID=$(az ad signed-in-user show --query id -o tsv) \
+    || die "Could not resolve operator object ID via az ad signed-in-user show"
+  az role assignment create \
+    --role "Key Vault Secrets Officer" \
+    --assignee-object-id "$OPERATOR_OBJ_ID" \
+    --assignee-principal-type User \
+    --scope "$KV_ID" \
+    --output none 2>/dev/null \
+    || warn "Role assignment may already exist (continuing)"
+  ok "Operator granted Secrets Officer on $KV_NAME"
+fi
+
+# Common env for admin CLI calls. SECRET_STORE=keyvault routes Put() to KV
+# so the deployed Container App (which also reads via KV) sees these secrets.
+ADMIN_ENV=(
+  "CRONFOUNDRY_DATABASE_URL=$CF_DB_URL"
+  "CRONFOUNDRY_MASTER_KEY=$CF_MASTER_KEY"
+  "SECRET_STORE=keyvault"
+  "AZURE_KEYVAULT_URL=https://${KV_NAME}.vault.azure.net/"
+)
+
+# ── Step 20: Connect skill repo ───────────────────────────────────────────────
+header "[step 20/25] Connect skill repo via admin CLI"
+if [[ "$DRY_RUN" != "true" ]]; then
+  env "${ADMIN_ENV[@]}" \
+    ./cronfoundry admin connect-repo "${CF_SKILL_REPO}" \
+      --installation-id "${CF_INSTALLATION_ID}" \
+      || die "connect-repo failed"
+  ok "Repo connected: ${CF_SKILL_REPO}"
+fi
+
+# ── Step 21: Store webhook secret ────────────────────────────────────────────
+header "[step 21/25] Store webhook secret"
+if [[ "$DRY_RUN" != "true" ]]; then
+  printf '%s\n' "${CF_GITHUB_WEBHOOK_SECRET}" \
+    | env "${ADMIN_ENV[@]}" ./cronfoundry admin set-secret github_webhook_secret \
+      || die "set-secret github_webhook_secret failed"
+  ok "Webhook secret stored"
+fi
+
+# ── Step 22: Connect Copilot Enterprise ──────────────────────────────────────
+header "[step 22/25] Connect Copilot Enterprise (device flow)"
+if [[ "$DRY_RUN" != "true" ]]; then
+  env "${ADMIN_ENV[@]}" \
+    ./cronfoundry admin connect-copilot --prefix copilot \
+      || die "connect-copilot failed"
+fi
+
+# ── Step 23: Push starter skill to skill repo ───────────────────────────────
+header "[step 23/25] Push starter cronfoundry.yaml + smoke skill to ${CF_SKILL_REPO}"
+if [[ "$DRY_RUN" != "true" ]]; then
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  TPL_DIR="$SCRIPT_DIR/templates"
+
+  DEFAULT_BRANCH=$(gh api "repos/${CF_SKILL_REPO}" --jq .default_branch) \
+    || die "Could not look up default branch of ${CF_SKILL_REPO}"
+
+  if gh api "repos/${CF_SKILL_REPO}/contents/cronfoundry.yaml?ref=${DEFAULT_BRANCH}" &>/dev/null; then
+    ok "cronfoundry.yaml already exists on ${DEFAULT_BRANCH}; skipping starter push"
+  else
+    TMP_YAML=$(mktemp)
+    TMP_SKILL=$(mktemp)
+    trap 'rm -f "$TMP_YAML" "$TMP_SKILL"' EXIT
+    sed "s|__REPORTS_REPO__|${CF_REPORTS_REPO}|g" "$TPL_DIR/cronfoundry.yaml.tmpl" > "$TMP_YAML"
+    cp "$TPL_DIR/smoke-skill.md.tmpl" "$TMP_SKILL"
+
+    BASE_SHA=$(gh api "repos/${CF_SKILL_REPO}/git/ref/heads/${DEFAULT_BRANCH}" --jq .object.sha) \
+      || die "Could not resolve SHA for ${DEFAULT_BRANCH}"
+
+    # Create branch (ignore failure if it already exists)
+    gh api -X POST "repos/${CF_SKILL_REPO}/git/refs" \
+      -f ref="refs/heads/cronfoundry-quickstart" \
+      -f sha="${BASE_SHA}" &>/dev/null || true
+
+    # base64 -w0 is GNU-only; pipe through tr for macOS/BSD portability.
+    YAML_B64=$(base64 < "$TMP_YAML" | tr -d '\n')
+    SKILL_B64=$(base64 < "$TMP_SKILL" | tr -d '\n')
+
+    gh api -X PUT "repos/${CF_SKILL_REPO}/contents/cronfoundry.yaml" \
+      -f message="Add starter cronfoundry.yaml" \
+      -f branch="cronfoundry-quickstart" \
+      -f content="${YAML_B64}" >/dev/null \
+      || die "Failed to PUT cronfoundry.yaml"
+
+    gh api -X PUT "repos/${CF_SKILL_REPO}/contents/skills/smoke/SKILL.md" \
+      -f message="Add starter smoke skill" \
+      -f branch="cronfoundry-quickstart" \
+      -f content="${SKILL_B64}" >/dev/null \
+      || die "Failed to PUT skills/smoke/SKILL.md"
+
+    PR_URL=""
+    EXISTING_PR=$(gh pr list \
+      --repo "${CF_SKILL_REPO}" \
+      --head "cronfoundry-quickstart" \
+      --state open \
+      --json url --jq '.[0].url // ""' 2>/dev/null || echo "")
+    if [[ -n "$EXISTING_PR" ]]; then
+      PR_URL="$EXISTING_PR"
+      ok "Using existing PR: $PR_URL"
+    else
+      PR_URL=$(gh pr create \
+        --repo "${CF_SKILL_REPO}" \
+        --base "${DEFAULT_BRANCH}" \
+        --head "cronfoundry-quickstart" \
+        --title "CronFoundry quickstart: starter cronfoundry.yaml + smoke skill" \
+        --body "Auto-generated by the CronFoundry quickstart installer. Merge to enable the daily smoke run.") \
+        || die "gh pr create failed"
+      ok "Opened PR: ${PR_URL}"
+    fi
+
+    rm -f "$TMP_YAML" "$TMP_SKILL"
+
+    echo ""
+    read -rp "Press Enter once merged..." _
+  fi
+fi
+
+# ── Step 24: Wait for first green run ─────────────────────────────────────────
+header "[step 24/25] Waiting for first run"
+if [[ "$DRY_RUN" != "true" ]]; then
+  PROBE=$(curl -fsS -o /dev/null -w "%{http_code}" "https://${CF_FQDN}/api/runs?limit=1" 2>/dev/null || echo "000")
+  if [[ "$PROBE" != "200" ]]; then
+    warn "Auto-tail unavailable (HTTP $PROBE; /api/runs requires session auth)."
+    echo "  Open: https://${CF_FQDN}/runs to watch the first run."
+  else
+    START=$(date +%s)
+    DEADLINE=$((START + 900))
+    SETTLED=0
+    while [[ $(date +%s) -lt $DEADLINE ]]; do
+      RUNS=$(curl -fsS "https://${CF_FQDN}/api/runs?limit=1" 2>/dev/null || echo '[]')
+      STATUS=$(echo "$RUNS" | jq -r '.[0].status // empty')
+      case "$STATUS" in
+        succeeded)
+          ELAPSED=$(($(date +%s) - START))
+          ok "First run green in ${ELAPSED}s — open https://${CF_FQDN}/"
+          SETTLED=1
+          break
+          ;;
+        failed|partial_failure)
+          RUN_ID=$(echo "$RUNS" | jq -r '.[0].id')
+          die "First run status: ${STATUS}. Inspect at https://${CF_FQDN}/runs/${RUN_ID}"
+          ;;
+      esac
+      sleep 10
+    done
+    if [[ "$SETTLED" != "1" ]]; then
+      warn "First run did not complete in 15 minutes. Check https://${CF_FQDN}/"
+    fi
+  fi
+fi
+
+# ── Step 25: Final dashboard ──────────────────────────────────────────────────
+header "[step 25/25] Final dashboard"
 echo ""
 echo "  Open: https://${CF_FQDN}/"
 echo ""
-echo "  a) Log in via GitHub"
-echo "  b) Providers -> GitHub Copilot Enterprise -> Connect"
-echo "     Enter a prefix (e.g. 'copilot'), open the verification URL,"
-echo "     enter the code shown, and authorize in your browser."
-echo "  c) Repos -> Connect repo -> paste '${CF_SKILL_REPO}' and installation ID '${CF_INSTALLATION_ID}'"
-echo "  d) Secrets -> Add 'github_webhook_secret' (the value from your GitHub App webhook config)"
-echo "  e) Push a cronfoundry.yaml to your skill repo using:"
-echo "       provider: copilot-enterprise"
-echo "       copilot_prefix: <prefix from step b>"
+echo "  Push a cronfoundry.yaml to your skill repo with:"
+echo "    provider: copilot-enterprise"
+echo "    copilot_prefix: copilot"
 echo ""
 echo "  Full guide: $GUIDE_URL"
 echo ""

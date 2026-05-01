@@ -22,6 +22,9 @@ func newSetupGithubAppCmd() *cobra.Command {
 		manual      bool
 		timeout     time.Duration
 		baseAPI     string
+		homepageURL string
+		callbackURL string
+		webhookURL  string
 	)
 
 	cmd := &cobra.Command{
@@ -61,7 +64,15 @@ func newSetupGithubAppCmd() *cobra.Command {
 				StateFile:     stateFile,
 				PEMDir:        pemDir,
 				Converter:     conv,
-				ManifestInput: githubapp.ManifestInput{Name: defaultName},
+				ManifestInput: githubapp.ManifestInput{
+					Name: defaultName,
+					// NOTE: --callback-url is the *production* OAuth callback the
+					// installed App will use; the local manifest-create handshake
+					// URL is set inside server.go from s.URL().
+					HomepageURL:      homepageURL,
+					OAuthCallbackURL: callbackURL,
+					WebhookURL:       webhookURL,
+				},
 				Timeout:       timeout,
 			})
 			if err != nil {
@@ -91,5 +102,8 @@ func newSetupGithubAppCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&manual, "manual", false, "skip the browser flow; prompt for credentials manually")
 	cmd.Flags().DurationVar(&timeout, "timeout", 10*time.Minute, "abort if the user doesn't complete the flow in this time")
 	cmd.Flags().StringVar(&baseAPI, "github-api", "https://api.github.com", "GitHub API base URL (override for testing)")
+	cmd.Flags().StringVar(&homepageURL, "homepage-url", "", "production homepage URL written into the manifest (default: local server URL)")
+	cmd.Flags().StringVar(&callbackURL, "callback-url", "", "production OAuth callback URL written into the manifest (default: local server /oauth/callback)")
+	cmd.Flags().StringVar(&webhookURL, "webhook-url", "", "production webhook URL written into the manifest (default: local server /webhook)")
 	return cmd
 }

@@ -5,11 +5,19 @@
 package githubapp
 
 // ManifestInput is the minimal user-facing data needed to render a manifest.
-// All URLs in the rendered manifest point at the local callback server; the
-// real production URLs are set by the user in step 16 after deploy.
+//
+// CallbackURL is always the *local* callback server base URL (set by
+// server.go from s.URL()). It is required so the manifest-create handshake
+// (RedirectURL) reaches the local helper. The other three fields are
+// optional production URLs pointing at the deployed FQDN; when blank we fall
+// back to CallbackURL-derived defaults so existing local-dev behavior and
+// older callers keep working.
 type ManifestInput struct {
-	Name        string // app name, must be globally unique on GitHub
-	CallbackURL string // base URL of the local callback server, e.g. http://localhost:8765
+	Name             string // app name, must be globally unique on GitHub
+	CallbackURL      string // base URL of the local callback server, e.g. http://localhost:8765
+	HomepageURL      string // production homepage URL (optional; defaults to CallbackURL)
+	WebhookURL       string // production webhook URL (optional; defaults to CallbackURL+"/webhook")
+	OAuthCallbackURL string // production OAuth callback URL (optional; defaults to CallbackURL+"/oauth/callback")
 }
 
 // Manifest is the JSON payload posted to github.com/settings/apps/new.
@@ -38,12 +46,24 @@ type HookAttributes struct {
 // Email R, Push events.
 func BuildManifest(in ManifestInput) Manifest {
 	base := in.CallbackURL
+	homepage := in.HomepageURL
+	if homepage == "" {
+		homepage = base
+	}
+	webhook := in.WebhookURL
+	if webhook == "" {
+		webhook = base + "/webhook"
+	}
+	oauthCB := in.OAuthCallbackURL
+	if oauthCB == "" {
+		oauthCB = base + "/oauth/callback"
+	}
 	return Manifest{
 		Name:           in.Name,
-		URL:            base,
-		HookAttributes: HookAttributes{URL: base + "/webhook"},
+		URL:            homepage,
+		HookAttributes: HookAttributes{URL: webhook},
 		RedirectURL:    base + "/callback",
-		CallbackURLs:   []string{base + "/oauth/callback"},
+		CallbackURLs:   []string{oauthCB},
 		SetupURL:       base + "/installed",
 		SetupOnUpdate:  true,
 		Public:         false,

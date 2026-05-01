@@ -1,0 +1,20 @@
+# Starter smoke skill — adjust cron, destinations, and writeback before going live.
+version: 1
+skills:
+  - path: skills/smoke
+    schedules:
+      - name: daily-smoke
+        cron: "0 9 * * *"
+        timezone: UTC
+        provider: copilot-enterprise
+        copilot_prefix: copilot
+        model: gpt-4o
+        destinations:
+          - github-issue:
+              repo: __REPORTS_REPO__
+              title: "smoke — {{ run.date }}"
+              labels: [smoke]
+        writeback:
+          enabled: true
+          path: memory.md
+          mode: append

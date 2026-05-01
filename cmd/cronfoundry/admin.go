@@ -16,6 +16,7 @@ func newAdminCmd() *cobra.Command {
 	cmd.AddCommand(newAdminInitCmd())
 	cmd.AddCommand(newAdminSetSecretCmd())
 	cmd.AddCommand(newAdminConnectRepoCmd())
+	cmd.AddCommand(newAdminConnectCopilotCmd(prodConnectCopilotDeps()))
 	cmd.AddCommand(newAdminListConnectionsCmd())
 	cmd.AddCommand(newAdminListSchedulesCmd())
 	cmd.AddCommand(newAdminTriggerSyncCmd())
