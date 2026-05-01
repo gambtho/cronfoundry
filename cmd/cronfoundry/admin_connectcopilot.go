@@ -14,17 +14,14 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/spf13/cobra"
 
 	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
 	"github.com/gambtho/cronfoundry/internal/secrets/server"
+	"github.com/gambtho/cronfoundry/internal/webapi"
 )
-
-// copilotClientIDDefault matches the value used by the webapi handler
-// (internal/webapi/copilot_connect.go). Kept local because that constant is
-// unexported.
-const copilotClientIDDefault = "cronfoundry"
 
 // connectCopilotDeps captures the injectable dependencies for the
 // connect-copilot command so tests can stub the GitHub endpoints and the
@@ -47,7 +44,7 @@ func (d *connectCopilotDeps) applyDefaults() {
 		d.TokenURL = "https://github.com/login/oauth/access_token"
 	}
 	if d.ClientID == "" {
-		d.ClientID = copilotClientIDDefault
+		d.ClientID = webapi.CopilotClientID
 	}
 	if d.Scope == "" {
 		d.Scope = "copilot"
@@ -57,11 +54,6 @@ func (d *connectCopilotDeps) applyDefaults() {
 	// set an explicit cadence via prodConnectCopilotDeps.
 	if d.HTTPClient == nil {
 		d.HTTPClient = http.DefaultClient
-	}
-	if d.StoreTokens == nil {
-		d.StoreTokens = func(ctx context.Context, prefix, accessToken, refreshToken string, expiresIn int) error {
-			return nil
-		}
 	}
 }
 
@@ -100,6 +92,12 @@ func newAdminConnectCopilotCmd(deps connectCopilotDeps) *cobra.Command {
 func runAdminConnectCopilot(ctx context.Context, deps connectCopilotDeps, prefix string, timeout time.Duration, out io.Writer) error {
 	if prefix == "" {
 		return fmt.Errorf("--prefix must not be empty")
+	}
+	if timeout <= 0 {
+		return fmt.Errorf("--timeout must be positive")
+	}
+	if deps.StoreTokens == nil {
+		return errors.New("StoreTokens not configured")
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -146,7 +144,9 @@ func requestDeviceCode(ctx context.Context, deps connectCopilotDeps) (*deviceCod
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("device-code endpoint returned %d", resp.StatusCode)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return nil, fmt.Errorf("device-code endpoint returned %d: %s",
+			resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	var dc deviceCodeResp
 	if err := json.NewDecoder(resp.Body).Decode(&dc); err != nil {
@@ -194,8 +194,14 @@ func pollForToken(ctx context.Context, deps connectCopilotDeps, dc *deviceCodeRe
 				return nil, errors.New("token response missing access_token")
 			}
 			return &tr, nil
-		case "authorization_pending", "slow_down":
-			// keep polling
+		case "authorization_pending":
+			// keep polling at the current cadence
+		case "slow_down":
+			// GitHub asks us to back off; bump the interval before sleeping.
+			if interval <= 0 {
+				interval = 5 * time.Second
+			}
+			interval += 5 * time.Second
 		default:
 			return nil, fmt.Errorf("token endpoint error: %s", tr.Error)
 		}
@@ -228,45 +234,55 @@ func prodConnectCopilotDeps() connectCopilotDeps {
 }
 
 func storeCopilotTokensProd(ctx context.Context, prefix, accessToken, refreshToken string, expiresIn int) error {
-	dsn := os.Getenv(envDatabaseURL)
-	if dsn == "" {
-		return fmt.Errorf("%s is required", envDatabaseURL)
-	}
-
-	var master []byte
-	if os.Getenv("AZURE_KEYVAULT_URL") == "" {
-		encodedMaster := os.Getenv(envMasterKey)
-		if encodedMaster == "" {
-			return fmt.Errorf("%s is required; run `cronfoundry admin init` first", envMasterKey)
-		}
-		var err error
-		master, err = server.ParseMasterKey(encodedMaster)
-		if err != nil {
-			return fmt.Errorf("parse %s: %w", envMasterKey, err)
-		}
-	}
+	useKV := os.Getenv("AZURE_KEYVAULT_URL") != ""
 
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	pool, err := pgxpool.New(ctx, dsn)
-	if err != nil {
-		return fmt.Errorf("open pool: %w", err)
-	}
-	defer pool.Close()
-
-	q := dbgen.New(pool)
-	org, err := q.GetFirstOrganization(ctx)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return fmt.Errorf("no organization seeded; run `cronfoundry admin init` first: %w", err)
+	var (
+		store server.SecretStore
+		err   error
+	)
+	if useKV {
+		// KV path doesn't need DB pool / org / master key — buildSecretStore
+		// returns the KeyVaultStore immediately when AZURE_KEYVAULT_URL is set.
+		store, err = buildSecretStore(nil, pgtype.UUID{}, nil)
+		if err != nil {
+			return fmt.Errorf("build secret store: %w", err)
 		}
-		return fmt.Errorf("load organization: %w", err)
-	}
+	} else {
+		dsn := os.Getenv(envDatabaseURL)
+		if dsn == "" {
+			return fmt.Errorf("%s is required", envDatabaseURL)
+		}
+		encodedMaster := os.Getenv(envMasterKey)
+		if encodedMaster == "" {
+			return fmt.Errorf("%s is required; run `cronfoundry admin init` first", envMasterKey)
+		}
+		master, err := server.ParseMasterKey(encodedMaster)
+		if err != nil {
+			return fmt.Errorf("parse %s: %w", envMasterKey, err)
+		}
 
-	store, err := buildSecretStore(pool, org.ID, master)
-	if err != nil {
-		return fmt.Errorf("build secret store: %w", err)
+		pool, err := pgxpool.New(ctx, dsn)
+		if err != nil {
+			return fmt.Errorf("open pool: %w", err)
+		}
+		defer pool.Close()
+
+		q := dbgen.New(pool)
+		org, err := q.GetFirstOrganization(ctx)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return fmt.Errorf("no organization seeded; run `cronfoundry admin init` first: %w", err)
+			}
+			return fmt.Errorf("load organization: %w", err)
+		}
+
+		store, err = buildSecretStore(pool, org.ID, master)
+		if err != nil {
+			return fmt.Errorf("build secret store: %w", err)
+		}
 	}
 
 	expiresAt := time.Now().Add(time.Duration(expiresIn) * time.Second)
