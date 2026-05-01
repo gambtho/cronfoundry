@@ -40,15 +40,15 @@ resource kvServeRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-
   }
 }
 
-// Pre-seed the github-app-pem secret so the serve Container App's
-// Key Vault secret reference resolves at deploy time. Skipped when
-// githubAppPem is empty; the operator must az keyvault secret set
-// before the Container App is deployed in that case.
-resource githubAppPemSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = if (!empty(githubAppPem)) {
+// Always pre-seed the github-app-pem secret so the serve Container App's
+// Key Vault secret reference resolves at deploy time. When githubAppPem is
+// empty (Phase 1 deploy-first flow), seed a placeholder; the install script
+// overwrites it via `az keyvault secret set` after the manifest flow.
+resource githubAppPemSecret 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   parent: kv
   name: 'github-app-pem'
   properties: {
-    value: githubAppPem
+    value: empty(githubAppPem) ? 'placeholder-set-after-manifest-flow' : githubAppPem
     contentType: 'application/x-pem-file'
   }
 }
