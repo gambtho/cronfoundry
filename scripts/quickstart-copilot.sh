@@ -142,6 +142,18 @@ if [[ -z "${CF_ENV:-}" ]]; then
   done
   save CF_ENV "$CF_ENV"
 fi
+# Migrate state to per-env path so quickstart-down.sh can find it via
+# state_path_for "$CF_ENV". The default file (~/.cronfoundry-quickstart-state)
+# is used until CF_ENV is known; rename it now and re-init at the new path.
+PER_ENV_STATE="$(state_path_for "$CF_ENV")"
+if [[ "$STATE_FILE" != "$PER_ENV_STATE" ]]; then
+  if [[ -f "$STATE_FILE" && ! -f "$PER_ENV_STATE" ]]; then
+    mv "$STATE_FILE" "$PER_ENV_STATE"
+  fi
+  STATE_FILE="$PER_ENV_STATE"
+  export STATE_FILE
+  state_init
+fi
 warn "Key Vault soft-delete retains the name 'cf-kv-${CF_ENV}' for 7 days after teardown."
 warn "Re-runs after teardown need a new suffix (e.g. copilot2)."
 ok "Env: $CF_ENV"
