@@ -42,6 +42,7 @@ check_cmd python3 "Install: https://www.python.org/downloads/"
 check_cmd openssl "Usually pre-installed. Install via your OS package manager."
 check_cmd go      "Install: https://golang.org/dl/ (need >= 1.21)"
 check_cmd gh "Install: https://cli.github.com/"
+check_cmd jq "Install: https://stedolan.github.io/jq/download/"
 if ! gh auth status &>/dev/null; then
   die "gh is installed but not authenticated. Run: gh auth login\nThen re-run this script."
 fi
@@ -371,8 +372,50 @@ for i in {1..60}; do
 done
 [[ "$HEALTHY" == "1" ]] || warn "Serve did not become healthy in 5 minutes; check 'az containerapp logs show --name $CA_NAME --resource-group $RG'"
 
-# ── Step 18: UI checklist ─────────────────────────────────────────────────────
-header "[step 18/19] Complete setup in the web UI"
+# ── Step 18: Discover GitHub App installation ───────────────────────────────
+header "[step 18/19] Discover GitHub App installation"
+if [[ -z "${CF_INSTALLATION_ID:-}" ]]; then
+  JWT=$(./cronfoundry setup mint-jwt --app-id "$CF_GITHUB_APP_ID" --pem "$CF_GITHUB_PEM_PATH") \
+    || die "Failed to mint App JWT"
+
+  fetch_installs() {
+    curl -fsS \
+      -H "Accept: application/vnd.github+json" \
+      -H "Authorization: Bearer ${JWT}" \
+      https://api.github.com/app/installations
+  }
+  INSTALL_JSON=$(fetch_installs) || die "Failed to list App installations"
+  INSTALL_COUNT=$(echo "$INSTALL_JSON" | jq 'length')
+
+  if [[ "$INSTALL_COUNT" -eq 0 ]]; then
+    warn "No installations found yet."
+    SLUG="${CF_GITHUB_APP_SLUG:-}"
+    if [[ -n "$SLUG" ]]; then
+      echo "Open this URL to install the App on your skill repo:"
+      echo "  https://github.com/apps/${SLUG}/installations/new"
+    else
+      echo "Open the GitHub App's install page from the manifest-flow output."
+    fi
+    read -rp "Press Enter once installed..."
+    INSTALL_JSON=$(fetch_installs) || die "Failed to list App installations after install"
+    INSTALL_COUNT=$(echo "$INSTALL_JSON" | jq 'length')
+  fi
+
+  if [[ "$INSTALL_COUNT" -eq 1 ]]; then
+    CF_INSTALLATION_ID=$(echo "$INSTALL_JSON" | jq '.[0].id')
+  elif [[ "$INSTALL_COUNT" -gt 1 ]]; then
+    echo "Multiple installations found:"
+    echo "$INSTALL_JSON" | jq '.[] | {id, account: .account.login}'
+    read -rp "Enter installation ID for ${CF_SKILL_REPO}: " CF_INSTALLATION_ID
+  else
+    die "Still no installations after retry"
+  fi
+  save CF_INSTALLATION_ID "$CF_INSTALLATION_ID"
+fi
+ok "Installation ID: ${CF_INSTALLATION_ID}"
+
+# ── Step 19: UI checklist ─────────────────────────────────────────────────────
+header "[step 19/19] Complete setup in the web UI"
 echo ""
 echo "  Open: https://${CF_FQDN}/"
 echo ""
