@@ -706,14 +706,17 @@ if [[ "$DRY_RUN" != "true" ]]; then
   ok "Repo connected: ${CF_SKILL_REPO}"
 fi
 
-# ── Step 21: Store webhook secret ────────────────────────────────────────────
-header "[step 21/25] Store webhook secret"
-if [[ "$DRY_RUN" != "true" ]]; then
-  printf '%s\n' "${CF_GITHUB_WEBHOOK_SECRET}" \
-    | env "${ADMIN_ENV[@]}" ./cronfoundry admin set-secret github_webhook_secret \
-      || die "set-secret github_webhook_secret failed"
-  ok "Webhook secret stored"
-fi
+# ── Step 21: Store webhook secret (no-op) ────────────────────────────────────
+# The webhook secret is already in place: step 17 set it as the
+# CRONFOUNDRY_GITHUB_WEBHOOK_SECRET env var on the Container App, which is
+# what internal/webapi/server.go reads (Deps.WebhookSecret). There is no
+# secrets-store consumer of this value. Earlier versions of this script
+# called `admin set-secret github_webhook_secret` here, but that wrote
+# to a Postgres key nothing reads, AND fails on Key Vault (KV doesn't
+# allow underscores in secret names). Keeping the header for step-numbering
+# stability but skipping the body.
+header "[step 21/25] Webhook secret"
+ok "Webhook secret already wired into Container App env (step 17). Skipping store."
 
 # ── Step 22: Connect Copilot Enterprise ──────────────────────────────────────
 header "[step 22/25] Connect Copilot Enterprise (device flow)"
