@@ -1,5 +1,23 @@
 name: Release
 
+# Tag-driven release. Two parallel jobs:
+#
+#   release-amd64 — builds + publishes serve & runner images for linux/amd64
+#                   plus the GitHub Release with deploy artifacts. Fast
+#                   path (~10 min). amd64 is what every production env we
+#                   deploy to runs in practice (ACA consumption, fly.io,
+#                   the default AKS sample). Tag the image as :VERSION so
+#                   operators see it published quickly.
+#
+#   release-arm64 — builds + publishes the SAME tag's arm64 manifest. Runs
+#                   under QEMU emulation (~30+ min); kept separate so it
+#                   can't block the amd64 path. Pushed under
+#                   :VERSION-arm64 to avoid racing the amd64 manifest.
+#
+# Both jobs run on every v* tag. If you only need amd64 (the common case)
+# the release is published as soon as release-amd64 completes; arm64
+# trickles in later without blocking deploys.
+
 on:
   push:
     tags:
@@ -10,7 +28,7 @@ env:
   IMAGE_NAME: ${{ github.repository_owner }}/cronfoundry
 
 jobs:
-  release:
+  release-amd64:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -29,13 +47,8 @@ jobs:
 
       # Build the React bundle into internal/webapi/web/dist BEFORE docker
       # build, since the Go binary embeds it via //go:embed all:web/dist.
-      # Building here (rather than inside the Dockerfile) keeps node out of
-      # the multi-arch QEMU emulation path and lets us use the runner's
-      # native node + npm cache.
       - name: Build web bundle
         run: make web
-
-      - uses: docker/setup-qemu-action@v3
 
       - uses: docker/setup-buildx-action@v3
 
@@ -56,17 +69,17 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest
 
-      - name: Build and push multi-arch image
+      - name: Build and push serve image (amd64)
         uses: docker/build-push-action@v5
         with:
           context: .
           file: deploy/Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=amd64
+          cache-to: type=gha,scope=amd64,mode=max
 
       - name: Extract runner metadata
         id: runner-meta
@@ -78,17 +91,17 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest
 
-      - name: Build and push runner image
+      - name: Build and push runner image (amd64)
         uses: docker/build-push-action@v5
         with:
           context: .
           file: deploy/Dockerfile.runner
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: ${{ steps.runner-meta.outputs.tags }}
           labels: ${{ steps.runner-meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=runner-amd64
+          cache-to: type=gha,scope=runner-amd64,mode=max
 
       - name: Bundle deploy artifacts
         run: |
@@ -101,3 +114,85 @@ jobs:
           generate_release_notes: true
           files: |
             cronfoundry-azure-deploy-${{ github.ref_name }}.tar.gz
+
+  release-arm64:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build web bundle
+        run: make web
+
+      - uses: docker/setup-qemu-action@v3
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Tagged with -arm64 suffix so it never races the amd64 manifest
+      # for the same semantic version. Operators who actually need arm64
+      # (rare today) reference :VERSION-arm64 explicitly.
+      - name: Extract serve metadata (arm64)
+        id: meta-arm64
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          flavor: |
+            suffix=-arm64,onlatest=true
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Build and push serve image (arm64)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: deploy/Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.meta-arm64.outputs.tags }}
+          labels: ${{ steps.meta-arm64.outputs.labels }}
+          cache-from: type=gha,scope=arm64
+          cache-to: type=gha,scope=arm64,mode=max
+
+      - name: Extract runner metadata (arm64)
+        id: runner-meta-arm64
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-runner
+          flavor: |
+            suffix=-arm64,onlatest=true
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Build and push runner image (arm64)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: deploy/Dockerfile.runner
+          platforms: linux/arm64
+          push: true
+          tags: ${{ steps.runner-meta-arm64.outputs.tags }}
+          labels: ${{ steps.runner-meta-arm64.outputs.labels }}
+          cache-from: type=gha,scope=runner-arm64
+          cache-to: type=gha,scope=runner-arm64,mode=max
