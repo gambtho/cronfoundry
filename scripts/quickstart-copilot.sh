@@ -763,16 +763,29 @@ if [[ "$DRY_RUN" != "true" ]]; then
     YAML_B64=$(base64 < "$TMP_YAML" | tr -d '\n')
     SKILL_B64=$(base64 < "$TMP_SKILL" | tr -d '\n')
 
-    gh api -X PUT "repos/${CF_SKILL_REPO}/contents/cronfoundry.yaml" \
-      -f message="Add starter cronfoundry.yaml" \
-      -f branch="cronfoundry-quickstart" \
-      -f content="${YAML_B64}" >/dev/null \
+    # GitHub's PUT /contents/{path} requires the existing blob SHA when the
+    # file is already present at the target ref — otherwise returns 422
+    # 'sha wasn't supplied'. Look up SHAs first; pass them only when set so
+    # initial creates still work.
+    YAML_SHA=$(gh api "repos/${CF_SKILL_REPO}/contents/cronfoundry.yaml?ref=cronfoundry-quickstart" \
+      --jq .sha 2>/dev/null || echo "")
+    SKILL_SHA=$(gh api "repos/${CF_SKILL_REPO}/contents/skills/smoke/SKILL.md?ref=cronfoundry-quickstart" \
+      --jq .sha 2>/dev/null || echo "")
+
+    yaml_args=( -X PUT "repos/${CF_SKILL_REPO}/contents/cronfoundry.yaml"
+                -f message="Add starter cronfoundry.yaml"
+                -f branch="cronfoundry-quickstart"
+                -f content="${YAML_B64}" )
+    [[ -n "$YAML_SHA" ]] && yaml_args+=( -f sha="$YAML_SHA" )
+    gh api "${yaml_args[@]}" >/dev/null \
       || die "Failed to PUT cronfoundry.yaml"
 
-    gh api -X PUT "repos/${CF_SKILL_REPO}/contents/skills/smoke/SKILL.md" \
-      -f message="Add starter smoke skill" \
-      -f branch="cronfoundry-quickstart" \
-      -f content="${SKILL_B64}" >/dev/null \
+    skill_args=( -X PUT "repos/${CF_SKILL_REPO}/contents/skills/smoke/SKILL.md"
+                 -f message="Add starter smoke skill"
+                 -f branch="cronfoundry-quickstart"
+                 -f content="${SKILL_B64}" )
+    [[ -n "$SKILL_SHA" ]] && skill_args+=( -f sha="$SKILL_SHA" )
+    gh api "${skill_args[@]}" >/dev/null \
       || die "Failed to PUT skills/smoke/SKILL.md"
 
     PR_URL=""
