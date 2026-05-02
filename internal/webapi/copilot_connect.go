@@ -162,15 +162,15 @@ func (h *copilotConnectHandler) poll(w http.ResponseWriter, r *http.Request) {
 
 	prefix := state.prefix
 	expiresAt := time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
-	if err := h.deps.Secrets.Put(r.Context(), prefix+"_access_token", tokenResp.AccessToken); err != nil {
+	if err := h.deps.Secrets.Put(r.Context(), prefix+"-access-token", tokenResp.AccessToken); err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to store access token", "internal")
 		return
 	}
-	if err := h.deps.Secrets.Put(r.Context(), prefix+"_refresh_token", tokenResp.RefreshToken); err != nil {
+	if err := h.deps.Secrets.Put(r.Context(), prefix+"-refresh-token", tokenResp.RefreshToken); err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to store refresh token", "internal")
 		return
 	}
-	if err := h.deps.Secrets.Put(r.Context(), prefix+"_expiry", fmt.Sprintf("%d", expiresAt.Unix())); err != nil {
+	if err := h.deps.Secrets.Put(r.Context(), prefix+"-expiry", fmt.Sprintf("%d", expiresAt.Unix())); err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to store expiry", "internal")
 		return
 	}

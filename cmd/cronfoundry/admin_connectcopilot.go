@@ -286,13 +286,13 @@ func storeCopilotTokensProd(ctx context.Context, prefix, accessToken, refreshTok
 	}
 
 	expiresAt := time.Now().Add(time.Duration(expiresIn) * time.Second)
-	if err := store.Put(ctx, prefix+"_access_token", accessToken); err != nil {
+	if err := store.Put(ctx, prefix+"-access-token", accessToken); err != nil {
 		return fmt.Errorf("put access token: %w", err)
 	}
-	if err := store.Put(ctx, prefix+"_refresh_token", refreshToken); err != nil {
+	if err := store.Put(ctx, prefix+"-refresh-token", refreshToken); err != nil {
 		return fmt.Errorf("put refresh token: %w", err)
 	}
-	if err := store.Put(ctx, prefix+"_expiry", strconv.FormatInt(expiresAt.Unix(), 10)); err != nil {
+	if err := store.Put(ctx, prefix+"-expiry", strconv.FormatInt(expiresAt.Unix(), 10)); err != nil {
 		return fmt.Errorf("put expiry: %w", err)
 	}
 	return nil

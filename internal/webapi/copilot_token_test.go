@@ -17,8 +17,8 @@ import (
 func TestResolveCopilotToken_FreshToken(t *testing.T) {
 	store := newTestMemStore()
 	future := strconv.FormatInt(time.Now().Add(10*time.Minute).Unix(), 10)
-	_ = store.Put(context.Background(), "copilot_access_token", "ghu_fresh")
-	_ = store.Put(context.Background(), "copilot_expiry", future)
+	_ = store.Put(context.Background(), "copilot-access-token", "ghu_fresh")
+	_ = store.Put(context.Background(), "copilot-expiry", future)
 
 	accessToken, expiresAt, err := webapi.ResolveCopilotToken(context.Background(), store, "copilot", nil)
 	require.NoError(t, err)
@@ -37,16 +37,16 @@ func TestResolveCopilotToken_ExpiredRefreshes(t *testing.T) {
 
 	store := newTestMemStore()
 	past := strconv.FormatInt(time.Now().Add(-1*time.Minute).Unix(), 10)
-	_ = store.Put(context.Background(), "copilot_access_token", "ghu_stale")
-	_ = store.Put(context.Background(), "copilot_refresh_token", "ghu_oldrefresh")
-	_ = store.Put(context.Background(), "copilot_expiry", past)
+	_ = store.Put(context.Background(), "copilot-access-token", "ghu_stale")
+	_ = store.Put(context.Background(), "copilot-refresh-token", "ghu_oldrefresh")
+	_ = store.Put(context.Background(), "copilot-expiry", past)
 
 	accessToken, _, err := webapi.ResolveCopilotToken(context.Background(), store, "copilot", &gh.URL)
 	require.NoError(t, err)
 	assert.True(t, refreshCalled)
 	assert.Equal(t, "ghu_new", accessToken)
 
-	v, _ := store.Get(context.Background(), "copilot_access_token")
+	v, _ := store.Get(context.Background(), "copilot-access-token")
 	assert.Equal(t, "ghu_new", v)
 }
 
@@ -58,9 +58,9 @@ func TestResolveCopilotToken_RefreshFailure(t *testing.T) {
 
 	store := newTestMemStore()
 	past := strconv.FormatInt(time.Now().Add(-1*time.Minute).Unix(), 10)
-	_ = store.Put(context.Background(), "copilot_access_token", "ghu_stale")
-	_ = store.Put(context.Background(), "copilot_refresh_token", "ghu_oldrefresh")
-	_ = store.Put(context.Background(), "copilot_expiry", past)
+	_ = store.Put(context.Background(), "copilot-access-token", "ghu_stale")
+	_ = store.Put(context.Background(), "copilot-refresh-token", "ghu_oldrefresh")
+	_ = store.Put(context.Background(), "copilot-expiry", past)
 
 	_, _, err := webapi.ResolveCopilotToken(context.Background(), store, "copilot", &gh.URL)
 	require.Error(t, err)
