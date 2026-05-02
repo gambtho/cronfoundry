@@ -14,11 +14,13 @@ header()  { echo -e "\n${BOLD}$*${RESET}"; }
 DRY_RUN=false
 MANIFEST_TIMEOUT="2h"
 OPERATOR_OBJ_ID="${CRONFOUNDRY_OPERATOR_OBJECT_ID:-}"
+CLI_REPORTS_REPO=""
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=true ;;
     --manifest-timeout=*) MANIFEST_TIMEOUT="${arg#*=}" ;;
     --operator-object-id=*) OPERATOR_OBJ_ID="${arg#*=}" ;;
+    --reports-repo=*) CLI_REPORTS_REPO="${arg#*=}" ;;
   esac
 done
 
@@ -246,43 +248,43 @@ if [[ -z "${CF_SKILL_REPO:-}" ]]; then
   echo "  CronFoundry pulls scheduled skill definitions (cronfoundry.yaml + skills/) from"
   echo "  a GitHub repo. The installer will open a PR there with a starter smoke skill."
   while true; do
-    read -rp "Skill repo (owner/repo) or 'create <owner>/<name>' for a new private repo: " CF_SKILL_REPO_INPUT
-    if [[ "$CF_SKILL_REPO_INPUT" =~ ^create[[:space:]]+([^/[:space:]]+/[^/[:space:]]+)$ ]]; then
-      NEW_REPO="${BASH_REMATCH[1]}"
-      info "Creating private repo $NEW_REPO..."
-      gh repo create "$NEW_REPO" --private --add-readme \
-        || die "gh repo create failed for $NEW_REPO; verify you have permission and the name is available."
-      CF_SKILL_REPO="$NEW_REPO"
-      break
-    elif [[ "$CF_SKILL_REPO_INPUT" =~ ^[^/[:space:]]+/[^/[:space:]]+$ ]]; then
-      if gh api "repos/${CF_SKILL_REPO_INPUT}" --silent 2>/dev/null; then
-        CF_SKILL_REPO="$CF_SKILL_REPO_INPUT"
-        break
-      else
-        warn "Repo $CF_SKILL_REPO_INPUT not visible to gh — check the name and your auth, or use 'create $CF_SKILL_REPO_INPUT' to make it."
-      fi
-    else
-      warn "Expected 'owner/repo' or 'create owner/repo'; got '$CF_SKILL_REPO_INPUT'."
+    read -rp "Skill repo (owner/repo): " CF_SKILL_REPO_INPUT
+    if [[ ! "$CF_SKILL_REPO_INPUT" =~ ^[^/[:space:]]+/[^/[:space:]]+$ ]]; then
+      warn "Expected 'owner/repo'; got '$CF_SKILL_REPO_INPUT'."
+      continue
     fi
+    if gh api "repos/${CF_SKILL_REPO_INPUT}" --silent 2>/dev/null; then
+      CF_SKILL_REPO="$CF_SKILL_REPO_INPUT"
+      break
+    fi
+    read -rp "Repo $CF_SKILL_REPO_INPUT does not exist (or is not visible). Create it as a private repo? [Y/n]: " mkrepo
+    mkrepo="${mkrepo:-y}"
+    if [[ "$mkrepo" =~ ^[Yy]$ ]]; then
+      info "Creating private repo $CF_SKILL_REPO_INPUT..."
+      gh repo create "$CF_SKILL_REPO_INPUT" --private --add-readme \
+        || die "gh repo create failed; verify your auth has 'repo' scope and the name is available."
+      CF_SKILL_REPO="$CF_SKILL_REPO_INPUT"
+      break
+    fi
+    # else: loop and let the operator paste a different name
   done
   save CF_SKILL_REPO "$CF_SKILL_REPO"
 fi
 ok "Skill repo: $CF_SKILL_REPO"
 
 # ── Step 6: reports repo ──────────────────────────────────────────────────────
+# By default reports go to the same repo as skills. Override via --reports-repo
+# or by exporting CF_REPORTS_REPO before running.
 header "[step 6/25] Reports repo"
 if [[ -z "${CF_REPORTS_REPO:-}" ]]; then
-  echo "  Reports repo receives the GitHub issues filed by the smoke skill."
-  echo "  Default is the same as the skill repo (recommended for quickstart)."
-  while true; do
-    read -rp "Reports repo (owner/repo) [default: ${CF_SKILL_REPO}]: " CF_REPORTS_REPO_INPUT
-    CF_REPORTS_REPO_INPUT="${CF_REPORTS_REPO_INPUT:-$CF_SKILL_REPO}"
-    if [[ "$CF_REPORTS_REPO_INPUT" =~ ^[^/[:space:]]+/[^/[:space:]]+$ ]]; then
-      CF_REPORTS_REPO="$CF_REPORTS_REPO_INPUT"
-      break
+  if [[ -n "$CLI_REPORTS_REPO" ]]; then
+    if [[ ! "$CLI_REPORTS_REPO" =~ ^[^/[:space:]]+/[^/[:space:]]+$ ]]; then
+      die "--reports-repo expects 'owner/repo'; got '$CLI_REPORTS_REPO'."
     fi
-    warn "Expected 'owner/repo'; got '$CF_REPORTS_REPO_INPUT'."
-  done
+    CF_REPORTS_REPO="$CLI_REPORTS_REPO"
+  else
+    CF_REPORTS_REPO="$CF_SKILL_REPO"
+  fi
   save CF_REPORTS_REPO "$CF_REPORTS_REPO"
 fi
 ok "Reports repo: $CF_REPORTS_REPO"
