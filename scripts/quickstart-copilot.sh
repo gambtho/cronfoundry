@@ -217,12 +217,18 @@ if [[ "$AZ_MAJOR" -lt 2 ]] || { [[ "$AZ_MAJOR" -eq 2 ]] && [[ "$AZ_MINOR" -lt 60
 fi
 ok "az $AZ_VER"
 
-# bicep check (need >= 0.26)
-if ! az bicep version &>/dev/null; then
+# bicep check (need >= 0.26). Single call: capture output and exit code; only
+# run 'az bicep install' on real failure. The first 'az bicep version' call
+# is slow (~30-60s cold-start) on machines that haven't run any az command
+# yet — running it twice doubled the wait without any benefit.
+BICEP_OUT=$(az bicep version 2>/dev/null)
+BICEP_RC=$?
+if (( BICEP_RC != 0 )); then
   info "Bicep not found -- installing via az bicep install..."
   az bicep install || die "Failed to install Bicep. Check internet connectivity.\nSee §1 of $GUIDE_URL"
+  BICEP_OUT=$(az bicep version 2>/dev/null)
 fi
-BICEP_VER=$(az bicep version 2>/dev/null | grep -Eo '[0-9]+\.[0-9]+' | head -1 || echo "0.0")
+BICEP_VER=$(echo "$BICEP_OUT" | grep -Eo '[0-9]+\.[0-9]+' | head -1 || echo "0.0")
 BICEP_MINOR=$(echo "$BICEP_VER" | cut -d. -f2)
 if [[ "${BICEP_MINOR:-0}" -lt 26 ]]; then
   warn "Bicep $BICEP_VER found; recommend >= 0.26. Run: az bicep upgrade"
