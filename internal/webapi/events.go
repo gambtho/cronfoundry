@@ -12,6 +12,33 @@ import (
 	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
 )
 
+// runEventDTO mirrors web/src/lib/types.ts:RunEvent. payload_json is emitted
+// as raw JSON (not base64) so the SPA can decode it client-side without an
+// extra unmarshal step. Empty/missing payloads serialize as null.
+type runEventDTO struct {
+	ID          int64           `json:"id"`
+	RunID       string          `json:"run_id"`
+	Ts          string          `json:"ts"`
+	Level       string          `json:"level"`
+	EventType   string          `json:"event_type"`
+	PayloadJSON json.RawMessage `json:"payload_json"`
+}
+
+func runEventToDTO(e dbgen.RunEvent) runEventDTO {
+	payload := json.RawMessage(e.PayloadJson)
+	if len(payload) == 0 {
+		payload = json.RawMessage(`null`)
+	}
+	return runEventDTO{
+		ID:          e.ID,
+		RunID:       uuidString(e.RunID),
+		Ts:          toISO(e.Ts),
+		Level:       e.Level,
+		EventType:   e.EventType,
+		PayloadJSON: payload,
+	}
+}
+
 type eventsHandler struct{ deps Deps }
 
 func (h *eventsHandler) list(w http.ResponseWriter, r *http.Request) {
@@ -25,7 +52,11 @@ func (h *eventsHandler) list(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "failed to list events", "internal")
 		return
 	}
-	writeJSON(w, http.StatusOK, events)
+	out := make([]runEventDTO, len(events))
+	for i, ev := range events {
+		out[i] = runEventToDTO(ev)
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 // stream sends run events as an SSE stream, polling Postgres every 2s until
@@ -67,7 +98,11 @@ func (h *eventsHandler) stream(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			for _, ev := range events {
-				data, _ := json.Marshal(ev)
+				// Marshal the DTO (snake_case + tagged) so the SSE client
+				// receives the same shape as the polling /api/.../events
+				// endpoint. Pre-DTO this marshalled the bare sqlc row and
+				// produced PascalCase keys.
+				data, _ := json.Marshal(runEventToDTO(ev))
 				_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
 				lastEventID = ev.ID
 			}

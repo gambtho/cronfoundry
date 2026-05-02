@@ -3,11 +3,13 @@ package webapi
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/gambtho/cronfoundry/internal/audit"
@@ -50,16 +52,9 @@ type scheduleDTO struct {
 // scheduleRowToDTO converts a sqlc row (pgtype-laden) into the wire shape.
 // ISO-formatted timestamps use time.RFC3339Nano for round-trip fidelity.
 func scheduleRowToDTO(r dbgen.ListSchedulesByOrgRow) scheduleDTO {
-	toISO := func(t pgtype.Timestamptz) *string {
-		if !t.Valid {
-			return nil
-		}
-		s := t.Time.Format(time.RFC3339Nano)
-		return &s
-	}
 	dto := scheduleDTO{
-		ID:              uuid.UUID(r.ID.Bytes).String(),
-		SkillID:         uuid.UUID(r.SkillID.Bytes).String(),
+		ID:              uuidString(r.ID),
+		SkillID:         uuidString(r.SkillID),
 		Name:            r.Name,
 		Cron:            r.Cron,
 		Timezone:        r.Timezone,
@@ -68,11 +63,11 @@ func scheduleRowToDTO(r dbgen.ListSchedulesByOrgRow) scheduleDTO {
 		Enabled:         r.Enabled,
 		Provider:        r.Provider,
 		Model:           r.Model,
-		NextFireAt:      toISO(r.NextFireAt),
+		NextFireAt:      toISOPtr(r.NextFireAt),
 		AutoPauseAfter:  r.AutoPauseAfter,
-		AutoPausedAt:    toISO(r.AutoPausedAt),
+		AutoPausedAt:    toISOPtr(r.AutoPausedAt),
 		AutoPauseReason: r.AutoPauseReason,
-		LastEnabledAt:   r.LastEnabledAt.Time.Format(time.RFC3339Nano),
+		LastEnabledAt:   toISO(r.LastEnabledAt),
 		SkillPath:       r.SkillPath,
 		SkillName:       r.SkillName,
 		Owner:           r.Owner,
@@ -137,12 +132,15 @@ func (h *schedulesHandler) setEnabled(w http.ResponseWriter, r *http.Request, en
 		writeErr(w, http.StatusBadRequest, "invalid schedule id", "bad_request")
 		return
 	}
-	sched, err := h.deps.Queries.SetScheduleEnabled(r.Context(), dbgen.SetScheduleEnabledParams{
+	if _, err := h.deps.Queries.SetScheduleEnabled(r.Context(), dbgen.SetScheduleEnabledParams{
 		ID:      pgtype.UUID{Bytes: id, Valid: true},
 		Enabled: enabled,
 		OrgID:   org.ID,
-	})
-	if err != nil {
+	}); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeErr(w, http.StatusNotFound, "schedule not found", "not_found")
+			return
+		}
 		writeErr(w, http.StatusInternalServerError, "failed to update schedule", "internal")
 		return
 	}
@@ -157,7 +155,26 @@ func (h *schedulesHandler) setEnabled(w http.ResponseWriter, r *http.Request, en
 		TargetKind: "schedule",
 		TargetID:   &idCopy,
 	})
-	writeJSON(w, http.StatusOK, sched)
+
+	// Re-fetch via the list query to get the joined skill/owner/repo fields
+	// the SPA expects in scheduleDTO. SetScheduleEnabled returns only the
+	// bare Schedule row without those joins.
+	rows, err := h.deps.Queries.ListSchedulesByOrg(r.Context(), org.ID)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "failed to reload schedule", "internal")
+		return
+	}
+	for _, row := range rows {
+		if row.ID == (pgtype.UUID{Bytes: id, Valid: true}) {
+			writeJSON(w, http.StatusOK, scheduleRowToDTO(row))
+			return
+		}
+	}
+	// Update succeeded but the row is gone from the joined view — most
+	// likely the underlying skill or repo was deleted concurrently. Treat
+	// as not-found rather than a 500: the resource the caller targeted is
+	// no longer addressable.
+	writeErr(w, http.StatusNotFound, "schedule not found after update", "not_found")
 }
 
 func (h *schedulesHandler) patchOverrides(w http.ResponseWriter, r *http.Request) {
