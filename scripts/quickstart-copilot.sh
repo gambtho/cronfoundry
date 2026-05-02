@@ -537,7 +537,11 @@ fi
 
 # ── Step 15: tighten Postgres firewall ───────────────────────────────────────
 header "[step 15/25] Tighten Postgres firewall"
-if [[ "$DRY_RUN" != "true" ]]; then
+if [[ "$DRY_RUN" == "true" ]]; then
+  :
+elif [[ "${CF_FIREWALL_TIGHTENED:-0}" == "1" ]]; then
+  ok "Postgres firewall already tightened (CF_FIREWALL_TIGHTENED=1); skipping"
+else
   OPERATOR_IP=$(curl -fsSL https://api.ipify.org 2>/dev/null || echo "")
   if [[ -n "$OPERATOR_IP" ]]; then
     info "Narrowing Postgres firewall to operator IP: $OPERATOR_IP"
@@ -554,6 +558,7 @@ if [[ "$DRY_RUN" != "true" ]]; then
       --rule-name AllowOperator \
       --yes 2>/dev/null || true
     ok "Postgres firewall tightened to $OPERATOR_IP"
+    save CF_FIREWALL_TIGHTENED 1
   else
     warn "Could not resolve operator IP via api.ipify.org; leaving broad firewall rule in place."
     warn "Tighten manually: az postgres flexible-server firewall-rule update ..."
