@@ -76,8 +76,22 @@ func (h *copilotTokenHandler) get(w http.ResponseWriter, r *http.Request) {
 }
 
 // ResolveCopilotToken reads the access token for the given prefix from the
-// secret store. If the token is within 60 seconds of expiry, it refreshes
-// using the stored refresh token and writes the new values back.
+// secret store. Behavior:
+//
+//  1. If the cached access token is still inside its stated expiry window
+//     (with a 60s skew margin), return it verbatim.
+//  2. If expiry has passed AND a refresh token is available, exchange the
+//     refresh token for a new access token + expiry, persist, and return.
+//  3. If expiry has passed but NO refresh token is stored, return the cached
+//     access token anyway. GitHub's public Copilot OAuth client
+//     (Iv1.b507a08c87ecfe98) issues access tokens with an expires_in field
+//     but does not issue refresh tokens for the device-flow grant. In
+//     practice these tokens often outlive their stated expires_in; we let
+//     the downstream Copilot API surface the real "expired/revoked" signal
+//     via 401 to the runner. The runner's existing non-2xx handling treats
+//     that as a normal run failure with a clear message, which is more
+//     useful than a synthetic 503 from us. To force re-auth, an operator
+//     re-runs `cronfoundry admin connect-copilot`.
 //
 // githubOverrideURL overrides the GitHub token endpoint for tests; pass nil
 // to use the real GitHub endpoint.
@@ -101,10 +115,23 @@ func ResolveCopilotToken(ctx context.Context, store server.SecretStore, prefix s
 		return tok, expiry, nil
 	}
 
-	// Refresh needed.
+	// Expired (or within 60s of expiry). Try to refresh, but only if we have
+	// a refresh token. See header comment for why a missing refresh token
+	// is a soft signal rather than a hard failure.
 	refreshTok, err := store.Get(ctx, prefix+"-refresh-token")
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("read refresh token: %w", err)
+	}
+	if refreshTok == "" {
+		// No refresh token stored. Return the cached access token and let
+		// the downstream call decide whether it still works.
+		tok, err := store.Get(ctx, prefix+"-access-token")
+		if err != nil {
+			return "", time.Time{}, fmt.Errorf("read access token: %w", err)
+		}
+		slog.Warn("copilot token: stored expiry has passed but no refresh token available; returning cached access token (Copilot may still accept it)",
+			"prefix", prefix, "expiry", expiry.Format(time.RFC3339))
+		return tok, expiry, nil
 	}
 
 	tokenURL := copilotRefreshURL

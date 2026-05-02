@@ -66,3 +66,22 @@ func TestResolveCopilotToken_RefreshFailure(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "refresh")
 }
+
+// GitHub's public Copilot OAuth client (Iv1.b507a08c87ecfe98) issues
+// access tokens with an expires_in but no refresh_token via device flow.
+// When the stored expiry has passed, the resolver must NOT 503 — it
+// returns the cached access token and lets the downstream Copilot API
+// surface the actual "expired/revoked" signal via 401. Forcing a 503
+// here is what crashed the round-3 dogfood smoke run.
+func TestResolveCopilotToken_ExpiredButNoRefreshToken(t *testing.T) {
+	store := newTestMemStore()
+	past := strconv.FormatInt(time.Now().Add(-1*time.Hour).Unix(), 10)
+	_ = store.Put(context.Background(), "copilot-access-token", "ghu_cached")
+	_ = store.Put(context.Background(), "copilot-refresh-token", "") // empty — Copilot device flow
+	_ = store.Put(context.Background(), "copilot-expiry", past)
+
+	accessToken, _, err := webapi.ResolveCopilotToken(context.Background(), store, "copilot", nil)
+	require.NoError(t, err)
+	assert.Equal(t, "ghu_cached", accessToken,
+		"resolver must return cached token when expiry passed and no refresh token available")
+}
