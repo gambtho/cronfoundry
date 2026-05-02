@@ -31,6 +31,27 @@ source "${SCRIPT_DIR}/lib/state.sh"
 source "${SCRIPT_DIR}/lib/steps.sh"
 save() { state_save "$1" "$2"; }   # shorthand for state_save
 
+# Retry helper for transient gh/network failures (TLS handshake timeouts,
+# rate-limit blips, etc.). Runs the given command up to 3 times with
+# 3s/6s exponential backoff between attempts. Returns the command's
+# last exit code.
+gh_retry() {
+  local attempt=1 max=3 delay
+  while true; do
+    if "$@"; then
+      return 0
+    fi
+    local rc=$?
+    if (( attempt >= max )); then
+      return "$rc"
+    fi
+    delay=$(( attempt * 3 ))
+    warn "gh transient failure (attempt ${attempt}/${max}); retrying in ${delay}s..."
+    sleep "$delay"
+    attempt=$(( attempt + 1 ))
+  done
+}
+
 # Resolve the operator's AAD object ID. Prefer 'az ad signed-in-user show', but
 # fall back to decoding 'oid' from the access token JWT when Conditional Access
 # blocks the Graph call (common on locked-down corporate tenants). Cache to
@@ -739,10 +760,10 @@ if [[ "$DRY_RUN" != "true" ]]; then
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   TPL_DIR="$SCRIPT_DIR/templates"
 
-  DEFAULT_BRANCH=$(gh api "repos/${CF_SKILL_REPO}" --jq .default_branch) \
+  DEFAULT_BRANCH=$(gh_retry gh api "repos/${CF_SKILL_REPO}" --jq .default_branch) \
     || die "Could not look up default branch of ${CF_SKILL_REPO}"
 
-  if gh api "repos/${CF_SKILL_REPO}/contents/cronfoundry.yaml?ref=${DEFAULT_BRANCH}" &>/dev/null; then
+  if gh_retry gh api "repos/${CF_SKILL_REPO}/contents/cronfoundry.yaml?ref=${DEFAULT_BRANCH}" &>/dev/null; then
     ok "cronfoundry.yaml already exists on ${DEFAULT_BRANCH}; skipping starter push"
   else
     TMP_YAML=$(mktemp)
@@ -751,11 +772,11 @@ if [[ "$DRY_RUN" != "true" ]]; then
     sed "s|__REPORTS_REPO__|${CF_REPORTS_REPO}|g" "$TPL_DIR/cronfoundry.yaml.tmpl" > "$TMP_YAML"
     cp "$TPL_DIR/smoke-skill.md.tmpl" "$TMP_SKILL"
 
-    BASE_SHA=$(gh api "repos/${CF_SKILL_REPO}/git/ref/heads/${DEFAULT_BRANCH}" --jq .object.sha) \
+    BASE_SHA=$(gh_retry gh api "repos/${CF_SKILL_REPO}/git/ref/heads/${DEFAULT_BRANCH}" --jq .object.sha) \
       || die "Could not resolve SHA for ${DEFAULT_BRANCH}"
 
     # Create branch (ignore failure if it already exists)
-    gh api -X POST "repos/${CF_SKILL_REPO}/git/refs" \
+    gh_retry gh api -X POST "repos/${CF_SKILL_REPO}/git/refs" \
       -f ref="refs/heads/cronfoundry-quickstart" \
       -f sha="${BASE_SHA}" &>/dev/null || true
 
@@ -767,9 +788,9 @@ if [[ "$DRY_RUN" != "true" ]]; then
     # file is already present at the target ref — otherwise returns 422
     # 'sha wasn't supplied'. Look up SHAs first; pass them only when set so
     # initial creates still work.
-    YAML_SHA=$(gh api "repos/${CF_SKILL_REPO}/contents/cronfoundry.yaml?ref=cronfoundry-quickstart" \
+    YAML_SHA=$(gh_retry gh api "repos/${CF_SKILL_REPO}/contents/cronfoundry.yaml?ref=cronfoundry-quickstart" \
       --jq .sha 2>/dev/null || echo "")
-    SKILL_SHA=$(gh api "repos/${CF_SKILL_REPO}/contents/skills/smoke/SKILL.md?ref=cronfoundry-quickstart" \
+    SKILL_SHA=$(gh_retry gh api "repos/${CF_SKILL_REPO}/contents/skills/smoke/SKILL.md?ref=cronfoundry-quickstart" \
       --jq .sha 2>/dev/null || echo "")
 
     yaml_args=( -X PUT "repos/${CF_SKILL_REPO}/contents/cronfoundry.yaml"
@@ -777,7 +798,7 @@ if [[ "$DRY_RUN" != "true" ]]; then
                 -f branch="cronfoundry-quickstart"
                 -f content="${YAML_B64}" )
     [[ -n "$YAML_SHA" ]] && yaml_args+=( -f sha="$YAML_SHA" )
-    gh api "${yaml_args[@]}" >/dev/null \
+    gh_retry gh api "${yaml_args[@]}" >/dev/null \
       || die "Failed to PUT cronfoundry.yaml"
 
     skill_args=( -X PUT "repos/${CF_SKILL_REPO}/contents/skills/smoke/SKILL.md"
@@ -785,11 +806,11 @@ if [[ "$DRY_RUN" != "true" ]]; then
                  -f branch="cronfoundry-quickstart"
                  -f content="${SKILL_B64}" )
     [[ -n "$SKILL_SHA" ]] && skill_args+=( -f sha="$SKILL_SHA" )
-    gh api "${skill_args[@]}" >/dev/null \
+    gh_retry gh api "${skill_args[@]}" >/dev/null \
       || die "Failed to PUT skills/smoke/SKILL.md"
 
     PR_URL=""
-    EXISTING_PR=$(gh pr list \
+    EXISTING_PR=$(gh_retry gh pr list \
       --repo "${CF_SKILL_REPO}" \
       --head "cronfoundry-quickstart" \
       --state open \
@@ -798,7 +819,7 @@ if [[ "$DRY_RUN" != "true" ]]; then
       PR_URL="$EXISTING_PR"
       ok "Using existing PR: $PR_URL"
     else
-      PR_URL=$(gh pr create \
+      PR_URL=$(gh_retry gh pr create \
         --repo "${CF_SKILL_REPO}" \
         --base "${DEFAULT_BRANCH}" \
         --head "cronfoundry-quickstart" \
