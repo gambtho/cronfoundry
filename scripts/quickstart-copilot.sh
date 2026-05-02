@@ -767,7 +767,11 @@ fi
 
 # ── Step 23: Push starter skill to skill repo ───────────────────────────────
 header "[step 23/25] Push starter cronfoundry.yaml + smoke skill to ${CF_SKILL_REPO}"
-if [[ "$DRY_RUN" != "true" ]]; then
+if [[ "$DRY_RUN" == "true" ]]; then
+  :
+elif [[ "${CF_STARTER_PR_PUSHED:-0}" == "1" ]]; then
+  ok "Starter PR already pushed (CF_STARTER_PR_PUSHED=1); skipping"
+else
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   TPL_DIR="$SCRIPT_DIR/templates"
 
@@ -776,6 +780,7 @@ if [[ "$DRY_RUN" != "true" ]]; then
 
   if gh_retry gh api "repos/${CF_SKILL_REPO}/contents/cronfoundry.yaml?ref=${DEFAULT_BRANCH}" &>/dev/null; then
     ok "cronfoundry.yaml already exists on ${DEFAULT_BRANCH}; skipping starter push"
+    save CF_STARTER_PR_PUSHED 1
   else
     TMP_YAML=$(mktemp)
     TMP_SKILL=$(mktemp)
@@ -843,7 +848,18 @@ if [[ "$DRY_RUN" != "true" ]]; then
     rm -f "$TMP_YAML" "$TMP_SKILL"
 
     echo ""
-    read -rp "Press Enter once merged..." _
+    echo -e "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo -e "  ${BOLD}Merge the starter PR to enable the smoke schedule:${RESET}"
+    echo ""
+    echo -e "    ${PR_URL}"
+    echo ""
+    echo "  After merging, the daily 09:00 UTC cron will fire on the"
+    echo "  next tick. Press Enter here once you've merged (this just"
+    echo "  unblocks step 24's first-run probe — it's safe to skip)."
+    echo -e "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    read -rp "Press Enter once merged (or to continue regardless)... " _
+    save CF_STARTER_PR_PUSHED 1
   fi
 fi
 
