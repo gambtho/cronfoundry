@@ -12,16 +12,117 @@ die()     { echo -e "${RED}[error]${RESET} $*" >&2; exit 1; }
 header()  { echo -e "\n${BOLD}$*${RESET}"; }
 
 DRY_RUN=false
-for arg in "$@"; do [[ "$arg" == "--dry-run" ]] && DRY_RUN=true; done
+MANIFEST_TIMEOUT="2h"
+for arg in "$@"; do
+  case "$arg" in
+    --dry-run) DRY_RUN=true ;;
+    --manifest-timeout=*) MANIFEST_TIMEOUT="${arg#*=}" ;;
+  esac
+done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/state.sh
 source "${SCRIPT_DIR}/lib/state.sh"
 # shellcheck source=lib/steps.sh
 source "${SCRIPT_DIR}/lib/steps.sh"
+save() { state_save "$1" "$2"; }   # shorthand for state_save
+
+# Resume detection: the env suffix prompt has to happen BEFORE any other state
+# is read, so re-runs pick up the right per-env state file. List existing
+# per-env files; default-pick the only one if there's just one; else ask.
+list_env_states() {
+  # shellcheck disable=SC2012
+  ls -1 "${HOME}"/.cronfoundry-quickstart-state-* 2>/dev/null \
+    | sed -E "s|^${HOME}/.cronfoundry-quickstart-state-||"
+}
+
+# An existing CF_ENV value lives in this file iff a per-env state already
+# exists for that suffix. Used both to detect legacy files and to refuse
+# duplicate suffix entry when the user picks "n" for "new env".
+env_state_exists() {
+  [[ -f "${HOME}/.cronfoundry-quickstart-state-$1" ]]
+}
+
+# Migrate the legacy unsuffixed state file (Phase 1's pre-per-env layout) so
+# in-flight quickstarts resume cleanly. Read the file's saved CF_ENV, if any,
+# and rename to the per-env path. If no CF_ENV is saved, the legacy file is
+# from before the env-suffix prompt was reached — drop it; subsequent prompts
+# will recreate everything in the per-env file from scratch.
+migrate_legacy_state_file() {
+  local legacy="${HOME}/.cronfoundry-quickstart-state"
+  [[ -f "$legacy" ]] || return 0
+  # shellcheck disable=SC1090
+  local saved_env
+  saved_env=$(grep -E '^CF_ENV=' "$legacy" 2>/dev/null | tail -1 | sed -E 's/^CF_ENV=//; s/^"//; s/"$//')
+  if [[ -n "$saved_env" ]] && [[ ! -f "${HOME}/.cronfoundry-quickstart-state-${saved_env}" ]]; then
+    mv "$legacy" "${HOME}/.cronfoundry-quickstart-state-${saved_env}"
+    echo -e "${CYAN}[info]${RESET}  Migrated legacy state file → ~/.cronfoundry-quickstart-state-${saved_env}"
+  else
+    rm -f "$legacy"
+  fi
+}
+
+select_env_suffix() {
+  migrate_legacy_state_file
+  local existing
+  mapfile -t existing < <(list_env_states)
+  if [[ ${#existing[@]} -eq 0 ]]; then
+    while true; do
+      read -rp "Env suffix (<=10 chars, lowercase/numbers/hyphens, default: copilot1): " CF_ENV
+      CF_ENV="${CF_ENV:-copilot1}"
+      if [[ ! "$CF_ENV" =~ ^[a-z0-9-]{1,10}$ ]]; then
+        echo -e "${YELLOW}[warn]${RESET}  Invalid suffix '$CF_ENV'. Use only lowercase letters, numbers, and hyphens, max 10 chars."
+        continue
+      fi
+      if env_state_exists "$CF_ENV"; then
+        echo -e "${YELLOW}[warn]${RESET}  Env '$CF_ENV' already has a state file — re-run without args to resume it, or pick a different suffix."
+        continue
+      fi
+      return 0
+    done
+  elif [[ ${#existing[@]} -eq 1 ]]; then
+    CF_ENV="${existing[0]}"
+    echo -e "${CYAN}[info]${RESET}  Resuming env '$CF_ENV' from previous run (state file: ${HOME}/.cronfoundry-quickstart-state-${CF_ENV})"
+    return 0
+  fi
+  echo "Existing env states found:"
+  local i=1
+  for s in "${existing[@]}"; do echo "  $i) $s"; i=$((i+1)); done
+  echo "  n) start a new env"
+  while true; do
+    read -rp "Resume which env? [1-${#existing[@]} or n]: " choice
+    if [[ "$choice" == "n" ]]; then
+      while true; do
+        read -rp "New env suffix (<=10 chars, lowercase/numbers/hyphens): " CF_ENV
+        if [[ ! "$CF_ENV" =~ ^[a-z0-9-]{1,10}$ ]]; then
+          echo -e "${YELLOW}[warn]${RESET}  Invalid suffix."
+          continue
+        fi
+        if env_state_exists "$CF_ENV"; then
+          echo -e "${YELLOW}[warn]${RESET}  Env '$CF_ENV' already exists — pick a different suffix, or restart and resume from the menu."
+          continue
+        fi
+        return 0
+      done
+    elif [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#existing[@]} )); then
+      CF_ENV="${existing[$((choice-1))]}"
+      return 0
+    fi
+    echo -e "${YELLOW}[warn]${RESET}  Invalid choice."
+  done
+}
+
+# Pick env BEFORE state load so we use the right file from the start.
+select_env_suffix
+STATE_FILE="$(state_path_for "$CF_ENV")"
+export STATE_FILE
 state_init
 state_load
-save() { state_save "$1" "$2"; }   # shorthand for state_save
+# Persist CF_ENV (idempotent) and compute resource names once.
+save CF_ENV "$CF_ENV"
+KV_NAME="cf-kv-${CF_ENV}"
+CA_NAME="cf-serve-${CF_ENV}"
+RG="rg-cronfoundry-${CF_ENV}"
 
 GUIDE_URL="https://gambtho.github.io/cronfoundry/guides/quickstart-copilot.html"
 
@@ -151,8 +252,14 @@ if [[ -z "${CF_REPORTS_REPO:-}" ]]; then
 fi
 ok "Reports repo: $CF_REPORTS_REPO"
 
-# ── Step 7: master key ────────────────────────────────────────────────────────
-header "[step 7/25] Generate master key"
+# ── Step 7: env suffix (already chosen above; restate + warn) ─────────────────
+header "[step 7/25] Environment suffix"
+warn "Key Vault soft-delete retains the name 'cf-kv-${CF_ENV}' for 7 days after teardown."
+warn "Re-runs after teardown need a new suffix (e.g. copilot2)."
+ok "Env: $CF_ENV"
+
+# ── Step 8: master key ────────────────────────────────────────────────────────
+header "[step 8/25] Generate master key"
 if [[ -z "${CF_MASTER_KEY:-}" ]]; then
   CF_MASTER_KEY=$(openssl rand -base64 32)
   save CF_MASTER_KEY "$CF_MASTER_KEY"
@@ -160,40 +267,6 @@ if [[ -z "${CF_MASTER_KEY:-}" ]]; then
   echo "  Master key: $CF_MASTER_KEY"
 fi
 ok "Master key ready"
-
-# ── Step 8: env suffix ────────────────────────────────────────────────────────
-header "[step 8/25] Environment suffix"
-if [[ -z "${CF_ENV:-}" ]]; then
-  while true; do
-    read -rp "Env suffix (<=10 chars, lowercase/numbers/hyphens, default: copilot1): " CF_ENV
-    CF_ENV="${CF_ENV:-copilot1}"
-    if [[ "$CF_ENV" =~ ^[a-z0-9-]{1,10}$ ]]; then
-      break
-    fi
-    warn "Invalid suffix '$CF_ENV'. Use only lowercase letters, numbers, and hyphens, max 10 chars."
-  done
-  save CF_ENV "$CF_ENV"
-fi
-# Migrate state to per-env path so quickstart-down.sh can find it via
-# state_path_for "$CF_ENV". The default file (~/.cronfoundry-quickstart-state)
-# is used until CF_ENV is known; rename it now and re-init at the new path.
-PER_ENV_STATE="$(state_path_for "$CF_ENV")"
-if [[ "$STATE_FILE" != "$PER_ENV_STATE" ]]; then
-  if [[ -f "$STATE_FILE" && ! -f "$PER_ENV_STATE" ]]; then
-    mv "$STATE_FILE" "$PER_ENV_STATE"
-  fi
-  STATE_FILE="$PER_ENV_STATE"
-  export STATE_FILE
-  state_init
-  state_load
-fi
-# Compute resource names once so later steps reference instead of redefining.
-KV_NAME="cf-kv-${CF_ENV}"
-CA_NAME="cf-serve-${CF_ENV}"
-RG="rg-cronfoundry-${CF_ENV}"
-warn "Key Vault soft-delete retains the name 'cf-kv-${CF_ENV}' for 7 days after teardown."
-warn "Re-runs after teardown need a new suffix (e.g. copilot2)."
-ok "Env: $CF_ENV"
 
 # ── Step 9: region ───────────────────────────────────────────────────────────
 header "[step 9/25] Region"
@@ -283,10 +356,38 @@ if [[ "$DRY_RUN" == "true" ]]; then
   warn "--dry-run: skipping deploy; later steps will use a placeholder FQDN"
   CF_FQDN="<not-yet-deployed>"
 else
-  az deployment sub create \
-    --location "$CF_REGION" \
-    --template-file deploy/main.bicep \
-    --parameters "@$PARAMS_FILE"
+  # Per-env deployment name avoids 'DeploymentActive' conflicts with concurrent envs.
+  CF_DEPLOY_NAME="cronfoundry-${CF_ENV}"
+
+  # If the previous run kicked off a deploy and the script aborted, the deployment
+  # may still be Running. Detect, prompt, and either wait or cancel before retrying.
+  EXISTING_STATE=$(az deployment sub show --name "$CF_DEPLOY_NAME" \
+    --query "properties.provisioningState" -o tsv 2>/dev/null || echo "NotFound")
+  if [[ "$EXISTING_STATE" == "Running" || "$EXISTING_STATE" == "Accepted" ]]; then
+    warn "Found in-flight deployment '$CF_DEPLOY_NAME' from a previous run."
+    info "Waiting for it to complete (poll every 30s)..."
+    while true; do
+      sleep 30
+      EXISTING_STATE=$(az deployment sub show --name "$CF_DEPLOY_NAME" \
+        --query "properties.provisioningState" -o tsv 2>/dev/null || echo "NotFound")
+      info "  state: $EXISTING_STATE"
+      [[ "$EXISTING_STATE" =~ ^(Running|Accepted)$ ]] || break
+    done
+    if [[ "$EXISTING_STATE" == "Succeeded" ]]; then
+      ok "Existing deployment succeeded; reusing it."
+    fi
+  fi
+
+  if [[ "$EXISTING_STATE" == "Succeeded" ]]; then
+    info "Deployment already Succeeded; skipping az deployment sub create."
+  else
+    az deployment sub create \
+      --name "$CF_DEPLOY_NAME" \
+      --location "$CF_REGION" \
+      --template-file deploy/main.bicep \
+      --parameters "@$PARAMS_FILE"
+  fi
+
   CF_FQDN=$(az containerapp show \
     --resource-group "rg-cronfoundry-${CF_ENV}" \
     --name "cf-serve-${CF_ENV}" \
@@ -385,12 +486,14 @@ header "[step 16/25] Register GitHub App (manifest flow)"
 if [[ "$DRY_RUN" == "true" ]]; then
   warn "--dry-run: skipping GitHub App registration"
 elif [[ -z "${CF_GITHUB_APP_ID:-}" ]]; then
+  info "Manifest flow timeout: $MANIFEST_TIMEOUT (override with --manifest-timeout=DUR)."
   ./cronfoundry setup github-app \
     --state-file "$STATE_FILE" \
     --pem-dir "${HOME}/.cronfoundry" \
     --homepage-url "https://${CF_FQDN}" \
     --callback-url "https://${CF_FQDN}/oauth/callback" \
     --webhook-url "https://${CF_FQDN}/webhook/github" \
+    --timeout "$MANIFEST_TIMEOUT" \
     || die "GitHub App manifest flow failed.\n  Your Azure resources are preserved. Just re-run this script to retry only this step:\n    bash scripts/quickstart-copilot.sh\n  Or use --manual for legacy paste prompts."
   state_load   # pick up CF_GITHUB_APP_ID, CF_GITHUB_CLIENT_ID, etc. that the command wrote
   ok "GitHub App registered: App ID ${CF_GITHUB_APP_ID}"
