@@ -69,6 +69,36 @@ export default function JobDetail() {
   const schedule = schedulesQ.data?.find((s) => s.id === id)
   const runs = runsQ.data ?? []
 
+  if (schedulesQ.isError && !schedule) {
+    return (
+      <>
+        <Topbar>
+          <Topbar.Crumbs>
+            <Topbar.Crumb href="/jobs">Jobs</Topbar.Crumb>
+            <Topbar.Sep />
+            <Topbar.Here>error</Topbar.Here>
+          </Topbar.Crumbs>
+          <Topbar.Spacer />
+          <Topbar.Search />
+        </Topbar>
+        <div className="px-6 py-12 text-center font-mono text-[12px] text-accent-red">
+          Could not load job:{' '}
+          {schedulesQ.error instanceof Error
+            ? schedulesQ.error.message
+            : 'request failed'}
+          .{' '}
+          <button
+            type="button"
+            onClick={() => schedulesQ.refetch()}
+            className="text-ink underline-offset-2 hover:underline"
+          >
+            Retry
+          </button>
+        </div>
+      </>
+    )
+  }
+
   if (schedulesQ.isSuccess && !schedule) {
     return (
       <>
@@ -259,15 +289,43 @@ export default function JobDetail() {
                     ? 'no runs yet'
                     : `last ${runs.length} runs`}
                 </Card.HeaderMeta>
+                {/* TODO(filter): once /runs reads ?schedule_id from
+                    the query string, we can deep-link straight into a
+                    filtered feed. Today the legacy Runs page ignores
+                    that param, so we'd be lying to the user — drop
+                    the param and rely on the broader log instead. */}
                 <Link
-                  to={`/runs?schedule_id=${schedule.id}`}
+                  to="/runs"
                   className="font-mono text-[11px] tracking-[0.04em] text-ink-2 hover:text-accent-green"
                 >
                   All runs →
                 </Link>
               </Card.Header>
 
-              {runs.length === 0 ? (
+              {runsQ.isError ? (
+                <Card.Body>
+                  <p className="m-0 font-mono text-[12px] text-accent-red">
+                    Could not load runs:{' '}
+                    {runsQ.error instanceof Error
+                      ? runsQ.error.message
+                      : 'request failed'}
+                    .{' '}
+                    <button
+                      type="button"
+                      onClick={() => runsQ.refetch()}
+                      className="text-ink underline-offset-2 hover:underline"
+                    >
+                      Retry
+                    </button>
+                  </p>
+                </Card.Body>
+              ) : runsQ.isLoading ? (
+                <Card.Body>
+                  <p className="m-0 font-mono text-[12px] text-ink-3">
+                    Loading runs…
+                  </p>
+                </Card.Body>
+              ) : runs.length === 0 ? (
                 <Card.Body>
                   <p className="m-0 font-mono text-[12px] text-ink-3">
                     No runs yet. Hit ▶ Run now or wait for the schedule.

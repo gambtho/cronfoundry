@@ -67,22 +67,33 @@ export default function Jobs() {
   const runs = runsQ.data ?? []
 
   // ---- counts for the filter chips ----
+  // Disjoint buckets — paused dominates, then failing, then healthy.
+  // A paused-and-failing job belongs to Paused, not Failing, so the
+  // chip totals add up to `all` exactly. The same membership rules
+  // are used by the row filter below.
   const lastByName = useMemo(() => lastRunByScheduleName(runs), [runs])
   const failingIds = useMemo(
     () => new Set(failingSchedules(schedules, runs).map((f) => f.schedule.id)),
     [schedules, runs],
   )
+  const bucketOf = (s: Schedule): 'paused' | 'failing' | 'healthy' => {
+    if (!s.enabled) return 'paused'
+    if (failingIds.has(s.id)) return 'failing'
+    return 'healthy'
+  }
   const counts = useMemo(() => {
-    let pausedN = 0
+    let paused = 0
+    let failing = 0
+    let healthy = 0
     for (const s of schedules) {
-      if (!s.enabled) pausedN++
+      const b = bucketOf(s)
+      if (b === 'paused') paused++
+      else if (b === 'failing') failing++
+      else healthy++
     }
-    return {
-      all: schedules.length,
-      failing: failingIds.size,
-      paused: pausedN,
-      healthy: schedules.length - failingIds.size - pausedN,
-    }
+    return { all: schedules.length, failing, paused, healthy }
+    // bucketOf depends on failingIds; lint trusts the inputs covered.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [schedules, failingIds])
 
   // ---- filtered + sorted list ----
@@ -97,13 +108,15 @@ export default function Jobs() {
 
     let list = schedules.filter(matchQuery)
     list = list.filter((s) => {
+      // Use the same paused-first bucketing as the chip counts so the
+      // numbers and the table always agree.
       switch (filter) {
         case 'failing':
-          return failingIds.has(s.id)
+          return bucketOf(s) === 'failing'
         case 'healthy':
-          return !failingIds.has(s.id) && s.enabled
+          return bucketOf(s) === 'healthy'
         case 'paused':
-          return !s.enabled
+          return bucketOf(s) === 'paused'
         default:
           return true
       }
@@ -221,7 +234,26 @@ export default function Jobs() {
 
         {/* ---------- table ---------- */}
         <Card>
-          {visible.length === 0 ? (
+          {schedulesQ.isError ? (
+            <div className="px-4 py-12 text-center font-mono text-[12px] text-accent-red">
+              Could not load jobs:{' '}
+              {schedulesQ.error instanceof Error
+                ? schedulesQ.error.message
+                : 'request failed'}
+              .{' '}
+              <button
+                type="button"
+                onClick={() => schedulesQ.refetch()}
+                className="text-ink underline-offset-2 hover:underline"
+              >
+                Retry
+              </button>
+            </div>
+          ) : schedulesQ.isLoading ? (
+            <div className="px-4 py-12 text-center font-mono text-[12px] text-ink-3">
+              Loading jobs…
+            </div>
+          ) : visible.length === 0 ? (
             <div className="px-4 py-12 text-center font-mono text-[12px] text-ink-3">
               {schedules.length === 0
                 ? 'No jobs yet. Connect a repo with cron schedules to start.'

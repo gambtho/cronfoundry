@@ -34,7 +34,13 @@ export function ComingSoon({
       <div className="pointer-events-none absolute right-2 top-2 z-20 rounded border border-rule-2 bg-bg-2 px-2 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] text-ink-3">
         {label}
       </div>
-      <div className="opacity-50">{children}</div>
+      {/* Mark the dimmed children as not real UI — pointer-events-none
+          stops mouse interaction, aria-hidden stops keyboard focus
+          and screen-reader announcement so the placeholder doesn't
+          impersonate functioning controls. */}
+      <div aria-hidden="true" className="pointer-events-none opacity-50">
+        {children}
+      </div>
     </div>
   )
 }

@@ -83,7 +83,11 @@ export function upcomingRuns(
   for (const s of schedules) {
     if (!s.next_fire_at) continue
     const fireAt = new Date(s.next_fire_at)
-    const msUntil = fireAt.getTime() - nowMs
+    const fireMs = fireAt.getTime()
+    // Drop unparseable timestamps — bad backend data shouldn't break
+    // sort order or render NaN in the UI.
+    if (!Number.isFinite(fireMs)) continue
+    const msUntil = fireMs - nowMs
     // Past-due fire times can happen briefly while the scheduler
     // catches up; treat them as imminent rather than dropping them.
     out.push({ schedule: s, fireAt, msUntil: Math.max(0, msUntil) })

@@ -339,11 +339,14 @@ function greetingFor(d: Date): string {
 }
 
 function formatNowUtc(d: Date): string {
-  // "Friday, 03 May · 02:03 UTC"
+  // "Friday, 03 May · 02:03 UTC" — both halves must be UTC; using the
+  // local timezone for the date drifts when the viewer crosses
+  // midnight (e.g., late-night PST shows the next-day weekday).
   const day = d.toLocaleDateString('en-GB', {
     weekday: 'long',
     day: '2-digit',
     month: 'short',
+    timeZone: 'UTC',
   })
   const hh = d.getUTCHours().toString().padStart(2, '0')
   const mm = d.getUTCMinutes().toString().padStart(2, '0')

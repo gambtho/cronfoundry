@@ -163,6 +163,15 @@ describe('upcomingRuns', () => {
     )
     expect(out[0].msUntil).toBe(0)
   })
+
+  it('drops schedules with an unparseable next_fire_at', () => {
+    const out = upcomingRuns([
+      schedule('bad', { next_fire_at: 'not-a-date' }),
+      schedule('good', { next_fire_at: '2099-01-01T00:00:00Z' }),
+    ])
+    expect(out.map((u) => u.schedule.name)).toEqual(['good'])
+    expect(out.every((u) => Number.isFinite(u.msUntil))).toBe(true)
+  })
 })
 
 describe('activityByHour', () => {
