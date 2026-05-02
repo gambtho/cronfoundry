@@ -4,7 +4,10 @@ import ReactDOM from 'react-dom/client'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Layout from './components/Layout'
-import Dashboard from './pages/Dashboard'
+import Overview from './pages/Overview'
+import Jobs from './pages/Jobs'
+import JobDetail from './pages/JobDetail'
+import RunDetail from './pages/RunDetail'
 import Runs from './pages/Runs'
 import Repos from './pages/Repos'
 import Secrets from './pages/Secrets'
@@ -21,12 +24,8 @@ const queryClient = new QueryClient({
 
 /**
  * Routes follow the new IA: Operate (overview/jobs) at top level,
- * Settings as a grouped namespace. Old routes redirect to their new
- * locations so existing bookmarks/links keep working.
- *
- * PR1 scope: shell + nav only. The existing page components are
- * mounted at their new paths unchanged — visual refresh of those
- * pages happens in PR2.
+ * Settings as a grouped namespace. Legacy paths redirect to their
+ * new locations so existing bookmarks/links keep working.
  */
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
@@ -38,15 +37,16 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             {/* Default landing → Overview */}
             <Route index element={<Navigate to="/overview" replace />} />
 
-            {/* OPERATE — Overview & Jobs replace Dashboard.
-                Until PR2 builds the new pages, /overview and /jobs
-                both render the legacy Dashboard component. */}
-            <Route path="/overview" element={<Dashboard />} />
-            <Route path="/jobs" element={<Dashboard />} />
+            {/* OPERATE */}
+            <Route path="/overview" element={<Overview />} />
+            <Route path="/jobs" element={<Jobs />} />
+            <Route path="/jobs/:id" element={<JobDetail />} />
 
-            {/* Runs page kept reachable for deep links from Overview's
-                activity card and from Job detail; not a top-level nav. */}
+            {/* Runs is reached from Overview's activity card and from
+                Job detail; not a top-level nav item but still routable
+                so deep links and the old /runs page keep working. */}
             <Route path="/runs" element={<Runs />} />
+            <Route path="/runs/:id" element={<RunDetail />} />
 
             {/* SETTINGS — grouped namespace.
                 Bare /settings sends users to the default sub-page so
