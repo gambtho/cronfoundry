@@ -514,6 +514,33 @@ else
   : "${CF_GITHUB_CLIENT_SECRET:?CF_GITHUB_CLIENT_SECRET not set; manifest flow may have failed}"
   : "${CF_GITHUB_WEBHOOK_SECRET:?CF_GITHUB_WEBHOOK_SECRET not set; manifest flow may have failed}"
 
+  # Bicep grants the cf-serve managed identity Secrets Officer on the vault, but
+  # the operator running this script does NOT inherit that. We need to grant
+  # ourselves write access before any 'az keyvault secret set' can succeed.
+  # (Step 19 below re-grants for the admin CLI block — that call is idempotent.)
+  KV_ID=$(az keyvault show --name "$KV_NAME" --query id -o tsv) \
+    || die "Could not resolve Key Vault $KV_NAME (does the deploy step run?)"
+  OPERATOR_OBJ_ID=$(az ad signed-in-user show --query id -o tsv) \
+    || die "Could not resolve operator object ID via 'az ad signed-in-user show'"
+  info "Granting operator (${OPERATOR_OBJ_ID}) Secrets Officer on $KV_NAME..."
+  az role assignment create \
+    --role "Key Vault Secrets Officer" \
+    --assignee-object-id "$OPERATOR_OBJ_ID" \
+    --assignee-principal-type User \
+    --scope "$KV_ID" \
+    --output none 2>/dev/null \
+    || info "Role assignment may already exist (continuing)"
+  # RBAC propagation can lag a few seconds; poll for the actual permission
+  # before attempting the write so we get a clear error message instead of a
+  # 403 burn-through.
+  for i in {1..12}; do
+    if az keyvault secret list --vault-name "$KV_NAME" --maxresults 1 --output none 2>/dev/null; then
+      break
+    fi
+    info "Waiting for RBAC propagation… (${i}/12)"
+    sleep 5
+  done
+
   # 1. PEM into Key Vault (already wired as secretRef in Bicep)
   az keyvault secret set --vault-name "$KV_NAME" --name github-app-pem \
     --file "${CF_GITHUB_PEM_PATH}" --output none \
