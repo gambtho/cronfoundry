@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>cronfoundry — run #2841</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
 <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@300;400;500;600&family=Geist:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="shared.css" />
 </head>
@@ -57,7 +57,7 @@
         <span class="here">run #2841</span>
       </nav>
       <div class="spacer"></div>
-      <input class="search" placeholder="Jump to job, run, secret…" />
+      <input class="search" aria-label="Jump to job, run, or secret" placeholder="Jump to job, run, secret…" />
       <span class="kbd">⌘K</span>
     </div>
 
@@ -110,15 +110,18 @@
 
       <!-- timeline -->
       <div class="timeline">
-        <div class="timeline-bar">
+        <span class="visually-hidden">
+          Run timeline: boot 1.7 seconds, secrets 2.2 seconds, exec 6.0 seconds, failure 2.5 seconds. Total 12.4 seconds.
+        </span>
+        <div class="timeline-bar" role="presentation">
           <div class="seg boot"  style="left:0;width:14%"  title="boot · 1.7s"></div>
           <div class="seg secrets" style="left:14%;width:18%" title="secrets · 2.2s"></div>
           <div class="seg exec"  style="left:32%;width:48%" title="exec · 6.0s"></div>
           <div class="seg fail"  style="left:80%;width:20%" title="fail · 2.5s"></div>
         </div>
-        <div class="timeline-legend">
-          <span><span style="background:#3a4a4f"></span>boot 1.7s</span>
-          <span><span style="background:#456066"></span>secrets 2.2s</span>
+        <div class="timeline-legend" aria-hidden="true">
+          <span><span style="background:var(--timeline-boot)"></span>boot 1.7s</span>
+          <span><span style="background:var(--timeline-secrets)"></span>secrets 2.2s</span>
           <span><span style="background:var(--cyan)"></span>exec 6.0s</span>
           <span><span style="background:var(--red)"></span>failure 2.5s</span>
           <span style="margin-left:auto">total 12.4s</span>
@@ -150,15 +153,15 @@
           <!-- logs full -->
           <section class="card">
             <header style="padding:0">
-              <div class="tabs" style="flex:1">
-                <button class="on">Logs</button>
-                <button>Definition</button>
-                <button>Environment</button>
-                <button>Diff vs #2839 ✓</button>
+              <div class="tabs" role="tablist" aria-label="Run detail sections" style="flex:1">
+                <button id="tab-logs" role="tab" aria-selected="true" aria-controls="panel-logs" tabindex="0" class="on">Logs</button>
+                <button id="tab-definition" role="tab" aria-selected="false" tabindex="-1">Definition</button>
+                <button id="tab-environment" role="tab" aria-selected="false" tabindex="-1">Environment</button>
+                <button id="tab-diff" role="tab" aria-selected="false" tabindex="-1">Diff vs #2839 ✓</button>
                 <span class="meta">stdout + stderr · 24 lines</span>
               </div>
             </header>
-            <pre class="code"><span class="ts">02:00:11.224</span>  <span class="dim">starting nightly-backup (run #2841)</span>
+            <pre class="code" id="panel-logs" role="tabpanel" aria-labelledby="tab-logs"><span class="ts">02:00:11.224</span>  <span class="dim">starting nightly-backup (run #2841)</span>
 <span class="ts">02:00:11.301</span>  <span class="dim">attempt 1 of 1 · trigger: schedule</span>
 <span class="ts">02:00:11.402</span>  resolving provider <span class="cmd">aws-prod-us-east-1</span> <span class="ok">✓</span>
 <span class="ts">02:00:11.487</span>  <span class="dim">acquired worker worker-2 (iad)</span>

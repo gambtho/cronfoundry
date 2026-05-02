@@ -86,13 +86,13 @@
 
         <div class="triage-list">
 
-          <a class="triage-row" href="job-detail.html">
+          <div class="triage-row">
             <div class="triage-status">
               <span class="pill fail">Exit 1</span>
               <span class="triage-streak">2 in a row</span>
             </div>
             <div class="triage-name">
-              <strong>nightly-backup</strong>
+              <a href="job-detail.html"><strong>nightly-backup</strong></a>
               <span class="triage-sub mono">analytics-pipeline · postgres → s3</span>
             </div>
             <div class="triage-detail mono">
@@ -106,15 +106,15 @@
               <button class="btn-tiny" title="Re-run">▶</button>
               <button class="btn-tiny" title="Pause">⏸</button>
             </div>
-          </a>
+          </div>
 
-          <a class="triage-row" href="#">
+          <div class="triage-row">
             <div class="triage-status">
               <span class="pill fail">Exit 2</span>
               <span class="triage-streak">5 in a row</span>
             </div>
             <div class="triage-name">
-              <strong>weekly-report-email</strong>
+              <a href="#"><strong>weekly-report-email</strong></a>
               <span class="triage-sub mono">analytics-pipeline · sendgrid</span>
             </div>
             <div class="triage-detail mono">
@@ -128,7 +128,7 @@
               <button class="btn-tiny" title="Re-run">▶</button>
               <button class="btn-tiny" title="Pause">⏸</button>
             </div>
-          </a>
+          </div>
 
         </div>
       </section>

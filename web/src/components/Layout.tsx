@@ -1,4 +1,5 @@
 // web/src/components/Layout.tsx
+import { useEffect, useState } from 'react'
 import { Outlet, NavLink, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
@@ -28,24 +29,28 @@ interface NavItem {
   to: string
   label: string
   /** Optional badge in the right margin (count, alert, etc.). */
-  badge?: { text: string; tone?: 'default' | 'alert' | 'ok' }
+  badge?: { text: string; tone?: 'default' | 'alert' | 'ok' | 'warn' }
 }
 
 export default function Layout() {
   // Live counts in the sidebar — schedules.list() drives both the
-  // Jobs total and the Overview alert badge.
-  const { data: schedules } = useQuery({
+  // Jobs total and the Overview alert badge. We keep the full query
+  // objects (not just .data) so we can surface a "degraded" badge
+  // when fetches fail rather than silently dropping the indicator.
+  const schedulesQuery = useQuery({
     queryKey: ['schedules'],
     queryFn: api.schedules.list,
     refetchInterval: 30_000,
   })
-  const { data: recentRuns } = useQuery({
+  const recentRunsQuery = useQuery({
     queryKey: ['runs', { limit: 100 }],
     queryFn: () => api.runs.list({ limit: 100 }),
     refetchInterval: 15_000,
   })
 
   const failingCount = (() => {
+    const schedules = schedulesQuery.data
+    const recentRuns = recentRunsQuery.data
     if (!schedules || !recentRuns) return 0
     // A schedule is "failing" if its most recent run failed.
     const lastBySchedule = new Map<string, (typeof recentRuns)[number]>()
@@ -59,26 +64,34 @@ export default function Layout() {
     ).length
   })()
 
+  const isDegraded = schedulesQuery.isError || recentRunsQuery.isError
+
   const operateItems: NavItem[] = [
     {
       to: '/overview',
       label: 'Overview',
       // Operator-facing signal:
-      //   failing → red count + ✕   (drag the eye to the problem)
-      //   healthy → muted green ✓   (positive confirmation, not alarm)
+      //   degraded → amber ?       (we don't know the truth)
+      //   failing  → red count + ✕ (drag the eye to the problem)
+      //   healthy  → muted green ✓ (positive confirmation, not alarm)
       // We only show the green ✓ once data has loaded so we don't
       // flash a false "all good" during initial fetch.
-      badge:
-        failingCount > 0
+      badge: isDegraded
+        ? { text: '?', tone: 'warn' }
+        : failingCount > 0
           ? { text: `${failingCount} ✕`, tone: 'alert' }
-          : schedules && recentRuns
+          : schedulesQuery.data && recentRunsQuery.data
             ? { text: '✓', tone: 'ok' }
             : undefined,
     },
     {
       to: '/jobs',
       label: 'Jobs',
-      badge: schedules ? { text: String(schedules.length) } : undefined,
+      badge: schedulesQuery.data
+        ? { text: String(schedulesQuery.data.length) }
+        : schedulesQuery.isError
+          ? { text: '?', tone: 'warn' }
+          : undefined,
     },
   ]
 
@@ -177,10 +190,12 @@ function NavRow({ item }: { item: NavItem }) {
             'ml-auto font-mono text-[11px]',
             item.badge.tone === 'alert' && 'font-medium text-accent-red',
             item.badge.tone === 'ok' && 'text-accent-green',
-            item.badge.tone !== 'alert' &&
-              item.badge.tone !== 'ok' &&
-              'text-ink-3',
+            item.badge.tone === 'warn' && 'text-accent-amber',
+            !item.badge.tone || item.badge.tone === 'default'
+              ? 'text-ink-3'
+              : '',
           )}
+          title={item.badge.tone === 'warn' ? 'Status unavailable' : undefined}
         >
           {item.badge.text}
         </span>
@@ -190,14 +205,26 @@ function NavRow({ item }: { item: NavItem }) {
 }
 
 function SettingsGroup({ items }: { items: NavItem[] }) {
-  // Auto-open whenever the user is on a settings sub-route, so they
-  // see where they are in the tree. Closed by default elsewhere
-  // because settings are touched weekly at most.
+  // Auto-open whenever the user navigates onto a settings sub-route,
+  // but let user toggles persist after that. Implementation:
+  //   - Initial open mirrors location at first render.
+  //   - onToggle keeps React state in sync with native <details> open.
+  //   - An effect re-opens when the user lands on /settings/* later,
+  //     but never auto-closes (so leaving settings doesn't yank the
+  //     drawer shut on the user).
   const { pathname } = useLocation()
-  const isOnSettings = pathname.startsWith('/settings/')
+  const [open, setOpen] = useState(() => pathname.startsWith('/settings/'))
+
+  useEffect(() => {
+    if (pathname.startsWith('/settings/')) setOpen(true)
+  }, [pathname])
 
   return (
-    <details className="group mt-1" open={isOnSettings}>
+    <details
+      className="group mt-1"
+      open={open}
+      onToggle={(e) => setOpen(e.currentTarget.open)}
+    >
       <summary
         className={cn(
           'flex cursor-pointer list-none items-center gap-2.5 px-4 py-1.5 text-[13px] text-ink-2',

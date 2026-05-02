@@ -27,10 +27,14 @@ const VARIANT: Record<Variant, string> = {
 }
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ variant = 'default', shortcut, children, className, ...rest }, ref) => {
+  ({ variant = 'default', shortcut, children, className, type, ...rest }, ref) => {
     return (
       <button
         ref={ref}
+        // Default to type="button" so a Button used inside a <form>
+        // doesn't accidentally submit. Callers can still override
+        // (e.g. type="submit" on a real submit affordance).
+        type={type ?? 'button'}
         className={cn(
           'inline-flex items-center justify-center gap-2 rounded border px-3.5 py-1.5',
           'font-mono text-[11.5px] transition-colors',
@@ -55,22 +59,53 @@ Button.displayName = 'Button'
 /**
  * IconButton — square 28×28 affordance for table-row actions
  * (▶ run, ⏸ pause). Tighter than Button.
+ *
+ * Icon-only buttons must carry an accessible name for screen readers,
+ * so the type system forces callers to supply either `aria-label` or
+ * `aria-labelledby`. A dev-only runtime guard backs this up for
+ * non-TS consumers (and for the rare any-cast escape hatch).
  */
-export const IconButton = React.forwardRef<
-  HTMLButtonElement,
-  React.ButtonHTMLAttributes<HTMLButtonElement>
->(({ children, className, ...rest }, ref) => (
-  <button
-    ref={ref}
-    className={cn(
-      'inline-flex h-7 w-7 items-center justify-center rounded border border-rule-2 bg-bg-3 text-[11px] text-ink-2',
-      'transition-colors hover:border-ink-3 hover:bg-bg-4 hover:text-ink',
-      'disabled:cursor-not-allowed disabled:opacity-50',
-      className,
-    )}
-    {...rest}
-  >
-    {children}
-  </button>
-))
+type IconButtonBaseProps = Omit<
+  React.ButtonHTMLAttributes<HTMLButtonElement>,
+  'aria-label' | 'aria-labelledby' | 'type'
+> & {
+  type?: 'button' | 'submit' | 'reset'
+}
+type IconButtonProps =
+  | (IconButtonBaseProps & { 'aria-label': string; 'aria-labelledby'?: never })
+  | (IconButtonBaseProps & { 'aria-labelledby': string; 'aria-label'?: never })
+
+export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
+  ({ children, className, type, ...rest }, ref) => {
+    // Vite injects DEV at build time. We assert the shape locally so
+    // we don't depend on vite/client types in the project tsconfig.
+    const isDev = (import.meta as { env?: { DEV?: boolean } }).env?.DEV
+    if (isDev) {
+      const hasName =
+        Boolean((rest as { 'aria-label'?: string })['aria-label']) ||
+        Boolean((rest as { 'aria-labelledby'?: string })['aria-labelledby'])
+      if (!hasName) {
+        // eslint-disable-next-line no-console
+        console.error(
+          '[IconButton] missing aria-label or aria-labelledby — icon-only buttons need an accessible name.',
+        )
+      }
+    }
+    return (
+      <button
+        ref={ref}
+        type={type ?? 'button'}
+        className={cn(
+          'inline-flex h-7 w-7 items-center justify-center rounded border border-rule-2 bg-bg-3 text-[11px] text-ink-2',
+          'transition-colors hover:border-ink-3 hover:bg-bg-4 hover:text-ink',
+          'disabled:cursor-not-allowed disabled:opacity-50',
+          className,
+        )}
+        {...rest}
+      >
+        {children}
+      </button>
+    )
+  },
+)
 IconButton.displayName = 'IconButton'

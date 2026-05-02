@@ -48,7 +48,10 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
                 activity card and from Job detail; not a top-level nav. */}
             <Route path="/runs" element={<Runs />} />
 
-            {/* SETTINGS — grouped namespace */}
+            {/* SETTINGS — grouped namespace.
+                Bare /settings sends users to the default sub-page so
+                the route isn't a dead end. */}
+            <Route path="/settings" element={<Navigate to="/settings/repos" replace />} />
             <Route path="/settings/repos" element={<Repos />} />
             <Route path="/settings/secrets" element={<Secrets />} />
             <Route path="/settings/providers" element={<Providers />} />

@@ -16,7 +16,7 @@ These are the **source of truth** for visual design — components in
 
 ## Information architecture
 
-```
+```text
 Operate
   ● Overview     ← triage home, alert badge when anything failing
   ● Jobs         ← primary object (Job ≡ Schedule in the API)

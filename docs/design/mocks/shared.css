@@ -18,16 +18,29 @@
   --amber:#e8b339;
   --amber-bg:rgba(232,179,57,.08);
   --cyan:#5ec8d6;
+
+  /* timeline phase tokens — used by run-detail timeline + legend.
+     Boot/secrets are intentionally desaturated so the cyan exec phase
+     and the red fail phase carry the visual weight. */
+  --timeline-boot:#3a4a4f;
+  --timeline-secrets:#456066;
 }
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);
-  font-family:"Geist",-apple-system,system-ui,sans-serif;font-size:13px;line-height:1.5;
+  font-family:Geist,-apple-system,system-ui,sans-serif;font-size:13px;line-height:1.5;
   -webkit-font-smoothing:antialiased;
 }
 a{color:inherit;text-decoration:none}
 button{font:inherit;color:inherit;cursor:pointer;background:none;border:none;padding:0}
 code, .mono{font-family:"Geist Mono",ui-monospace,monospace}
 .dim{color:var(--ink-3)}
+
+/* visually-hidden — for accessible text alternatives that should not
+   render visibly. Standard "sr-only" pattern. */
+.visually-hidden{
+  position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+  clip:rect(0,0,0,0);white-space:nowrap;border:0;
+}
 
 /* faint scanline texture */
 body::before{

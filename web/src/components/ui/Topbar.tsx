@@ -58,12 +58,17 @@ function Spacer() {
 
 function Search({
   placeholder = 'Jump to job, run, secret…',
+  label = 'Search jobs, runs, and secrets',
 }: {
   placeholder?: string
+  /** Accessible name announced by screen readers. */
+  label?: string
 }) {
   return (
     <>
       <input
+        type="search"
+        aria-label={label}
         className={cn(
           'w-[280px] rounded border border-rule bg-bg px-2.5 py-1.5',
           'font-mono text-xs text-ink placeholder:text-ink-3',
@@ -71,7 +76,10 @@ function Search({
         )}
         placeholder={placeholder}
       />
-      <span className="rounded border border-rule bg-bg px-1.5 text-[10px] text-ink-2">
+      <span
+        aria-hidden="true"
+        className="rounded border border-rule bg-bg px-1.5 text-[10px] text-ink-2"
+      >
         ⌘K
       </span>
     </>
