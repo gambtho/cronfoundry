@@ -456,7 +456,17 @@ if [[ "$DRY_RUN" == "true" ]]; then
 elif [[ "${CF_DB_INITIALIZED:-0}" == "1" && -x ./cronfoundry ]]; then
   ok "Database already initialized (CF_DB_INITIALIZED=1) and ./cronfoundry binary present; skipping firewall reopen, build, init, and restart"
 else
-  # WSL2-safe: use broad rule -- WSL2 NAT may present a different source IP to Azure
+  # Build the binary FIRST: a failed build dies before we open the firewall,
+  # so a broken local toolchain doesn't leave Postgres exposed to 0.0.0.0/0.
+  if [[ ! -x ./cronfoundry ]]; then
+    if ! make build; then
+      warn "make build failed; falling back to go build"
+      go build -o cronfoundry ./cmd/cronfoundry \
+        || die "Binary build failed. Ensure go >= 1.21 is installed.\nSee §14 of $GUIDE_URL"
+    fi
+  fi
+
+  # WSL2-safe: use broad rule — WSL2 NAT may present a different source IP to Azure
   warn "Opening Postgres firewall to 0.0.0.0/0 for WSL2 NAT compatibility (will be tightened in step 15)."
   az postgres flexible-server firewall-rule create \
     --resource-group "rg-cronfoundry-${CF_ENV}" \
@@ -465,14 +475,6 @@ else
     --start-ip-address "0.0.0.0" \
     --end-ip-address "255.255.255.255" \
     || warn "Firewall rule creation failed (may already exist) — database init may fail if connectivity is blocked."
-
-  if [[ ! -x ./cronfoundry ]]; then
-    if ! make build; then
-      warn "make build failed; falling back to go build"
-      go build -o cronfoundry ./cmd/cronfoundry \
-        || die "Binary build failed. Ensure go >= 1.21 is installed.\nSee §14 of $GUIDE_URL"
-    fi
-  fi
 
   if [[ "${CF_DB_INITIALIZED:-0}" == "1" ]]; then
     ok "Database already initialized (CF_DB_INITIALIZED=1); skipping admin init + restart"
