@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>cronfoundry — overview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@300;400;500;600&family=Geist:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css" />
+</head>
+<body>
+<div class="app">
+
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="nav">
+    <div class="brand">
+      <span class="dot"></span>
+      <span class="name">cron<em>foundry</em></span>
+      <span class="ver">v0.4</span>
+    </div>
+
+    <div class="nav-section">
+      <h4>Operate</h4>
+      <a href="overview.html" class="active alert"><span>Overview</span><span class="num">2 ✕</span></a>
+      <a href="jobs.html"><span>Jobs</span><span class="num">14</span></a>
+    </div>
+
+    <div class="nav-section">
+      <h4>Configure</h4>
+      <details>
+        <summary>Settings</summary>
+        <a href="#">Source repos</a>
+        <a href="#">Secrets</a>
+        <a href="#">Providers</a>
+        <a href="#">Users</a>
+        <a href="#">Audit log</a>
+      </details>
+    </div>
+
+    <div class="nav-foot">
+      <div class="you">
+        <span class="av">tn</span>
+        <span>tng</span>
+      </div>
+      <span>↗ docs</span>
+    </div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main class="main">
+
+    <div class="topbar">
+      <nav class="crumbs">
+        <span class="here">Overview</span>
+      </nav>
+      <div class="spacer"></div>
+      <input class="search" placeholder="Jump to job, run, secret…" />
+      <span class="kbd">⌘K</span>
+    </div>
+
+    <div class="page">
+
+      <!-- header -->
+      <header class="ph">
+        <div>
+          <div class="eyebrow"><span class="dot"></span>2 jobs failing · attention required</div>
+          <h1>
+            Good evening, tng
+            <span class="sub">Friday, 03 May · 02:03 UTC · 14 jobs · 6 providers</span>
+          </h1>
+        </div>
+        <div class="actions">
+          <button class="btn primary">▶ Run a job <span class="k">R</span></button>
+          <button class="btn">+ New job</button>
+        </div>
+      </header>
+
+      <!-- ============ FAILURE TRIAGE ============ -->
+      <section class="card" style="border-color:var(--red-dim)">
+        <header style="background:var(--red-bg);border-bottom-color:var(--red-dim)">
+          <span style="color:var(--red)">● Failing now</span>
+          <span class="num">2 jobs · oldest 26h</span>
+          <a class="link" href="#" style="color:var(--ink-2)">View all failures →</a>
+        </header>
+
+        <div class="triage-list">
+
+          <a class="triage-row" href="job-detail.html">
+            <div class="triage-status">
+              <span class="pill fail">Exit 1</span>
+              <span class="triage-streak">2 in a row</span>
+            </div>
+            <div class="triage-name">
+              <strong>nightly-backup</strong>
+              <span class="triage-sub mono">analytics-pipeline · postgres → s3</span>
+            </div>
+            <div class="triage-detail mono">
+              pg_dump: connection refused at db.internal:5432
+            </div>
+            <div class="triage-time mono">
+              <b>3m ago</b>
+              <span>scheduled · daily 02:00</span>
+            </div>
+            <div class="triage-actions">
+              <button class="btn-tiny" title="Re-run">▶</button>
+              <button class="btn-tiny" title="Pause">⏸</button>
+            </div>
+          </a>
+
+          <a class="triage-row" href="#">
+            <div class="triage-status">
+              <span class="pill fail">Exit 2</span>
+              <span class="triage-streak">5 in a row</span>
+            </div>
+            <div class="triage-name">
+              <strong>weekly-report-email</strong>
+              <span class="triage-sub mono">analytics-pipeline · sendgrid</span>
+            </div>
+            <div class="triage-detail mono">
+              401 unauthorized from sendgrid (rotate SENDGRID_KEY?)
+            </div>
+            <div class="triage-time mono">
+              <b>26h ago</b>
+              <span>scheduled · mon 09:00</span>
+            </div>
+            <div class="triage-actions">
+              <button class="btn-tiny" title="Re-run">▶</button>
+              <button class="btn-tiny" title="Pause">⏸</button>
+            </div>
+          </a>
+
+        </div>
+      </section>
+
+      <!-- ============ TWO COLUMNS ============ -->
+      <div class="grid grid-overview">
+
+        <!-- LEFT: upcoming + 24h -->
+        <div class="col-l">
+
+          <section class="card">
+            <header>
+              <span>Upcoming runs</span>
+              <span class="num">next 24h · 8 runs</span>
+              <a class="link" href="#">All schedules →</a>
+            </header>
+
+            <ul class="upcoming">
+              <li>
+                <span class="when mono"><b>18h 24m</b><span>tomorrow 02:00</span></span>
+                <span class="bar"><span style="left:1%"></span></span>
+                <span class="job"><a href="job-detail.html">nightly-backup</a> <span class="mono dim">· daily</span></span>
+                <span class="prov mono">aws-prod-us-east-1</span>
+              </li>
+              <li>
+                <span class="when mono"><b>22h 24m</b><span>tomorrow 06:00</span></span>
+                <span class="bar"><span style="left:18%"></span></span>
+                <span class="job"><a href="#">stripe-reconcile</a> <span class="mono dim">· daily</span></span>
+                <span class="prov mono">aws-prod-us-east-1</span>
+              </li>
+              <li>
+                <span class="when mono"><b>1d 6h</b><span>sat 12:00</span></span>
+                <span class="bar"><span style="left:32%"></span></span>
+                <span class="job"><a href="#">cleanup-staging</a> <span class="mono dim">· daily</span></span>
+                <span class="prov mono">gcp-staging</span>
+              </li>
+              <li>
+                <span class="when mono"><b>1d 18h</b><span>sun 00:00</span></span>
+                <span class="bar"><span style="left:55%"></span></span>
+                <span class="job"><a href="#">vacuum-warehouse</a> <span class="mono dim">· weekly</span></span>
+                <span class="prov mono">aws-prod-us-east-1</span>
+              </li>
+              <li>
+                <span class="when mono"><b>3d 7h</b><span>mon 09:00</span></span>
+                <span class="bar"><span style="left:78%"></span></span>
+                <span class="job"><a href="#">weekly-report-email</a> <span class="mono dim">· weekly · paused?</span></span>
+                <span class="prov mono">aws-prod-us-east-1</span>
+              </li>
+              <li>
+                <span class="when mono"><b>5d 18h</b><span>wed 12:00</span></span>
+                <span class="bar"><span style="left:92%"></span></span>
+                <span class="job"><a href="#">monthly-invoices</a> <span class="mono dim">· monthly</span></span>
+                <span class="prov mono">aws-prod-us-east-1</span>
+              </li>
+            </ul>
+          </section>
+
+          <section class="card">
+            <header>
+              <span>Activity · last 24h</span>
+              <span class="num">42 runs · 38 ok · 2 fail · 2 skip</span>
+              <a class="link" href="#">Run log →</a>
+            </header>
+
+            <div class="activity-grid" aria-label="hourly activity heatmap">
+              <!-- 24 hour cells -->
+              <div class="hour"><span class="cell ok" style="--n:1"></span><span class="hr">02</span></div>
+              <div class="hour"><span class="cell" style="--n:0"></span><span class="hr">03</span></div>
+              <div class="hour"><span class="cell" style="--n:0"></span><span class="hr">04</span></div>
+              <div class="hour"><span class="cell ok" style="--n:1"></span><span class="hr">05</span></div>
+              <div class="hour"><span class="cell ok" style="--n:1"></span><span class="hr">06</span></div>
+              <div class="hour"><span class="cell ok" style="--n:2"></span><span class="hr">07</span></div>
+              <div class="hour"><span class="cell ok" style="--n:3"></span><span class="hr">08</span></div>
+              <div class="hour"><span class="cell skip" style="--n:1"></span><span class="hr">09</span></div>
+              <div class="hour"><span class="cell ok" style="--n:2"></span><span class="hr">10</span></div>
+              <div class="hour"><span class="cell ok" style="--n:2"></span><span class="hr">11</span></div>
+              <div class="hour"><span class="cell ok" style="--n:3"></span><span class="hr">12</span></div>
+              <div class="hour"><span class="cell ok" style="--n:2"></span><span class="hr">13</span></div>
+              <div class="hour"><span class="cell ok" style="--n:1"></span><span class="hr">14</span></div>
+              <div class="hour"><span class="cell ok" style="--n:2"></span><span class="hr">15</span></div>
+              <div class="hour"><span class="cell ok" style="--n:3"></span><span class="hr">16</span></div>
+              <div class="hour"><span class="cell ok" style="--n:2"></span><span class="hr">17</span></div>
+              <div class="hour"><span class="cell ok" style="--n:1"></span><span class="hr">18</span></div>
+              <div class="hour"><span class="cell" style="--n:0"></span><span class="hr">19</span></div>
+              <div class="hour"><span class="cell ok" style="--n:1"></span><span class="hr">20</span></div>
+              <div class="hour"><span class="cell ok" style="--n:2"></span><span class="hr">21</span></div>
+              <div class="hour"><span class="cell ok" style="--n:3"></span><span class="hr">22</span></div>
+              <div class="hour"><span class="cell ok" style="--n:2"></span><span class="hr">23</span></div>
+              <div class="hour"><span class="cell skip" style="--n:1"></span><span class="hr">00</span></div>
+              <div class="hour"><span class="cell fail" style="--n:1"></span><span class="hr">01</span></div>
+            </div>
+            <div class="legend mono">
+              <span><span class="lg ok"></span>success</span>
+              <span><span class="lg fail"></span>failure</span>
+              <span><span class="lg skip"></span>skipped</span>
+              <span style="margin-left:auto">all times UTC</span>
+            </div>
+          </section>
+
+        </div>
+
+        <!-- RIGHT: system + alerts -->
+        <aside class="col-r">
+
+          <section class="card">
+            <header>System</header>
+            <div class="card-body">
+              <dl class="kv">
+                <dt>Scheduler</dt><dd><span class="pill ok">Healthy</span></dd>
+                <dt>Queue depth</dt><dd>0 pending</dd>
+                <dt>Workers</dt><dd>4 / 4 ready</dd>
+                <dt>Last sync</dt><dd>14s ago</dd>
+              </dl>
+            </div>
+          </section>
+
+          <section class="card">
+            <header>
+              <span>Providers</span>
+              <span class="num">6</span>
+              <a class="link" href="#">→</a>
+            </header>
+            <ul class="prov-list">
+              <li><span class="pill ok"></span><span class="name">aws-prod-us-east-1</span><span class="mono dim">9 jobs</span></li>
+              <li><span class="pill ok"></span><span class="name">aws-prod-eu-west-1</span><span class="mono dim">2 jobs</span></li>
+              <li><span class="pill ok"></span><span class="name">gcp-staging</span><span class="mono dim">2 jobs</span></li>
+              <li><span class="pill ok"></span><span class="name">fly-edge</span><span class="mono dim">1 job</span></li>
+              <li><span class="pill skip"></span><span class="name">render-staging</span><span class="mono dim">0 jobs · idle</span></li>
+              <li><span class="pill ok"></span><span class="name">local-runner</span><span class="mono dim">manual only</span></li>
+            </ul>
+          </section>
+
+          <section class="card">
+            <header>Alerts &amp; rotations</header>
+            <div class="card-body">
+              <ul class="alerts">
+                <li>
+                  <span class="pill amber">Expiring</span>
+                  <span class="alert-text">
+                    <a href="#"><b>SENDGRID_KEY</b></a> rotates in <b>4 days</b>
+                    <span class="dim mono">used by 1 job</span>
+                  </span>
+                </li>
+                <li>
+                  <span class="pill amber">Drift</span>
+                  <span class="alert-text">
+                    <a href="#"><b>analytics-pipeline</b></a> has uncommitted schedule edits
+                    <span class="dim mono">via UI · 2h ago</span>
+                  </span>
+                </li>
+                <li>
+                  <span class="pill skip">Quiet</span>
+                  <span class="alert-text">
+                    <a href="#"><b>cleanup-archive</b></a> hasn't run in 30 days
+                    <span class="dim mono">cron may be misconfigured</span>
+                  </span>
+                </li>
+              </ul>
+            </div>
+          </section>
+
+        </aside>
+
+      </div>
+
+      <p class="foot">
+        <span>overview · region us-east-1</span>
+        <span>cronfoundry/v0.4 · 0x4a91</span>
+      </p>
+
+    </div>
+  </main>
+
+</div>
+</body>
+</html>

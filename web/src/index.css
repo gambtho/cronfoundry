@@ -2,6 +2,66 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ----------------------------------------------------------------
+   Design tokens
+   Source of truth for colors, fonts, spacing primitives.
+   Tailwind theme (tailwind.config.ts) references these via CSS vars
+   so utility classes and component styles stay in sync.
+   ---------------------------------------------------------------- */
 :root {
-  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  /* surfaces */
+  --bg: #0a0c0d;
+  --bg-2: #101315;
+  --bg-3: #161a1d;
+  --bg-4: #1c2125;
+
+  /* rules */
+  --rule: #23292d;
+  --rule-2: #2c3338;
+
+  /* ink */
+  --ink: #dde3e6;
+  --ink-2: #8a949b;
+  --ink-3: #5a6168;
+  --ink-4: #3d4348;
+
+  /* accents */
+  --green: #3ddc84;
+  --green-dim: #1f6e44;
+  --green-bg: rgba(61, 220, 132, 0.08);
+
+  --red: #ff5d52;
+  --red-dim: #7a2520;
+  --red-bg: rgba(255, 93, 82, 0.08);
+
+  --amber: #e8b339;
+  --amber-bg: rgba(232, 179, 57, 0.08);
+
+  --cyan: #5ec8d6;
+
+  font-family: 'Geist', ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ambient scanline texture — applied at the app shell, kept here so
+   it's available to any future surface that wants the same feel. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent 0 2px,
+    rgba(255, 255, 255, 0.012) 2px 3px
+  );
 }
