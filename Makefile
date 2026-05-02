@@ -1,9 +1,11 @@
-.PHONY: sqlc test test-short build web vet lint dev dev-down migrate e2e clean help worktree-clean
+.PHONY: sqlc test test-short build web web-stub vet lint dev dev-down migrate e2e clean help worktree-clean
 
 help:
 	@echo 'Targets:'
 	@echo '  build        Build cronfoundry + cronfoundry-runner binaries (runs web first)'
-	@echo '  web          Build the React UI bundle into internal/webapi/web/dist'
+	@echo '  web          Build the real React UI bundle into internal/webapi/web/dist'
+	@echo '  web-stub     Write a placeholder index.html into internal/webapi/web/dist'
+	@echo '               (satisfies the go:embed directive when the real UI is not needed)'
 	@echo '  test         Run all tests (with docker/testcontainers integration)'
 	@echo '  test-short   Run unit tests only (no containers)'
 	@echo '  vet          go vet ./...'
@@ -19,14 +21,27 @@ help:
 web:
 	cd web && npm ci && npm run build
 
+# web-stub satisfies the //go:embed all:web/dist directive without running
+# Vite. Used by CI jobs that compile/test Go but don't exercise the UI, and
+# by local dev when iterating on backend code only.
+WEB_DIST_DIR := internal/webapi/web/dist
+web-stub:
+	@mkdir -p $(WEB_DIST_DIR)
+	@if [ ! -f $(WEB_DIST_DIR)/index.html ]; then \
+	  printf '<!doctype html>\n<html><head><meta charset="utf-8"><title>CronFoundry (stub)</title></head><body>Stub UI — run `make web` for the real bundle.</body></html>\n' > $(WEB_DIST_DIR)/index.html; \
+	  echo 'wrote stub $(WEB_DIST_DIR)/index.html'; \
+	else \
+	  echo '$(WEB_DIST_DIR)/index.html already exists; not overwriting'; \
+	fi
+
 build: web
 	go build -o cronfoundry-runner ./cmd/runner
 	go build -o cronfoundry       ./cmd/cronfoundry
 
-test:
+test: web-stub
 	go test ./... -count=1 -timeout 10m
 
-test-short:
+test-short: web-stub
 	go test -short ./...
 
 vet:
@@ -60,6 +75,7 @@ e2e:
 
 clean:
 	rm -f cronfoundry cronfoundry-runner
+	rm -rf $(WEB_DIST_DIR)
 
 worktree-clean:
 	@echo 'Pruning stale worktree admin records...'

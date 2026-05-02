@@ -21,6 +21,20 @@ jobs:
         with:
           fetch-depth: 0
 
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      # Build the React bundle into internal/webapi/web/dist BEFORE docker
+      # build, since the Go binary embeds it via //go:embed all:web/dist.
+      # Building here (rather than inside the Dockerfile) keeps node out of
+      # the multi-arch QEMU emulation path and lets us use the runner's
+      # native node + npm cache.
+      - name: Build web bundle
+        run: make web
+
       - uses: docker/setup-qemu-action@v3
 
       - uses: docker/setup-buildx-action@v3

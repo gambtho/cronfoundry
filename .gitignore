@@ -14,3 +14,10 @@ app.pem
 deploy/params.json
 deploy/params.*.json
 !deploy/params.example.json
+
+# Compiled web bundle. Built by `make web` (real bundle, via Vite) or
+# `make web-stub` (one-line index.html for tests that don't exercise the UI).
+# Both populate internal/webapi/web/dist/ which is required by the
+# go:embed directive in internal/webapi/embed.go. CI rebuilds this; we don't
+# track it in git so the wire UI can't drift from the source.
+internal/webapi/web/dist/
