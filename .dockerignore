@@ -1,0 +1,43 @@
+# Skip everything that doesn't belong in the docker build context. Without
+# this every 'COPY . .' ships the whole repo (incl. .git, node_modules,
+# worktrees, build artifacts) — slow context upload + invalidates the build
+# cache on noise like a worktree change.
+
+# VCS / CI / editor noise
+.git
+.github
+.claude
+.gitignore
+.gitattributes
+.editorconfig
+
+# Per-environment state and secrets
+.env
+.env.*
+*.pem
+
+# Local builds and artifacts
+/cronfoundry
+/cronfoundry-runner
+/dist
+/coverage.out
+/build
+/tmp
+
+# Test data and dev outputs
+testdata/cache
+**/__snapshots__
+**/*.test.go.cache
+
+# Frontend dev artifacts (the embedded dist/ is already built before docker build)
+internal/webapi/web/node_modules
+internal/webapi/web/dist/.vite
+internal/webapi/web/.cache
+
+# Worktrees + plan/spec docs not needed by the build
+.claude/worktrees
+docs
+
+# Local docker-compose state
+deploy/data
+deploy/.env
