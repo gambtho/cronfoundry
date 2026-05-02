@@ -451,10 +451,13 @@ ok "Deployed. FQDN: $CF_FQDN"
 # ── Step 14: admin init ───────────────────────────────────────────────────────
 header "[step 14/25] Initialize database"
 CF_DB_URL="postgres://cfadmin:${CF_PG_PASSWORD}@cf-pg-${CF_ENV}.postgres.database.azure.com:5432/cronfoundry?sslmode=require"
-if [[ "$DRY_RUN" != "true" ]]; then
+if [[ "$DRY_RUN" == "true" ]]; then
+  :
+elif [[ "${CF_CRONFOUNDRY_BIN_BUILT:-0}" == "1" && "${CF_DB_INITIALIZED:-0}" == "1" ]]; then
+  ok "Database already initialized (CF_DB_INITIALIZED=1) and binary built; skipping firewall reopen, build, init, and restart"
+else
   # WSL2-safe: use broad rule -- WSL2 NAT may present a different source IP to Azure
-  warn "Opening Postgres firewall to 0.0.0.0/0 for WSL2 NAT compatibility."
-  warn "Tighten this after setup: az postgres flexible-server firewall-rule update --rule-name AllowOperator ..."
+  warn "Opening Postgres firewall to 0.0.0.0/0 for WSL2 NAT compatibility (will be tightened in step 15)."
   az postgres flexible-server firewall-rule create \
     --resource-group "rg-cronfoundry-${CF_ENV}" \
     --name "cf-pg-${CF_ENV}" \
@@ -463,10 +466,13 @@ if [[ "$DRY_RUN" != "true" ]]; then
     --end-ip-address "255.255.255.255" \
     || warn "Firewall rule creation failed (may already exist) — database init may fail if connectivity is blocked."
 
-  if ! make build; then
-    warn "make build failed; falling back to go build"
-    go build -o cronfoundry ./cmd/cronfoundry \
-      || die "Binary build failed. Ensure go >= 1.21 is installed.\nSee §14 of $GUIDE_URL"
+  if [[ "${CF_CRONFOUNDRY_BIN_BUILT:-0}" != "1" ]] || [[ ! -x ./cronfoundry ]]; then
+    if ! make build; then
+      warn "make build failed; falling back to go build"
+      go build -o cronfoundry ./cmd/cronfoundry \
+        || die "Binary build failed. Ensure go >= 1.21 is installed.\nSee §14 of $GUIDE_URL"
+    fi
+    save CF_CRONFOUNDRY_BIN_BUILT 1
   fi
 
   if [[ "${CF_DB_INITIALIZED:-0}" == "1" ]]; then
