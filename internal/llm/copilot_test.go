@@ -31,8 +31,8 @@ func TestCopilotEnterprise_Chat_SetsRequiredHeaders(t *testing.T) {
 		func(StreamChunk) {})
 
 	require.NoError(t, err)
-	assert.Equal(t, "cronfoundry/1.0", gotEditorVersion)
-	assert.Equal(t, "cronfoundry", gotIntegrationID)
+	assert.Equal(t, "vscode/1.85.1", gotEditorVersion)
+	assert.Equal(t, "vscode-chat", gotIntegrationID)
 	assert.Equal(t, "Bearer ghu_testtoken", gotAuth)
 }
 
