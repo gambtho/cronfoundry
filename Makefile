@@ -70,7 +70,7 @@ migrate:
 	 fi
 	go run ./cmd/cronfoundry admin init
 
-e2e:
+e2e: web-stub
 	go test -tags=e2e ./cmd/cronfoundry/... -count=1 -timeout 10m -run TestE2E_
 
 clean:
