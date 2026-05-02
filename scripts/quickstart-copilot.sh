@@ -253,20 +253,34 @@ if [[ -z "${CF_SKILL_REPO:-}" ]]; then
       warn "Expected 'owner/repo'; got '$CF_SKILL_REPO_INPUT'."
       continue
     fi
-    if gh api "repos/${CF_SKILL_REPO_INPUT}" --silent 2>/dev/null; then
-      CF_SKILL_REPO="$CF_SKILL_REPO_INPUT"
-      break
-    fi
-    read -rp "Repo $CF_SKILL_REPO_INPUT does not exist (or is not visible). Create it as a private repo? [Y/n]: " mkrepo
-    mkrepo="${mkrepo:-y}"
-    if [[ "$mkrepo" =~ ^[Yy]$ ]]; then
-      info "Creating private repo $CF_SKILL_REPO_INPUT..."
-      gh repo create "$CF_SKILL_REPO_INPUT" --private --add-readme \
-        || die "gh repo create failed; verify your auth has 'repo' scope and the name is available."
-      CF_SKILL_REPO="$CF_SKILL_REPO_INPUT"
-      break
-    fi
-    # else: loop and let the operator paste a different name
+    # gh api exit codes don't distinguish 404 from auth/network errors, so
+    # capture HTTP status and only treat 404 as "not exist → offer to create".
+    HTTP_STATUS=$(gh api "repos/${CF_SKILL_REPO_INPUT}" --silent \
+      -i 2>/dev/null | grep -E "^HTTP/" | head -1 | awk '{print $2}')
+    case "${HTTP_STATUS:-}" in
+      200)
+        CF_SKILL_REPO="$CF_SKILL_REPO_INPUT"
+        break
+        ;;
+      404)
+        read -rp "Repo $CF_SKILL_REPO_INPUT not found. Create it as a private repo? [Y/n]: " mkrepo
+        mkrepo="${mkrepo:-y}"
+        if [[ "$mkrepo" =~ ^[Yy]$ ]]; then
+          info "Creating private repo $CF_SKILL_REPO_INPUT..."
+          gh repo create "$CF_SKILL_REPO_INPUT" --private --add-readme \
+            || die "gh repo create failed; verify your auth has 'repo' scope and the name is available."
+          CF_SKILL_REPO="$CF_SKILL_REPO_INPUT"
+          break
+        fi
+        # else: loop and let the operator paste a different name
+        ;;
+      "")
+        die "gh api 'repos/${CF_SKILL_REPO_INPUT}' returned no HTTP status — gh may not be authenticated or network is unreachable. Run 'gh auth status'."
+        ;;
+      *)
+        die "gh api 'repos/${CF_SKILL_REPO_INPUT}' returned HTTP ${HTTP_STATUS} (auth scope or rate-limit issue). Run 'gh auth status' or check https://api.github.com rate limits."
+        ;;
+    esac
   done
   save CF_SKILL_REPO "$CF_SKILL_REPO"
 fi
