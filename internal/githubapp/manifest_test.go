@@ -35,14 +35,16 @@ func TestBuildManifest_RequiredFields(t *testing.T) {
 	}
 	perms, _ := got["default_permissions"].(map[string]any)
 	for k, want := range map[string]string{
-		"contents":        "write",
-		"issues":          "write",
-		"metadata":        "read",
-		"email_addresses": "read",
+		"contents": "write",
+		"issues":   "write",
+		"metadata": "read",
 	} {
 		if perms[k] != want {
 			t.Errorf("permissions[%s] = %v, want %s", k, perms[k], want)
 		}
+	}
+	if _, has := perms["email_addresses"]; has {
+		t.Errorf("permissions should not include email_addresses (not a valid manifest permission key)")
 	}
 	events, _ := got["default_events"].([]any)
 	if len(events) != 1 || events[0] != "push" {
