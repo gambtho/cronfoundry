@@ -36,15 +36,49 @@ list_env_states() {
     | sed -E "s|^${HOME}/.cronfoundry-quickstart-state-||"
 }
 
+# An existing CF_ENV value lives in this file iff a per-env state already
+# exists for that suffix. Used both to detect legacy files and to refuse
+# duplicate suffix entry when the user picks "n" for "new env".
+env_state_exists() {
+  [[ -f "${HOME}/.cronfoundry-quickstart-state-$1" ]]
+}
+
+# Migrate the legacy unsuffixed state file (Phase 1's pre-per-env layout) so
+# in-flight quickstarts resume cleanly. Read the file's saved CF_ENV, if any,
+# and rename to the per-env path. If no CF_ENV is saved, the legacy file is
+# from before the env-suffix prompt was reached — drop it; subsequent prompts
+# will recreate everything in the per-env file from scratch.
+migrate_legacy_state_file() {
+  local legacy="${HOME}/.cronfoundry-quickstart-state"
+  [[ -f "$legacy" ]] || return 0
+  # shellcheck disable=SC1090
+  local saved_env
+  saved_env=$(grep -E '^CF_ENV=' "$legacy" 2>/dev/null | tail -1 | sed -E 's/^CF_ENV=//; s/^"//; s/"$//')
+  if [[ -n "$saved_env" ]] && [[ ! -f "${HOME}/.cronfoundry-quickstart-state-${saved_env}" ]]; then
+    mv "$legacy" "${HOME}/.cronfoundry-quickstart-state-${saved_env}"
+    echo -e "${CYAN}[info]${RESET}  Migrated legacy state file → ~/.cronfoundry-quickstart-state-${saved_env}"
+  else
+    rm -f "$legacy"
+  fi
+}
+
 select_env_suffix() {
+  migrate_legacy_state_file
   local existing
   mapfile -t existing < <(list_env_states)
   if [[ ${#existing[@]} -eq 0 ]]; then
     while true; do
       read -rp "Env suffix (<=10 chars, lowercase/numbers/hyphens, default: copilot1): " CF_ENV
       CF_ENV="${CF_ENV:-copilot1}"
-      if [[ "$CF_ENV" =~ ^[a-z0-9-]{1,10}$ ]]; then return 0; fi
-      echo -e "${YELLOW}[warn]${RESET}  Invalid suffix '$CF_ENV'. Use only lowercase letters, numbers, and hyphens, max 10 chars."
+      if [[ ! "$CF_ENV" =~ ^[a-z0-9-]{1,10}$ ]]; then
+        echo -e "${YELLOW}[warn]${RESET}  Invalid suffix '$CF_ENV'. Use only lowercase letters, numbers, and hyphens, max 10 chars."
+        continue
+      fi
+      if env_state_exists "$CF_ENV"; then
+        echo -e "${YELLOW}[warn]${RESET}  Env '$CF_ENV' already has a state file — re-run without args to resume it, or pick a different suffix."
+        continue
+      fi
+      return 0
     done
   elif [[ ${#existing[@]} -eq 1 ]]; then
     CF_ENV="${existing[0]}"
@@ -60,8 +94,15 @@ select_env_suffix() {
     if [[ "$choice" == "n" ]]; then
       while true; do
         read -rp "New env suffix (<=10 chars, lowercase/numbers/hyphens): " CF_ENV
-        if [[ "$CF_ENV" =~ ^[a-z0-9-]{1,10}$ ]]; then return 0; fi
-        echo -e "${YELLOW}[warn]${RESET}  Invalid suffix."
+        if [[ ! "$CF_ENV" =~ ^[a-z0-9-]{1,10}$ ]]; then
+          echo -e "${YELLOW}[warn]${RESET}  Invalid suffix."
+          continue
+        fi
+        if env_state_exists "$CF_ENV"; then
+          echo -e "${YELLOW}[warn]${RESET}  Env '$CF_ENV' already exists — pick a different suffix, or restart and resume from the menu."
+          continue
+        fi
+        return 0
       done
     elif [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#existing[@]} )); then
       CF_ENV="${existing[$((choice-1))]}"
