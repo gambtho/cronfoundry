@@ -1,8 +1,15 @@
 package webapi
 
-// CopilotClientID is the OAuth client identifier sent in all GitHub device-flow
-// and token-refresh requests. Must match the registered GitHub OAuth App.
-const CopilotClientID = "cronfoundry"
+// CopilotClientID is the public OAuth client_id of the GitHub Copilot
+// platform — used for device-flow against GitHub's /login/device/code and
+// /login/oauth/access_token endpoints to mint a Copilot seat token. This
+// value is published by GitHub for any consumer doing Copilot OAuth
+// (including the official VS Code and JetBrains Copilot extensions).
+//
+// It is NOT the operator's CronFoundry GitHub App client ID; that App
+// authenticates webhooks and per-installation API calls and has nothing
+// to do with the user's Copilot seat.
+const CopilotClientID = "Iv1.b507a08c87ecfe98"
 
 // copilotClientID is the unexported alias preserved for legacy callers within
 // the webapi package.
