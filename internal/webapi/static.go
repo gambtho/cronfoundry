@@ -3,6 +3,7 @@ package webapi
 import (
 	"io/fs"
 	"net/http"
+	"strings"
 )
 
 // staticHandler serves the embedded React SPA.
@@ -16,8 +17,16 @@ func staticHandler() http.Handler {
 	}
 	fileServer := http.FileServer(http.FS(sub))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// If the exact file exists in dist, serve it directly.
-		f, err := sub.Open(r.URL.Path)
+		// io/fs paths are slash-separated with NO leading slash. r.URL.Path
+		// always starts with "/". Strip it before probing the embedded FS,
+		// otherwise sub.Open("/assets/x.js") returns ErrNotExist for every
+		// real asset and we fall back to index.html with text/html — which
+		// browsers refuse to execute as a JS module under strict MIME.
+		probe := strings.TrimPrefix(r.URL.Path, "/")
+		if probe == "" {
+			probe = "."
+		}
+		f, err := sub.Open(probe)
 		if err != nil {
 			// Fall back to index.html for SPA client-side routing.
 			r2 := r.Clone(r.Context())
