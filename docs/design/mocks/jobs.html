@@ -1,0 +1,313 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>cronfoundry — jobs</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@300;400;500;600&family=Geist:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css" />
+</head>
+<body>
+<div class="app">
+
+  <aside class="nav">
+    <div class="brand">
+      <span class="dot"></span>
+      <span class="name">cron<em>foundry</em></span>
+      <span class="ver">v0.4</span>
+    </div>
+
+    <div class="nav-section">
+      <h4>Operate</h4>
+      <a href="overview.html" class="alert"><span>Overview</span><span class="num">2 ✕</span></a>
+      <a href="jobs.html" class="active"><span>Jobs</span><span class="num">14</span></a>
+    </div>
+
+    <div class="nav-section">
+      <h4>Configure</h4>
+      <details>
+        <summary>Settings</summary>
+        <a href="#">Source repos</a>
+        <a href="#">Secrets</a>
+        <a href="#">Providers</a>
+        <a href="#">Users</a>
+        <a href="#">Audit log</a>
+      </details>
+    </div>
+
+    <div class="nav-foot">
+      <div class="you">
+        <span class="av">tn</span>
+        <span>tng</span>
+      </div>
+      <span>↗ docs</span>
+    </div>
+  </aside>
+
+  <main class="main">
+
+    <div class="topbar">
+      <nav class="crumbs">
+        <span class="here">Jobs</span>
+      </nav>
+      <div class="spacer"></div>
+      <input class="search" placeholder="Jump to job, run, secret…" />
+      <span class="kbd">⌘K</span>
+    </div>
+
+    <div class="page">
+
+      <header class="ph">
+        <div>
+          <div class="eyebrow ok"><span class="dot"></span>14 jobs · 12 healthy · 2 failing</div>
+          <h1>
+            Jobs
+            <span class="sub">scheduled tasks across 1 repo and 6 providers</span>
+          </h1>
+        </div>
+        <div class="actions">
+          <button class="btn primary">+ New job <span class="k">N</span></button>
+          <button class="btn">Import from yaml</button>
+        </div>
+      </header>
+
+      <!-- toolbar -->
+      <div class="toolbar">
+        <button class="chip on">All <span class="dim">14</span></button>
+        <button class="chip alert on">Failing <span class="dim">2</span></button>
+        <button class="chip">Healthy <span class="dim">10</span></button>
+        <button class="chip">Paused <span class="dim">2</span></button>
+        <span style="color:var(--ink-3);margin:0 6px">·</span>
+        <button class="chip">Provider: any ▾</button>
+        <button class="chip">Repo: analytics-pipeline ▾</button>
+        <button class="chip">Schedule: any ▾</button>
+        <span class="spacer"></span>
+        <input class="search" placeholder="Filter…" style="width:180px" />
+        <div class="view">
+          <button class="on">Table</button>
+          <button>Cards</button>
+          <button>Cal</button>
+        </div>
+      </div>
+
+      <!-- jobs table -->
+      <section class="card" style="padding:0">
+        <table class="jobs">
+          <thead>
+            <tr>
+              <th style="width:24%">Job</th>
+              <th>Schedule</th>
+              <th>Last run</th>
+              <th>Next run</th>
+              <th>Provider</th>
+              <th>14d</th>
+              <th class="right">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+
+            <tr class="fail-row">
+              <td>
+                <a class="job-name" href="job-detail.html">nightly-backup</a>
+                <span class="job-sub">postgres → s3</span>
+              </td>
+              <td><span class="cron-cell">0 2 * * *</span><span class="job-sub">daily 02:00 UTC</span></td>
+              <td><span class="pill fail">Exit 1</span><span class="job-sub">3m ago · 12.4s</span></td>
+              <td class="nowrap">in 18h 24m</td>
+              <td>aws-prod-us-east-1</td>
+              <td><span class="hist">
+                <span style="height:60%"></span><span style="height:55%"></span><span style="height:62%"></span>
+                <span style="height:58%"></span><span style="height:65%"></span><span style="height:50%"></span>
+                <span style="height:60%"></span><span style="height:58%"></span><span style="height:62%"></span>
+                <span style="height:55%"></span><span style="height:60%"></span><span style="height:58%"></span>
+                <span class="f" style="height:18%"></span><span class="f" style="height:18%"></span>
+              </span></td>
+              <td class="right"><button class="btn-tiny" title="Run now">▶</button></td>
+            </tr>
+
+            <tr class="fail-row">
+              <td>
+                <a class="job-name" href="#">weekly-report-email</a>
+                <span class="job-sub">analytics → sendgrid</span>
+              </td>
+              <td><span class="cron-cell">0 9 * * 1</span><span class="job-sub">mon 09:00 UTC</span></td>
+              <td><span class="pill fail">Exit 2</span><span class="job-sub">26h ago · 2.1s</span></td>
+              <td class="nowrap">in 3d 7h</td>
+              <td>aws-prod-us-east-1</td>
+              <td><span class="hist">
+                <span style="height:50%"></span><span style="height:55%"></span><span style="height:60%"></span>
+                <span class="f" style="height:18%"></span><span class="f" style="height:18%"></span>
+                <span class="f" style="height:18%"></span><span class="f" style="height:18%"></span><span class="f" style="height:18%"></span>
+              </span></td>
+              <td class="right"><button class="btn-tiny" title="Run now">▶</button></td>
+            </tr>
+
+            <tr>
+              <td>
+                <a class="job-name" href="#">stripe-reconcile</a>
+                <span class="job-sub">stripe → warehouse</span>
+              </td>
+              <td><span class="cron-cell">0 6 * * *</span><span class="job-sub">daily 06:00 UTC</span></td>
+              <td><span class="pill ok">Success</span><span class="job-sub">2h ago · 8m 41s</span></td>
+              <td class="nowrap">in 22h 24m</td>
+              <td>aws-prod-us-east-1</td>
+              <td><span class="hist">
+                <span style="height:60%"></span><span style="height:65%"></span><span style="height:62%"></span>
+                <span style="height:58%"></span><span style="height:60%"></span><span style="height:55%"></span>
+                <span style="height:60%"></span><span style="height:58%"></span><span style="height:62%"></span>
+                <span style="height:55%"></span><span style="height:60%"></span><span style="height:58%"></span>
+                <span style="height:62%"></span><span style="height:60%"></span>
+              </span></td>
+              <td class="right"><button class="btn-tiny" title="Run now">▶</button></td>
+            </tr>
+
+            <tr>
+              <td>
+                <a class="job-name" href="#">cleanup-staging</a>
+                <span class="job-sub">scrub stale data</span>
+              </td>
+              <td><span class="cron-cell">0 12 * * *</span><span class="job-sub">daily 12:00 UTC</span></td>
+              <td><span class="pill ok">Success</span><span class="job-sub">14h ago · 1m 02s</span></td>
+              <td class="nowrap">in 1d 6h</td>
+              <td>gcp-staging</td>
+              <td><span class="hist">
+                <span style="height:30%"></span><span style="height:32%"></span><span style="height:30%"></span>
+                <span style="height:35%"></span><span style="height:30%"></span><span style="height:32%"></span>
+                <span style="height:30%"></span><span style="height:35%"></span><span style="height:30%"></span>
+                <span style="height:30%"></span><span style="height:32%"></span><span style="height:30%"></span>
+                <span style="height:30%"></span><span style="height:32%"></span>
+              </span></td>
+              <td class="right"><button class="btn-tiny" title="Run now">▶</button></td>
+            </tr>
+
+            <tr>
+              <td>
+                <a class="job-name" href="#">vacuum-warehouse</a>
+                <span class="job-sub">postgres maintenance</span>
+              </td>
+              <td><span class="cron-cell">0 0 * * 0</span><span class="job-sub">sun 00:00 UTC</span></td>
+              <td><span class="pill ok">Success</span><span class="job-sub">5d ago · 24m 11s</span></td>
+              <td class="nowrap">in 1d 18h</td>
+              <td>aws-prod-us-east-1</td>
+              <td><span class="hist">
+                <span class="s" style="height:20%"></span><span class="s" style="height:20%"></span><span class="s" style="height:20%"></span>
+                <span class="s" style="height:20%"></span><span class="s" style="height:20%"></span><span class="s" style="height:20%"></span>
+                <span style="height:90%"></span><span class="s" style="height:20%"></span><span class="s" style="height:20%"></span>
+                <span class="s" style="height:20%"></span><span class="s" style="height:20%"></span><span class="s" style="height:20%"></span>
+                <span class="s" style="height:20%"></span><span style="height:90%"></span>
+              </span></td>
+              <td class="right"><button class="btn-tiny" title="Run now">▶</button></td>
+            </tr>
+
+            <tr>
+              <td>
+                <a class="job-name" href="#">sync-customer-events</a>
+                <span class="job-sub">segment → bigquery</span>
+              </td>
+              <td><span class="cron-cell">*/15 * * * *</span><span class="job-sub">every 15 min</span></td>
+              <td><span class="pill ok">Success</span><span class="job-sub">4m ago · 18s</span></td>
+              <td class="nowrap">in 11m</td>
+              <td>aws-prod-us-east-1</td>
+              <td><span class="hist">
+                <span style="height:40%"></span><span style="height:42%"></span><span style="height:38%"></span>
+                <span style="height:40%"></span><span style="height:45%"></span><span style="height:42%"></span>
+                <span style="height:40%"></span><span style="height:38%"></span><span style="height:40%"></span>
+                <span style="height:42%"></span><span style="height:40%"></span><span style="height:38%"></span>
+                <span style="height:40%"></span><span style="height:42%"></span>
+              </span></td>
+              <td class="right"><button class="btn-tiny" title="Run now">▶</button></td>
+            </tr>
+
+            <tr>
+              <td>
+                <a class="job-name" href="#">monthly-invoices</a>
+                <span class="job-sub">billing → quickbooks</span>
+              </td>
+              <td><span class="cron-cell">0 12 1 * *</span><span class="job-sub">1st of month 12:00</span></td>
+              <td><span class="pill ok">Success</span><span class="job-sub">3d ago · 6m 24s</span></td>
+              <td class="nowrap">in 5d 18h</td>
+              <td>aws-prod-us-east-1</td>
+              <td><span class="hist">
+                <span class="s" style="height:15%"></span><span class="s" style="height:15%"></span><span class="s" style="height:15%"></span>
+                <span class="s" style="height:15%"></span><span class="s" style="height:15%"></span><span class="s" style="height:15%"></span>
+                <span class="s" style="height:15%"></span><span class="s" style="height:15%"></span><span class="s" style="height:15%"></span>
+                <span class="s" style="height:15%"></span><span style="height:80%"></span><span class="s" style="height:15%"></span>
+                <span class="s" style="height:15%"></span><span class="s" style="height:15%"></span>
+              </span></td>
+              <td class="right"><button class="btn-tiny" title="Run now">▶</button></td>
+            </tr>
+
+            <tr>
+              <td>
+                <a class="job-name" href="#">healthcheck-edge</a>
+                <span class="job-sub">probes & alerts</span>
+              </td>
+              <td><span class="cron-cell">* * * * *</span><span class="job-sub">every minute</span></td>
+              <td><span class="pill ok">Success</span><span class="job-sub">38s ago · 0.4s</span></td>
+              <td class="nowrap">in 22s</td>
+              <td>fly-edge</td>
+              <td><span class="hist">
+                <span style="height:20%"></span><span style="height:18%"></span><span style="height:20%"></span>
+                <span style="height:20%"></span><span style="height:20%"></span><span style="height:20%"></span>
+                <span style="height:18%"></span><span style="height:20%"></span><span style="height:20%"></span>
+                <span style="height:20%"></span><span style="height:20%"></span><span style="height:20%"></span>
+                <span style="height:18%"></span><span style="height:20%"></span>
+              </span></td>
+              <td class="right"><button class="btn-tiny" title="Run now">▶</button></td>
+            </tr>
+
+            <tr class="paused-row">
+              <td>
+                <a class="job-name" href="#">archive-logs</a>
+                <span class="job-sub">⏸ paused 12d ago</span>
+              </td>
+              <td><span class="cron-cell">0 4 * * *</span><span class="job-sub">daily 04:00 UTC</span></td>
+              <td><span class="pill skip">Paused</span><span class="job-sub">12d ago · 1m 48s</span></td>
+              <td class="nowrap">—</td>
+              <td>aws-prod-eu-west-1</td>
+              <td><span class="hist">
+                <span class="s" style="height:18%"></span><span class="s" style="height:18%"></span><span class="s" style="height:18%"></span>
+                <span class="s" style="height:18%"></span><span class="s" style="height:18%"></span><span class="s" style="height:18%"></span>
+                <span class="s" style="height:18%"></span><span class="s" style="height:18%"></span><span class="s" style="height:18%"></span>
+                <span class="s" style="height:18%"></span><span class="s" style="height:18%"></span><span class="s" style="height:18%"></span>
+                <span class="s" style="height:18%"></span><span class="s" style="height:18%"></span>
+              </span></td>
+              <td class="right"><button class="btn-tiny" title="Resume">▶</button></td>
+            </tr>
+
+            <tr>
+              <td>
+                <a class="job-name" href="#">geoip-refresh</a>
+                <span class="job-sub">maxmind → cdn</span>
+              </td>
+              <td><span class="cron-cell">0 3 * * 0</span><span class="job-sub">sun 03:00 UTC</span></td>
+              <td><span class="pill ok">Success</span><span class="job-sub">5d ago · 2m 14s</span></td>
+              <td class="nowrap">in 1d 21h</td>
+              <td>aws-prod-eu-west-1</td>
+              <td><span class="hist">
+                <span class="s" style="height:18%"></span><span class="s" style="height:18%"></span><span class="s" style="height:18%"></span>
+                <span class="s" style="height:18%"></span><span class="s" style="height:18%"></span><span class="s" style="height:18%"></span>
+                <span style="height:55%"></span><span class="s" style="height:18%"></span><span class="s" style="height:18%"></span>
+                <span class="s" style="height:18%"></span><span class="s" style="height:18%"></span><span class="s" style="height:18%"></span>
+                <span class="s" style="height:18%"></span><span style="height:55%"></span>
+              </span></td>
+              <td class="right"><button class="btn-tiny" title="Run now">▶</button></td>
+            </tr>
+
+          </tbody>
+        </table>
+      </section>
+
+      <p class="foot">
+        <span>showing 10 of 14 jobs · sort: alert first</span>
+        <span>cronfoundry/v0.4 · 0x4a91</span>
+      </p>
+
+    </div>
+  </main>
+
+</div>
+</body>
+</html>

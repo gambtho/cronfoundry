@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>cronfoundry — nightly-backup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@300;400;500;600&family=Geist:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css" />
+</head>
+<body>
+<div class="app">
+
+  <aside class="nav">
+    <div class="brand">
+      <span class="dot"></span>
+      <span class="name">cron<em>foundry</em></span>
+      <span class="ver">v0.4</span>
+    </div>
+
+    <div class="nav-section">
+      <h4>Operate</h4>
+      <a href="overview.html" class="alert"><span>Overview</span><span class="num">2 ✕</span></a>
+      <a href="jobs.html" class="active"><span>Jobs</span><span class="num">14</span></a>
+    </div>
+
+    <div class="nav-section">
+      <h4>Configure</h4>
+      <details>
+        <summary>Settings</summary>
+        <a href="#">Source repos</a>
+        <a href="#">Secrets</a>
+        <a href="#">Providers</a>
+        <a href="#">Users</a>
+        <a href="#">Audit log</a>
+      </details>
+    </div>
+
+    <div class="nav-foot">
+      <div class="you">
+        <span class="av">tn</span>
+        <span>tng</span>
+      </div>
+      <span>↗ docs</span>
+    </div>
+  </aside>
+
+  <main class="main">
+
+    <div class="topbar">
+      <nav class="crumbs">
+        <a href="jobs.html">Jobs</a>
+        <span class="sep">/</span>
+        <span class="here">nightly-backup</span>
+      </nav>
+      <div class="spacer"></div>
+      <input class="search" placeholder="Jump to job, run, secret…" />
+      <span class="kbd">⌘K</span>
+    </div>
+
+    <div class="page">
+
+      <header class="ph">
+        <div>
+          <div class="eyebrow"><span class="dot"></span>Failing — last 2 of 3 runs</div>
+          <h1>
+            nightly-backup
+            <span class="sub">postgres → s3 · production</span>
+          </h1>
+          <div class="meta">
+            <span class="chip"><b>analytics-pipeline</b> · main</span>
+            <span>jobs/nightly-backup.yaml</span>
+            <span>·</span>
+            <span>edited 6d ago by tng</span>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="btn primary">▶ Run now <span class="k">R</span></button>
+          <button class="btn">Edit schedule <span class="k">E</span></button>
+          <button class="btn ghost">⏸ Pause job</button>
+        </div>
+      </header>
+
+      <div class="status-banner">
+        <div class="glyph">!</div>
+        <div class="text">
+          <strong>Run #2841 exited with code 1</strong>
+          <p>3m 04s ago on <code>aws-prod-us-east-1</code> — pg_dump connection refused. Same failure as #2840.</p>
+        </div>
+        <div>
+          <a href="run-detail.html" class="btn">View logs →</a>
+        </div>
+      </div>
+
+      <div class="schedule">
+        <div class="cron">0 2 * * *</div>
+        <div class="human">every day at 2:00 a.m. UTC</div>
+        <div class="next">Next run<b>in 18h 24m</b></div>
+      </div>
+
+      <div class="grid">
+
+        <div class="col-l">
+
+          <section class="card">
+            <header>
+              <span>Recent runs</span>
+              <span class="num">last 14d · 14 runs</span>
+              <a class="link" href="#">All runs →</a>
+            </header>
+
+            <div class="stats">
+              <div class="big">86% success · <span class="fail">2 failing</span></div>
+              <div class="meta">median 4m 12s</div>
+            </div>
+            <div class="spark" aria-hidden="true">
+              <span class="ok" style="height:60%"></span>
+              <span class="ok" style="height:55%"></span>
+              <span class="ok" style="height:62%"></span>
+              <span class="ok" style="height:58%"></span>
+              <span class="ok" style="height:65%"></span>
+              <span class="ok" style="height:50%"></span>
+              <span class="ok" style="height:60%"></span>
+              <span class="ok" style="height:58%"></span>
+              <span class="ok" style="height:62%"></span>
+              <span class="ok" style="height:55%"></span>
+              <span class="ok" style="height:60%"></span>
+              <span class="ok" style="height:58%"></span>
+              <span class="f" style="height:18%"></span>
+              <span class="f" style="height:18%"></span>
+            </div>
+            <div class="spark-x"><span>14d ago</span><span>today</span></div>
+
+            <table class="runs">
+              <thead>
+                <tr>
+                  <th>Run</th><th>Status</th><th>Started</th><th>Duration</th><th class="right">Trigger</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="row-fail" onclick="location='run-detail.html'">
+                  <td class="id">#2841</td>
+                  <td><span class="pill fail">Exit 1</span></td>
+                  <td>03 May · 02:00:11 UTC</td>
+                  <td>12.4s</td>
+                  <td class="right">schedule</td>
+                </tr>
+                <tr class="row-fail">
+                  <td class="id">#2840</td>
+                  <td><span class="pill fail">Exit 1</span></td>
+                  <td>02 May · 02:00:08 UTC</td>
+                  <td>11.9s</td>
+                  <td class="right">schedule</td>
+                </tr>
+                <tr>
+                  <td class="id">#2839</td>
+                  <td><span class="pill ok">Success</span></td>
+                  <td>01 May · 02:00:07 UTC</td>
+                  <td>4m 06s</td>
+                  <td class="right">schedule</td>
+                </tr>
+                <tr>
+                  <td class="id">#2838</td>
+                  <td><span class="pill ok">Success</span></td>
+                  <td>30 Apr · 02:00:09 UTC</td>
+                  <td>4m 14s</td>
+                  <td class="right">schedule</td>
+                </tr>
+                <tr>
+                  <td class="id">#2837</td>
+                  <td><span class="pill ok">Success</span></td>
+                  <td>29 Apr · 14:22:00 UTC</td>
+                  <td>4m 02s</td>
+                  <td class="right">manual · tng</td>
+                </tr>
+                <tr>
+                  <td class="id">#2836</td>
+                  <td><span class="pill skip">Skipped</span></td>
+                  <td>29 Apr · 02:00:00 UTC</td>
+                  <td>—</td>
+                  <td class="right">provider down</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
+
+          <section class="card">
+            <header style="padding:0">
+              <div class="tabs" style="flex:1">
+                <button class="on">Logs</button>
+                <button>Definition</button>
+                <button>Environment</button>
+                <button>History</button>
+                <span class="meta">run #2841 · 12.4s</span>
+              </div>
+            </header>
+            <pre class="code"><span class="ts">02:00:11.224</span>  <span class="dim">starting nightly-backup (run #2841)</span>
+<span class="ts">02:00:11.402</span>  resolving provider <span class="cmd">aws-prod-us-east-1</span> <span class="ok">✓</span>
+<span class="ts">02:00:11.611</span>  loading 4 secrets from vault <span class="ok">✓</span>
+<span class="ts">02:00:11.890</span>  $ <span class="cmd">pg_dump --host=$DB_HOST --port=5432 -Fc analytics</span>
+<span class="ts">02:00:23.104</span>  <span class="err">pg_dump: error: connection to server at "db.internal" (10.0.4.21), port 5432 failed:</span>
+<span class="ts">            </span>  <span class="err">Connection refused</span>
+<span class="ts">            </span>  <span class="err">Is the server running on that host and accepting TCP/IP connections?</span>
+<span class="ts">02:00:23.107</span>  command exited with status <span class="err">1</span>
+<span class="ts">02:00:23.108</span>  <span class="err">✕ run failed in 12.4s</span></pre>
+          </section>
+
+        </div>
+
+        <aside class="col-r">
+
+          <section class="card">
+            <header>Provider</header>
+            <div class="card-body">
+              <dl class="kv">
+                <dt>Target</dt><dd><a href="#">aws-prod-us-east-1</a></dd>
+                <dt>Region</dt><dd>us-east-1</dd>
+                <dt>Health</dt><dd><span class="pill ok">Reachable</span></dd>
+                <dt>Used by</dt><dd>9 jobs</dd>
+              </dl>
+            </div>
+          </section>
+
+          <section class="card">
+            <header>
+              <span>Secrets</span>
+              <span class="num">4 injected</span>
+            </header>
+            <div class="card-body" style="padding:4px 16px">
+              <ul class="secrets-list">
+                <li><span class="lock">⚿</span><span class="key">DB_HOST</span><span class="mask">·······.21</span></li>
+                <li><span class="lock">⚿</span><span class="key">DB_PASSWORD</span><span class="mask">··········</span></li>
+                <li><span class="lock">⚿</span><span class="key">AWS_ACCESS_KEY_ID</span><span class="mask">AKIA····7Q</span></li>
+                <li><span class="lock">⚿</span><span class="key">AWS_SECRET_ACCESS_KEY</span><span class="mask">··········</span></li>
+              </ul>
+            </div>
+          </section>
+
+          <section class="card">
+            <header>Notifications</header>
+            <div class="card-body">
+              <dl class="kv">
+                <dt>On fail</dt><dd>#ops-alerts</dd>
+                <dt>On fail</dt><dd>tng@…</dd>
+                <dt>On recover</dt><dd>#ops-alerts</dd>
+              </dl>
+            </div>
+          </section>
+
+          <section class="card">
+            <header>Source</header>
+            <div class="card-body">
+              <dl class="kv">
+                <dt>Repo</dt><dd><a href="#">analytics-pipeline</a></dd>
+                <dt>Branch</dt><dd>main</dd>
+                <dt>File</dt><dd><a href="#">jobs/nightly-backup.yaml</a></dd>
+                <dt>Commit</dt><dd>a3f7c92</dd>
+              </dl>
+            </div>
+          </section>
+
+        </aside>
+
+      </div>
+
+      <p class="foot">
+        <span>job · nightly-backup · 0x4a91</span>
+        <span>cronfoundry/v0.4 · region us-east-1</span>
+      </p>
+
+    </div>
+  </main>
+
+</div>
+</body>
+</html>

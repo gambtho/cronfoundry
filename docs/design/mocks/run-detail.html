@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>cronfoundry — run #2841</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous">
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@300;400;500;600&family=Geist:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared.css" />
+</head>
+<body>
+<div class="app">
+
+  <aside class="nav">
+    <div class="brand">
+      <span class="dot"></span>
+      <span class="name">cron<em>foundry</em></span>
+      <span class="ver">v0.4</span>
+    </div>
+
+    <div class="nav-section">
+      <h4>Operate</h4>
+      <a href="overview.html" class="alert"><span>Overview</span><span class="num">2 ✕</span></a>
+      <a href="jobs.html" class="active"><span>Jobs</span><span class="num">14</span></a>
+    </div>
+
+    <div class="nav-section">
+      <h4>Configure</h4>
+      <details>
+        <summary>Settings</summary>
+        <a href="#">Source repos</a>
+        <a href="#">Secrets</a>
+        <a href="#">Providers</a>
+        <a href="#">Users</a>
+        <a href="#">Audit log</a>
+      </details>
+    </div>
+
+    <div class="nav-foot">
+      <div class="you">
+        <span class="av">tn</span>
+        <span>tng</span>
+      </div>
+      <span>↗ docs</span>
+    </div>
+  </aside>
+
+  <main class="main">
+
+    <div class="topbar">
+      <nav class="crumbs">
+        <a href="jobs.html">Jobs</a>
+        <span class="sep">/</span>
+        <a href="job-detail.html">nightly-backup</a>
+        <span class="sep">/</span>
+        <span class="here">run #2841</span>
+      </nav>
+      <div class="spacer"></div>
+      <input class="search" aria-label="Jump to job, run, or secret" placeholder="Jump to job, run, secret…" />
+      <span class="kbd">⌘K</span>
+    </div>
+
+    <div class="page">
+
+      <header class="ph">
+        <div>
+          <div class="eyebrow"><span class="dot"></span>Failed · exit 1 · 12.4s</div>
+          <h1>
+            run #2841
+            <span class="sub"><a href="job-detail.html" style="color:var(--ink);border-bottom:1px dotted var(--ink-3)">nightly-backup</a> · 03 May 02:00:11 UTC</span>
+          </h1>
+          <div class="meta">
+            <span class="chip">trigger: schedule</span>
+            <span class="chip">attempt 1 of 1</span>
+            <span>·</span>
+            <span>same failure as <a href="#" style="color:var(--red);border-bottom:1px dotted var(--red-dim)">#2840</a></span>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="btn primary">↻ Re-run <span class="k">R</span></button>
+          <button class="btn">Edit schedule <span class="k">E</span></button>
+          <button class="btn ghost">↗ Open in CLI</button>
+        </div>
+      </header>
+
+      <!-- run meta strip — wide, dense -->
+      <dl class="run-meta-strip">
+        <div>
+          <dt>Status</dt>
+          <dd class="fail">Exit 1</dd>
+        </div>
+        <div>
+          <dt>Duration</dt>
+          <dd>12.4s</dd>
+        </div>
+        <div>
+          <dt>Provider</dt>
+          <dd><a href="#">aws-prod-us-east-1</a></dd>
+        </div>
+        <div>
+          <dt>Worker</dt>
+          <dd>worker-2 · iad</dd>
+        </div>
+        <div>
+          <dt>Commit</dt>
+          <dd><a href="#">a3f7c92</a></dd>
+        </div>
+      </dl>
+
+      <!-- timeline -->
+      <div class="timeline">
+        <span class="visually-hidden">
+          Run timeline: boot 1.7 seconds, secrets 2.2 seconds, exec 6.0 seconds, failure 2.5 seconds. Total 12.4 seconds.
+        </span>
+        <div class="timeline-bar" role="presentation">
+          <div class="seg boot"  style="left:0;width:14%"  title="boot · 1.7s"></div>
+          <div class="seg secrets" style="left:14%;width:18%" title="secrets · 2.2s"></div>
+          <div class="seg exec"  style="left:32%;width:48%" title="exec · 6.0s"></div>
+          <div class="seg fail"  style="left:80%;width:20%" title="fail · 2.5s"></div>
+        </div>
+        <div class="timeline-legend" aria-hidden="true">
+          <span><span style="background:var(--timeline-boot)"></span>boot 1.7s</span>
+          <span><span style="background:var(--timeline-secrets)"></span>secrets 2.2s</span>
+          <span><span style="background:var(--cyan)"></span>exec 6.0s</span>
+          <span><span style="background:var(--red)"></span>failure 2.5s</span>
+          <span style="margin-left:auto">total 12.4s</span>
+        </div>
+      </div>
+
+      <div class="grid">
+
+        <div class="col-l">
+
+          <!-- failure detail — extracted error -->
+          <section class="card" style="border-color:var(--red-dim)">
+            <header style="background:var(--red-bg);border-bottom-color:var(--red-dim)">
+              <span style="color:var(--red)">● Error · pg_dump connection refused</span>
+              <span class="num">step 3 of 4</span>
+            </header>
+            <div class="card-body" style="padding:0">
+              <pre class="code" style="background:#0d0707"><span class="err">pg_dump: error: connection to server at "db.internal" (10.0.4.21), port 5432 failed:
+       Connection refused
+       Is the server running on that host and accepting TCP/IP connections?</span></pre>
+            </div>
+            <div style="padding:14px 16px;border-top:1px solid var(--red-dim);display:flex;gap:8px;flex-wrap:wrap">
+              <button class="btn">↻ Re-run with verbose logs</button>
+              <button class="btn">Test provider connectivity</button>
+              <a href="#" class="btn ghost">View past failures (5) →</a>
+            </div>
+          </section>
+
+          <!-- logs full -->
+          <section class="card">
+            <header style="padding:0">
+              <div class="tabs" role="tablist" aria-label="Run detail sections" style="flex:1">
+                <button id="tab-logs" role="tab" aria-selected="true" aria-controls="panel-logs" tabindex="0" class="on">Logs</button>
+                <button id="tab-definition" role="tab" aria-selected="false" tabindex="-1">Definition</button>
+                <button id="tab-environment" role="tab" aria-selected="false" tabindex="-1">Environment</button>
+                <button id="tab-diff" role="tab" aria-selected="false" tabindex="-1">Diff vs #2839 ✓</button>
+                <span class="meta">stdout + stderr · 24 lines</span>
+              </div>
+            </header>
+            <pre class="code" id="panel-logs" role="tabpanel" aria-labelledby="tab-logs"><span class="ts">02:00:11.224</span>  <span class="dim">starting nightly-backup (run #2841)</span>
+<span class="ts">02:00:11.301</span>  <span class="dim">attempt 1 of 1 · trigger: schedule</span>
+<span class="ts">02:00:11.402</span>  resolving provider <span class="cmd">aws-prod-us-east-1</span> <span class="ok">✓</span>
+<span class="ts">02:00:11.487</span>  <span class="dim">acquired worker worker-2 (iad)</span>
+<span class="ts">02:00:11.611</span>  loading 4 secrets from vault <span class="ok">✓</span>
+<span class="ts">02:00:11.612</span>  <span class="dim">  ⚿ DB_HOST</span>
+<span class="ts">02:00:11.612</span>  <span class="dim">  ⚿ DB_PASSWORD</span>
+<span class="ts">02:00:11.613</span>  <span class="dim">  ⚿ AWS_ACCESS_KEY_ID</span>
+<span class="ts">02:00:11.613</span>  <span class="dim">  ⚿ AWS_SECRET_ACCESS_KEY</span>
+<span class="ts">02:00:11.890</span>  $ <span class="cmd">pg_dump --host=$DB_HOST --port=5432 -Fc analytics</span>
+<span class="ts">02:00:13.022</span>  <span class="dim">resolving db.internal …</span>
+<span class="ts">02:00:13.114</span>  <span class="dim">db.internal → 10.0.4.21</span>
+<span class="ts">02:00:13.205</span>  <span class="dim">connecting to 10.0.4.21:5432 …</span>
+<span class="ts">02:00:23.104</span>  <span class="err">pg_dump: error: connection to server at "db.internal" (10.0.4.21), port 5432 failed:</span>
+<span class="ts">            </span>  <span class="err">Connection refused</span>
+<span class="ts">            </span>  <span class="err">Is the server running on that host and accepting TCP/IP connections?</span>
+<span class="ts">02:00:23.107</span>  command exited with status <span class="err">1</span>
+<span class="ts">02:00:23.108</span>  <span class="dim">cleaning up …</span>
+<span class="ts">02:00:23.612</span>  <span class="err">✕ run failed in 12.4s</span></pre>
+          </section>
+
+        </div>
+
+        <aside class="col-r">
+
+          <section class="card">
+            <header>Job</header>
+            <div class="card-body">
+              <dl class="kv">
+                <dt>Name</dt><dd><a href="job-detail.html">nightly-backup</a></dd>
+                <dt>Schedule</dt><dd>0 2 * * *</dd>
+                <dt>Last ok</dt><dd>2d ago · #2839</dd>
+                <dt>Streak</dt><dd style="color:var(--red)">2 failures</dd>
+              </dl>
+            </div>
+          </section>
+
+          <section class="card">
+            <header>
+              <span>Secrets</span>
+              <span class="num">4 used</span>
+            </header>
+            <div class="card-body" style="padding:4px 16px">
+              <ul class="secrets-list">
+                <li><span class="lock">⚿</span><span class="key">DB_HOST</span><span class="mask">·······.21</span></li>
+                <li><span class="lock">⚿</span><span class="key">DB_PASSWORD</span><span class="mask">··········</span></li>
+                <li><span class="lock">⚿</span><span class="key">AWS_ACCESS_KEY_ID</span><span class="mask">AKIA····7Q</span></li>
+                <li><span class="lock">⚿</span><span class="key">AWS_SECRET_ACCESS_KEY</span><span class="mask">··········</span></li>
+              </ul>
+            </div>
+          </section>
+
+          <section class="card">
+            <header>Provider</header>
+            <div class="card-body">
+              <dl class="kv">
+                <dt>Target</dt><dd><a href="#">aws-prod-us-east-1</a></dd>
+                <dt>Worker</dt><dd>worker-2 (iad)</dd>
+                <dt>Health</dt><dd><span class="pill ok">Reachable</span></dd>
+              </dl>
+            </div>
+          </section>
+
+          <section class="card">
+            <header>Notifications sent</header>
+            <div class="card-body">
+              <dl class="kv">
+                <dt>Slack</dt><dd>#ops-alerts · 02:00</dd>
+                <dt>Email</dt><dd>tng@… · 02:00</dd>
+              </dl>
+            </div>
+          </section>
+
+        </aside>
+
+      </div>
+
+      <p class="foot">
+        <span>run #2841 · 0x7f23c1</span>
+        <span>cronfoundry/v0.4 · region us-east-1</span>
+      </p>
+
+    </div>
+  </main>
+
+</div>
+</body>
+</html>
