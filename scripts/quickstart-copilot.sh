@@ -13,10 +13,12 @@ header()  { echo -e "\n${BOLD}$*${RESET}"; }
 
 DRY_RUN=false
 MANIFEST_TIMEOUT="2h"
+OPERATOR_OBJ_ID="${CRONFOUNDRY_OPERATOR_OBJECT_ID:-}"
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=true ;;
     --manifest-timeout=*) MANIFEST_TIMEOUT="${arg#*=}" ;;
+    --operator-object-id=*) OPERATOR_OBJ_ID="${arg#*=}" ;;
   esac
 done
 
@@ -26,6 +28,39 @@ source "${SCRIPT_DIR}/lib/state.sh"
 # shellcheck source=lib/steps.sh
 source "${SCRIPT_DIR}/lib/steps.sh"
 save() { state_save "$1" "$2"; }   # shorthand for state_save
+
+# Resolve the operator's AAD object ID. Prefer 'az ad signed-in-user show', but
+# fall back to decoding 'oid' from the access token JWT when Conditional Access
+# blocks the Graph call (common on locked-down corporate tenants). Cache to
+# OPERATOR_OBJ_ID so multiple steps don't re-pay the cost.
+resolve_operator_object_id() {
+  if [[ -n "${OPERATOR_OBJ_ID:-}" ]]; then
+    return 0
+  fi
+  if OPERATOR_OBJ_ID=$(az ad signed-in-user show --query id -o tsv 2>/dev/null) \
+    && [[ -n "$OPERATOR_OBJ_ID" ]]; then
+    return 0
+  fi
+  warn "az ad signed-in-user show was blocked (likely Conditional Access); decoding access token instead."
+  local token
+  token=$(az account get-access-token --query accessToken -o tsv 2>/dev/null) || token=""
+  if [[ -n "$token" ]]; then
+    OPERATOR_OBJ_ID=$(python3 - "$token" <<'PYEOF' 2>/dev/null || echo ""
+import base64, json, sys
+parts = sys.argv[1].split(".")
+if len(parts) < 2:
+    sys.exit(0)
+payload = parts[1] + "=" * (-len(parts[1]) % 4)
+claims = json.loads(base64.urlsafe_b64decode(payload))
+oid = claims.get("oid", "")
+sys.stdout.write(oid)
+PYEOF
+)
+  fi
+  if [[ -z "${OPERATOR_OBJ_ID:-}" ]]; then
+    die "Could not resolve operator object ID.\n  Conditional Access blocked 'az ad signed-in-user show', and access-token decode also failed.\n  Workaround: pass --operator-object-id=<your-oid>, or set CRONFOUNDRY_OPERATOR_OBJECT_ID env var.\n  Find your OID at https://portal.azure.com → Microsoft Entra ID → Users → (your account) → Object ID."
+  fi
+}
 
 # Resume detection: the env suffix prompt has to happen BEFORE any other state
 # is read, so re-runs pick up the right per-env state file. List existing
@@ -520,8 +555,7 @@ else
   # (Step 19 below re-grants for the admin CLI block — that call is idempotent.)
   KV_ID=$(az keyvault show --name "$KV_NAME" --query id -o tsv) \
     || die "Could not resolve Key Vault $KV_NAME (does the deploy step run?)"
-  OPERATOR_OBJ_ID=$(az ad signed-in-user show --query id -o tsv) \
-    || die "Could not resolve operator object ID via 'az ad signed-in-user show'"
+  resolve_operator_object_id
   info "Granting operator (${OPERATOR_OBJ_ID}) Secrets Officer on $KV_NAME..."
   az role assignment create \
     --role "Key Vault Secrets Officer" \
@@ -626,8 +660,7 @@ header "[step 19/25] Grant operator Key Vault access"
 if [[ "$DRY_RUN" != "true" ]]; then
   KV_ID=$(az keyvault show --name "$KV_NAME" --query id -o tsv) \
     || die "Could not resolve Key Vault $KV_NAME"
-  OPERATOR_OBJ_ID=$(az ad signed-in-user show --query id -o tsv) \
-    || die "Could not resolve operator object ID via az ad signed-in-user show"
+  resolve_operator_object_id
   az role assignment create \
     --role "Key Vault Secrets Officer" \
     --assignee-object-id "$OPERATOR_OBJ_ID" \
