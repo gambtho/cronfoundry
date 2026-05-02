@@ -11,6 +11,36 @@ import (
 	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
 )
 
+// repoConnectionDTO is the wire shape for /api/repos. Mirrors
+// web/src/lib/types.ts:RepoConnection one-for-one.
+type repoConnectionDTO struct {
+	ID                 string  `json:"id"`
+	OrgID              string  `json:"org_id"`
+	GithubAppInstallID int64   `json:"github_app_install_id"`
+	Owner              string  `json:"owner"`
+	Name               string  `json:"name"`
+	DefaultBranch      string  `json:"default_branch"`
+	SyncIntervalSec    int32   `json:"sync_interval_sec"`
+	LastSyncedAt       *string `json:"last_synced_at"`
+	LastSyncError      *string `json:"last_sync_error"`
+	CreatedAt          string  `json:"created_at"`
+}
+
+func repoToDTO(r dbgen.RepoConnection) repoConnectionDTO {
+	return repoConnectionDTO{
+		ID:                 uuidString(r.ID),
+		OrgID:              uuidString(r.OrgID),
+		GithubAppInstallID: r.GithubAppInstallID,
+		Owner:              r.Owner,
+		Name:               r.Name,
+		DefaultBranch:      r.DefaultBranch,
+		SyncIntervalSec:    r.SyncIntervalSec,
+		LastSyncedAt:       toISOPtr(r.LastSyncedAt),
+		LastSyncError:      r.LastSyncError,
+		CreatedAt:          toISO(r.CreatedAt),
+	}
+}
+
 type reposHandler struct{ deps Deps }
 
 func (h *reposHandler) list(w http.ResponseWriter, r *http.Request) {
@@ -19,12 +49,16 @@ func (h *reposHandler) list(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "failed to load org", "internal")
 		return
 	}
-	repos, err := h.deps.Queries.ListRepoConnections(r.Context(), org.ID)
+	rows, err := h.deps.Queries.ListRepoConnections(r.Context(), org.ID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to list repos", "internal")
 		return
 	}
-	writeJSON(w, http.StatusOK, repos)
+	out := make([]repoConnectionDTO, len(rows))
+	for i, row := range rows {
+		out[i] = repoToDTO(row)
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 type connectRepoRequest struct {
@@ -77,7 +111,7 @@ func (h *reposHandler) connect(w http.ResponseWriter, r *http.Request) {
 			"install_id": repo.GithubAppInstallID,
 		},
 	})
-	writeJSON(w, http.StatusCreated, repo)
+	writeJSON(w, http.StatusCreated, repoToDTO(repo))
 }
 
 func (h *reposHandler) disconnect(w http.ResponseWriter, r *http.Request) {
