@@ -453,8 +453,8 @@ header "[step 14/25] Initialize database"
 CF_DB_URL="postgres://cfadmin:${CF_PG_PASSWORD}@cf-pg-${CF_ENV}.postgres.database.azure.com:5432/cronfoundry?sslmode=require"
 if [[ "$DRY_RUN" == "true" ]]; then
   :
-elif [[ "${CF_CRONFOUNDRY_BIN_BUILT:-0}" == "1" && "${CF_DB_INITIALIZED:-0}" == "1" ]]; then
-  ok "Database already initialized (CF_DB_INITIALIZED=1) and binary built; skipping firewall reopen, build, init, and restart"
+elif [[ "${CF_CRONFOUNDRY_BIN_BUILT:-0}" == "1" && "${CF_DB_INITIALIZED:-0}" == "1" && -x ./cronfoundry ]]; then
+  ok "Database already initialized (CF_DB_INITIALIZED=1) and ./cronfoundry binary present; skipping firewall reopen, build, init, and restart"
 else
   # WSL2-safe: use broad rule -- WSL2 NAT may present a different source IP to Azure
   warn "Opening Postgres firewall to 0.0.0.0/0 for WSL2 NAT compatibility (will be tightened in step 15)."
