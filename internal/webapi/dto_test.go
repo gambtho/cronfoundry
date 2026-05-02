@@ -171,3 +171,50 @@ func TestSkillDTO_WireShape(t *testing.T) {
 		[]string{"OrgID", "org_id", "FrontmatterJson", "frontmatter_json"},
 	)
 }
+
+// schedules.go is the original DTO-mapped handler in this package; this test
+// guards the refactor that pulled toISO/uuidString out into dto.go and the
+// pause/resume re-fetch path that re-uses scheduleRowToDTO. Keys are taken
+// from web/src/lib/types.ts:Schedule (intentionally `enabled`, not `paused`,
+// and `next_fire_at`, not `next_run_at`).
+func TestScheduleDTO_WireShape(t *testing.T) {
+	row := dbgen.ListSchedulesByOrgRow{
+		ID:               pgtype.UUID{Valid: true},
+		OrgID:            pgtype.UUID{Valid: true},
+		SkillID:          pgtype.UUID{Valid: true},
+		Name:             "every-5",
+		Cron:             "*/5 * * * *",
+		Timezone:         "UTC",
+		OverlapPolicy:    "skip",
+		TimeoutSec:       300,
+		Enabled:          true,
+		Provider:         "copilot-enterprise",
+		Model:            "gpt-4o",
+		NextFireAt:       tsValid("2026-05-02T18:00:00Z"),
+		LastEnabledAt:    tsValid("2026-05-02T17:00:00Z"),
+		SkillPath:        "skills/smoke",
+		SkillName:        "smoke",
+		Owner:            "gambtho",
+		RepoName:         "skills",
+		SkillFrontmatterJson: nil,
+		UiOverridesJson:      nil,
+	}
+	body := mustMarshal(t, scheduleRowToDTO(row))
+	assertHasAndLacks(t,
+		body,
+		[]string{
+			"id", "skill_id", "name", "cron", "timezone", "overlap_policy",
+			"timeout_sec", "enabled", "provider", "model", "next_fire_at",
+			"auto_pause_after", "auto_paused_at", "auto_pause_reason",
+			"last_enabled_at", "skill_path", "skill_name", "owner", "repo_name",
+			"max_turns", "mcp_servers", "has_ui_overrides",
+		},
+		[]string{
+			// PascalCase leakage from the sqlc row would surface as these.
+			"ID", "Name", "Cron", "Enabled", "NextFireAt", "SkillPath",
+			// Wrong field names CodeRabbit suggested; verify the SPA contract
+			// doesn't accidentally adopt them.
+			"paused", "next_run_at",
+		},
+	)
+}

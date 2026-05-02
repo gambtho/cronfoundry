@@ -3,11 +3,13 @@ package webapi
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/gambtho/cronfoundry/internal/audit"
@@ -135,6 +137,10 @@ func (h *schedulesHandler) setEnabled(w http.ResponseWriter, r *http.Request, en
 		Enabled: enabled,
 		OrgID:   org.ID,
 	}); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeErr(w, http.StatusNotFound, "schedule not found", "not_found")
+			return
+		}
 		writeErr(w, http.StatusInternalServerError, "failed to update schedule", "internal")
 		return
 	}
@@ -164,7 +170,11 @@ func (h *schedulesHandler) setEnabled(w http.ResponseWriter, r *http.Request, en
 			return
 		}
 	}
-	writeErr(w, http.StatusInternalServerError, "schedule disappeared after update", "internal")
+	// Update succeeded but the row is gone from the joined view — most
+	// likely the underlying skill or repo was deleted concurrently. Treat
+	// as not-found rather than a 500: the resource the caller targeted is
+	// no longer addressable.
+	writeErr(w, http.StatusNotFound, "schedule not found after update", "not_found")
 }
 
 func (h *schedulesHandler) patchOverrides(w http.ResponseWriter, r *http.Request) {

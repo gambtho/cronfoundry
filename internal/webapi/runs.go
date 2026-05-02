@@ -1,10 +1,12 @@
 package webapi
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
@@ -120,7 +122,11 @@ func (h *runsHandler) get(w http.ResponseWriter, r *http.Request) {
 	}
 	row, err := h.deps.Queries.GetRunForAdmin(r.Context(), pgtype.UUID{Bytes: id, Valid: true})
 	if err != nil {
-		writeErr(w, http.StatusNotFound, "run not found", "not_found")
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeErr(w, http.StatusNotFound, "run not found", "not_found")
+			return
+		}
+		writeErr(w, http.StatusInternalServerError, "failed to load run", "internal")
 		return
 	}
 	writeJSON(w, http.StatusOK, runDetailRowToDTO(row))
