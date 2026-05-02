@@ -533,13 +533,18 @@ else
   # RBAC propagation can lag a few seconds; poll for the actual permission
   # before attempting the write so we get a clear error message instead of a
   # 403 burn-through.
+  RBAC_OK=0
   for i in {1..12}; do
     if az keyvault secret list --vault-name "$KV_NAME" --maxresults 1 --output none 2>/dev/null; then
+      RBAC_OK=1
       break
     fi
     info "Waiting for RBAC propagation… (${i}/12)"
     sleep 5
   done
+  if [[ "$RBAC_OK" != "1" ]]; then
+    die "RBAC propagation timed out after ~60s for vault $KV_NAME.\n  Operator: $OPERATOR_OBJ_ID\n  Verify: az role assignment list --assignee \"$OPERATOR_OBJ_ID\" --scope \"$KV_ID\"\n  If propagation eventually catches up, re-run this script to resume from step 17."
+  fi
 
   # 1. PEM into Key Vault (already wired as secretRef in Bicep)
   az keyvault secret set --vault-name "$KV_NAME" --name github-app-pem \
