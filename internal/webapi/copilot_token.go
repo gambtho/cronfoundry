@@ -82,7 +82,7 @@ func (h *copilotTokenHandler) get(w http.ResponseWriter, r *http.Request) {
 // githubOverrideURL overrides the GitHub token endpoint for tests; pass nil
 // to use the real GitHub endpoint.
 func ResolveCopilotToken(ctx context.Context, store server.SecretStore, prefix string, githubOverrideURL *string) (string, time.Time, error) {
-	expiryStr, err := store.Get(ctx, prefix+"_expiry")
+	expiryStr, err := store.Get(ctx, prefix+"-expiry")
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("read expiry: %w", err)
 	}
@@ -94,7 +94,7 @@ func ResolveCopilotToken(ctx context.Context, store server.SecretStore, prefix s
 	expiry := time.Unix(expiryUnix, 0)
 
 	if time.Until(expiry) >= 60*time.Second {
-		tok, err := store.Get(ctx, prefix+"_access_token")
+		tok, err := store.Get(ctx, prefix+"-access-token")
 		if err != nil {
 			return "", time.Time{}, fmt.Errorf("read access token: %w", err)
 		}
@@ -102,7 +102,7 @@ func ResolveCopilotToken(ctx context.Context, store server.SecretStore, prefix s
 	}
 
 	// Refresh needed.
-	refreshTok, err := store.Get(ctx, prefix+"_refresh_token")
+	refreshTok, err := store.Get(ctx, prefix+"-refresh-token")
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("read refresh token: %w", err)
 	}
@@ -143,13 +143,13 @@ func ResolveCopilotToken(ctx context.Context, store server.SecretStore, prefix s
 	}
 
 	newExpiry := time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
-	if err := store.Put(ctx, prefix+"_access_token", tokenResp.AccessToken); err != nil {
+	if err := store.Put(ctx, prefix+"-access-token", tokenResp.AccessToken); err != nil {
 		return "", time.Time{}, fmt.Errorf("store new access token: %w", err)
 	}
-	if err := store.Put(ctx, prefix+"_refresh_token", tokenResp.RefreshToken); err != nil {
+	if err := store.Put(ctx, prefix+"-refresh-token", tokenResp.RefreshToken); err != nil {
 		return "", time.Time{}, fmt.Errorf("store new refresh token: %w", err)
 	}
-	if err := store.Put(ctx, prefix+"_expiry", strconv.FormatInt(newExpiry.Unix(), 10)); err != nil {
+	if err := store.Put(ctx, prefix+"-expiry", strconv.FormatInt(newExpiry.Unix(), 10)); err != nil {
 		return "", time.Time{}, fmt.Errorf("store new expiry: %w", err)
 	}
 

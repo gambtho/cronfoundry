@@ -147,7 +147,7 @@ func TestCopilotConnect_PollSuccess(t *testing.T) {
 	assert.Equal(t, "success", resp["status"])
 
 	// Secrets stored
-	v, err := store.Get(context.Background(), "mycopilot_access_token")
+	v, err := store.Get(context.Background(), "mycopilot-access-token")
 	require.NoError(t, err)
 	assert.Equal(t, "ghu_access", v)
 }
