@@ -121,6 +121,13 @@ func TestSystemHealth_QueueAndWorkers(t *testing.T) {
 		orgID, schedID, now)
 	require.NoError(t, err)
 
+	// Seed a repo_connection so /system/health.last_sync_at has a value.
+	_, err = pool.Exec(ctx,
+		`INSERT INTO repo_connection (org_id, owner, name, github_app_install_id, last_synced_at)
+		 VALUES ($1, 'acme', 'foo', 1, $2)`,
+		orgID, now)
+	require.NoError(t, err)
+
 	masterKey := make([]byte, 32)
 	clk := &scheduler.TickClock{}
 	clk.Record(time.Now())

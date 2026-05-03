@@ -312,7 +312,8 @@ export default function Overview() {
                     <Pill variant={
                       healthQ.data?.scheduler.status === 'healthy' ? 'ok'
                       : healthQ.data?.scheduler.status === 'degraded' ? 'amber'
-                      : 'fail'
+                      : healthQ.data?.scheduler.status === 'down' ? 'fail'
+                      : 'skip'
                     }>
                       {healthQ.data?.scheduler.status ?? '—'}
                     </Pill>

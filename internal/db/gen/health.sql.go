@@ -37,14 +37,14 @@ func (q *Queries) CountQueueDepth(ctx context.Context, orgID pgtype.UUID) (int64
 	return column_1, err
 }
 
-const lastRunCreatedAt = `-- name: LastRunCreatedAt :one
-SELECT MAX(created_at)::timestamptz AS last
-FROM run
+const lastRepoSyncAt = `-- name: LastRepoSyncAt :one
+SELECT MAX(last_synced_at)::timestamptz AS last
+FROM repo_connection
 WHERE org_id = $1
 `
 
-func (q *Queries) LastRunCreatedAt(ctx context.Context, orgID pgtype.UUID) (pgtype.Timestamptz, error) {
-	row := q.db.QueryRow(ctx, lastRunCreatedAt, orgID)
+func (q *Queries) LastRepoSyncAt(ctx context.Context, orgID pgtype.UUID) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, lastRepoSyncAt, orgID)
 	var last pgtype.Timestamptz
 	err := row.Scan(&last)
 	return last, err

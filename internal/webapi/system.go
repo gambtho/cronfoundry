@@ -36,7 +36,7 @@ func (h *systemHandler) health(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "workers", "internal")
 		return
 	}
-	last, err := h.deps.Queries.LastRunCreatedAt(r.Context(), org.ID)
+	last, err := h.deps.Queries.LastRepoSyncAt(r.Context(), org.ID)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "last sync", "internal")
 		return
