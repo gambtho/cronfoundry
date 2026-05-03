@@ -578,6 +578,89 @@ skills:
 	assert.Contains(t, allContent, "API_KEY=[secret]")
 }
 
+type failingProvider struct{}
+
+func (failingProvider) Chat(_ context.Context, _ []llm.Message, _ llm.CallOptions, _ func(llm.StreamChunk)) (llm.Usage, error) {
+	return llm.Usage{}, fmt.Errorf("provider boom")
+}
+
+func phaseEnterTestRepo(t *testing.T) string {
+	t.Helper()
+	repoRoot := t.TempDir()
+	repo, err := git.PlainInit(repoRoot, false)
+	require.NoError(t, err)
+	manifest := `
+version: 1
+skills:
+  - path: sk
+    schedules:
+      - name: s
+        cron: "* * * * *"
+        provider: fake
+        model: m
+`
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "cronfoundry.yaml"), []byte(manifest), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(repoRoot, "sk"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(repoRoot, "sk/SKILL.md"),
+		[]byte("---\nname: t\n---\nprompt\n"), 0o644))
+	w, err := repo.Worktree()
+	require.NoError(t, err)
+	_ = w.AddGlob(".")
+	_, err = w.Commit("seed", &git.CommitOptions{Author: sig()})
+	require.NoError(t, err)
+	return repoRoot
+}
+
+func TestRun_EmitsPhaseEnterInOrder_HappyPath(t *testing.T) {
+	var got []string
+	sink := func(e RunEvent) {
+		if e.Type == EventPhaseEnter {
+			got = append(got, e.Payload["phase"].(string))
+		}
+	}
+
+	repoRoot := phaseEnterTestRepo(t)
+	fake := &fakeProvider{response: "ok"}
+	r := New(Deps{
+		ProviderFactory: func(string) (llm.Provider, error) { return fake, nil },
+		EventSink:       sink,
+	})
+	result, err := r.Run(context.Background(), RunInput{
+		RepoRoot: repoRoot, ManifestPath: "cronfoundry.yaml",
+		SkillPath: "sk", ScheduleName: "s",
+		LLMAPIKey: "k", SkipPush: true,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, StatusSucceeded, result.Status)
+	require.Equal(t, []string{"boot", "secrets", "exec", "publish"}, got)
+}
+
+func TestRun_EmitsFailWithPrev_OnExecError(t *testing.T) {
+	var got []map[string]any
+	sink := func(e RunEvent) {
+		if e.Type == EventPhaseEnter {
+			got = append(got, e.Payload)
+		}
+	}
+
+	repoRoot := phaseEnterTestRepo(t)
+	r := New(Deps{
+		ProviderFactory: func(string) (llm.Provider, error) { return failingProvider{}, nil },
+		EventSink:       sink,
+	})
+	_, err := r.Run(context.Background(), RunInput{
+		RepoRoot: repoRoot, ManifestPath: "cronfoundry.yaml",
+		SkillPath: "sk", ScheduleName: "s",
+		LLMAPIKey: "k", DryRun: true,
+	})
+	require.Error(t, err)
+
+	require.GreaterOrEqual(t, len(got), 4)
+	last := got[len(got)-1]
+	require.Equal(t, "fail", last["phase"])
+	require.Equal(t, "exec", last["prev"])
+}
+
 func TestBuildEnvBanner_SecretRedacted(t *testing.T) {
 	env := map[string]config.EnvValue{
 		"GITHUB_TOKEN": {Secret: "github_pat"},
