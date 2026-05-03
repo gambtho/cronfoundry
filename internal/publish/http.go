@@ -29,7 +29,11 @@ func (p *httpPub) Type() string { return "http" }
 func (p *httpPub) Publish(ctx context.Context, dest config.Destination, output string, tctx template.Context, secrets SecretGetter) Result {
 	d := dest.HTTP
 	if d == nil || d.URL == "" {
-		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("http: url required")}
+		target := ""
+		if d != nil {
+			target = d.URL
+		}
+		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("http: url required"), Target: target}
 	}
 
 	method := d.Method
@@ -46,14 +50,14 @@ func (p *httpPub) Publish(ctx context.Context, dest config.Destination, output s
 	} else {
 		b, err := json.Marshal(map[string]string{"output": output})
 		if err != nil {
-			return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("http: marshal: %w", err)}
+			return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("http: marshal: %w", err), Target: d.URL}
 		}
 		bodyBytes = b
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, d.URL, bytes.NewReader(bodyBytes))
 	if err != nil {
-		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("http: build request: %w", err)}
+		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("http: build request: %w", err), Target: d.URL}
 	}
 	// Only default Content-Type to application/json for the default JSON envelope;
 	// when a body_template is set the caller controls the content type via headers.
@@ -66,14 +70,14 @@ func (p *httpPub) Publish(ctx context.Context, dest config.Destination, output s
 	if d.Secret != "" {
 		tok, err := secrets.Get(d.Secret)
 		if err != nil {
-			return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("http: resolve secret: %w", err)}
+			return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("http: resolve secret: %w", err), Target: d.URL}
 		}
 		req.Header.Set("Authorization", "Bearer "+tok)
 	}
 
 	resp, err := p.http.Do(req)
 	if err != nil {
-		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("http: %w", err)}
+		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("http: %w", err), Target: d.URL}
 	}
 	// Read a bounded preview for non-2xx detail, then drain the rest so the
 	// connection can be returned to the pool for reuse.
@@ -90,11 +94,11 @@ func (p *httpPub) Publish(ctx context.Context, dest config.Destination, output s
 		if len(warns) > 0 {
 			detail += "; template warnings: " + strings.Join(warns, ", ")
 		}
-		return Result{Type: p.Type(), OK: true, Detail: detail}
+		return Result{Type: p.Type(), OK: true, Detail: detail, Target: d.URL}
 	}
 	detail := fmt.Sprintf("http %d", resp.StatusCode)
 	if snippet != "" {
 		detail += ": " + snippet
 	}
-	return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("http: status %d", resp.StatusCode), Detail: detail}
+	return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("http: status %d", resp.StatusCode), Detail: detail, Target: d.URL}
 }
