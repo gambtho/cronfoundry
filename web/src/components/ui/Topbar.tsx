@@ -107,10 +107,16 @@ function Search({
     staleTime: 30_000,
   })
 
+  // Trim once and use it everywhere visibility/result-emptiness is
+  // decided. Without this, whitespace-only input would render the
+  // dropdown ("No jobs match '   '") because some checks used the
+  // raw query while the matcher used .trim().
+  const trimmedQuery = query.trim()
+
   // Score each schedule against the query. Lower score = better.
   // We rank by where the match lands so name hits surface first.
   const results = useMemo(() => {
-    const q = query.trim().toLowerCase()
+    const q = trimmedQuery.toLowerCase()
     if (q === '') return []
     const out: { id: string; name: string; subtitle: string; rank: number }[] =
       []
@@ -136,7 +142,7 @@ function Search({
     }
     out.sort((a, b) => a.rank - b.rank || a.name.localeCompare(b.name))
     return out.slice(0, 10)
-  }, [query, schedulesQ.data])
+  }, [trimmedQuery, schedulesQ.data])
 
   // Reset highlight whenever the result list changes shape so the
   // arrow keys don't point at a removed row.
@@ -197,12 +203,13 @@ function Search({
       if (r) commit(r.id)
     } else if (e.key === 'Escape') {
       e.preventDefault()
-      if (open) {
-        setOpen(false)
-      } else {
-        setQuery('')
-        inputRef.current?.blur()
-      }
+      // Single, unambiguous behavior: Escape always clears the
+      // search and gives focus back to the page. We don't try to
+      // distinguish "first press closes, second press clears" —
+      // that's surprising; users just want out.
+      setOpen(false)
+      setQuery('')
+      inputRef.current?.blur()
     }
   }
 
@@ -229,7 +236,9 @@ function Search({
           setOpen(true)
         }}
         onFocus={() => {
-          if (query !== '') setOpen(true)
+          // Only re-open if there's a real query to show results
+          // for — whitespace-only counts as empty.
+          if (trimmedQuery !== '') setOpen(true)
         }}
         onKeyDown={onKeyDown}
       />
@@ -246,7 +255,7 @@ function Search({
         ⌘K
       </span>
 
-      {open && query !== '' && (
+      {open && trimmedQuery !== '' && (
         <div
           id="topbar-search-listbox"
           role="listbox"
@@ -256,7 +265,7 @@ function Search({
           {results.length === 0 ? (
             <div className="px-3.5 py-3 font-mono text-[11px] text-ink-3">
               No jobs match{' '}
-              <span className="text-ink">"{query.trim()}"</span>
+              <span className="text-ink">"{trimmedQuery}"</span>
             </div>
           ) : (
             <ul className="m-0 list-none p-0">
