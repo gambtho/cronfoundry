@@ -1,0 +1,32 @@
+# Starter smoke skill — adjust cron, destinations, and writeback before going live.
+version: 1
+skills:
+  - path: skills/smoke
+    schedules:
+      - name: daily-smoke
+        cron: "0 9 * * *"
+        timezone: UTC
+        provider: copilot-enterprise
+        copilot_prefix: copilot
+        model: gpt-5-mini
+        destinations:
+          - github-issue:
+              repo: gambtho/skills
+              title: "smoke — {{ run.date }}"
+              labels: [smoke]
+        writeback:
+          enabled: true
+          path: memory.md
+          mode: append
+      - cron: 0 * * * *
+        destinations:
+          - github-issue:
+              repo: gambtho/skills
+              title: pulse
+        env: null
+        model: gpt-5-mini
+        name: hourly-pulse
+        overlap_policy: ""
+        provider: copilot-enterprise
+        timeout_sec: 0
+        timezone: UTC
