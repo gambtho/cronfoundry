@@ -92,6 +92,10 @@ const (
 	EventMCPToolCallOK     EventType = "mcp.tool.call.ok"
 	EventMCPToolCallFail   EventType = "mcp.tool.call.fail"
 	EventMCPToolCallTimeout EventType = "mcp.tool.call.timeout"
+	// EventPhaseEnter marks entry into a coarse lifecycle phase
+	// (boot|secrets|exec|publish|fail). Payload: {"phase": "<name>"} on
+	// the happy path; {"phase":"fail","prev":"<name>"} on terminal error.
+	EventPhaseEnter EventType = "phase.enter"
 )
 
 // RunEvent is a structured event the runner emits during execution.
@@ -132,50 +136,82 @@ func New(d Deps) *Runner {
 	return &Runner{deps: d}
 }
 
+// enterPhase emits a phase.enter boundary event. The runner tracks
+// `last` so the failure path can record which phase was active at
+// the time of the error. Pass prev="" on the happy path.
+func (r *Runner) enterPhase(phase, prev string) {
+	payload := map[string]any{"phase": phase}
+	if prev != "" {
+		payload["prev"] = prev
+	}
+	r.deps.EventSink(RunEvent{Type: EventPhaseEnter, Payload: payload})
+}
+
 // Run executes a full skill invocation: load → LLM → parse → publish → writeback.
 func (r *Runner) Run(ctx context.Context, in RunInput) (RunResult, error) {
 	result := RunResult{StartedAt: r.deps.Now()}
 
+	// active tracks the most-recently-entered phase so the failure
+	// branch can record `prev` accurately. Updated only via the
+	// enter wrapper below.
+	active := ""
+	enter := func(phase string) {
+		r.enterPhase(phase, "")
+		active = phase
+	}
+	fail := func(err error) (RunResult, error) {
+		r.enterPhase("fail", active)
+		return failHelper(&result, err, r.deps.Now)
+	}
+	failKind := func(kind string, err error) (RunResult, error) {
+		r.enterPhase("fail", active)
+		return failWithKind(&result, kind, err, r.deps.Now)
+	}
+
+	enter("boot")
+
 	manifestBytes, err := os.ReadFile(filepath.Join(in.RepoRoot, in.ManifestPath))
 	if err != nil {
-		return fail(&result, fmt.Errorf("read manifest: %w", err), r.deps.Now)
+		return fail(fmt.Errorf("read manifest: %w", err))
 	}
 	m, err := config.ParseManifest(manifestBytes)
 	if err != nil {
-		return fail(&result, err, r.deps.Now)
+		return fail(err)
 	}
 	if err := m.Validate(); err != nil {
-		return fail(&result, err, r.deps.Now)
+		return fail(err)
 	}
 	_, sch, err := m.FindSchedule(in.SkillPath, in.ScheduleName)
 	if err != nil {
-		return fail(&result, err, r.deps.Now)
+		return fail(err)
 	}
 
 	skillMDPath := filepath.Join(in.RepoRoot, in.SkillPath, "SKILL.md")
 	skillBytes, err := os.ReadFile(skillMDPath)
 	if err != nil {
-		return fail(&result, fmt.Errorf("read SKILL.md: %w", err), r.deps.Now)
+		return fail(fmt.Errorf("read SKILL.md: %w", err))
 	}
 	skill, err := config.ParseSkillFile(skillBytes)
 	if err != nil {
-		return fail(&result, err, r.deps.Now)
+		return fail(err)
 	}
 
 	skillRoot := filepath.Join(in.RepoRoot, in.SkillPath)
 	body, err := config.ResolveIncludes(skill.Body, skillRoot)
 	if err != nil {
-		return fail(&result, err, r.deps.Now)
+		return fail(err)
 	}
 
 	envBanner := buildEnvBanner(sch.Env)
+	enter("secrets")
 
 	provider, err := r.deps.ProviderFactory(sch.Provider)
 	if err != nil {
-		return fail(&result, err, r.deps.Now)
+		return fail(err)
 	}
 
 	var llmOutput string
+	enter("exec")
 
 	if len(in.MCPServers) == 0 {
 		// Non-tool path: single-shot Chat call.
@@ -194,7 +230,7 @@ func (r *Runner) Run(ctx context.Context, in RunInput) (RunResult, error) {
 			Deployment: in.LLMDeployment,
 		}, func(c llm.StreamChunk) { sb.WriteString(c.Delta) })
 		if err != nil {
-			return fail(&result, err, r.deps.Now)
+			return fail(err)
 		}
 		result.Usage = usage
 		llmOutput = sb.String()
@@ -202,8 +238,8 @@ func (r *Runner) Run(ctx context.Context, in RunInput) (RunResult, error) {
 		// Tool-aware path: multi-turn loop via ChatTurn + MCP dispatch.
 		toolProvider, ok := provider.(llm.ToolCapableProvider)
 		if !ok {
-			return failWithKind(&result, "provider_tool_unsupported",
-				fmt.Errorf("provider %s does not support tool use", sch.Provider), r.deps.Now)
+			return failKind("provider_tool_unsupported",
+				fmt.Errorf("provider %s does not support tool use", sch.Provider))
 		}
 
 		mgr := r.deps.MCPManagerFactory(ctx)
@@ -212,10 +248,10 @@ func (r *Runner) Run(ctx context.Context, in RunInput) (RunResult, error) {
 		for _, s := range in.MCPServers {
 			env, err := resolveServerEnv(s.Name, in.MCPEnv, in.Secrets)
 			if err != nil {
-			return failWithKind(&result, "mcp_env_resolve", err, r.deps.Now)
+			return failKind("mcp_env_resolve", err)
 			}
 			if err := mgr.Start(s.Name, s.Command, s.Args, env); err != nil {
-				return failWithKind(&result, "mcp_server_start_failed", err, r.deps.Now)
+				return failKind("mcp_server_start_failed", err)
 			}
 			toolCount := len(mgr.Tools(s.Name))
 			r.deps.EventSink(RunEvent{
@@ -258,7 +294,7 @@ func (r *Runner) Run(ctx context.Context, in RunInput) (RunResult, error) {
 				Deployment: in.LLMDeployment,
 			}, func(llm.StreamChunk) {})
 			if err != nil {
-				return failWithKind(&result, "llm_error", err, r.deps.Now)
+				return failKind("llm_error", err)
 			}
 			result.Usage.InputTokens += tr.Usage.InputTokens
 			result.Usage.OutputTokens += tr.Usage.OutputTokens
@@ -288,7 +324,7 @@ func (r *Runner) Run(ctx context.Context, in RunInput) (RunResult, error) {
 					Type:    "mcp.fatal." + EventType(fatal.Kind),
 					Payload: map[string]any{"error": fatal.Err.Error()},
 				})
-				return failWithKind(&result, fatal.Kind, fatal.Err, r.deps.Now)
+				return failKind(fatal.Kind, fatal.Err)
 			}
 			for _, cr := range results {
 				evType := EventMCPToolCallOK
@@ -309,8 +345,8 @@ func (r *Runner) Run(ctx context.Context, in RunInput) (RunResult, error) {
 		}
 
 		if !terminated {
-			return failWithKind(&result, "max_turns_exceeded",
-				fmt.Errorf("exceeded %d turns without end_turn", maxTurns), r.deps.Now)
+			return failKind("max_turns_exceeded",
+				fmt.Errorf("exceeded %d turns without end_turn", maxTurns))
 		}
 	}
 
@@ -339,6 +375,7 @@ func (r *Runner) Run(ctx context.Context, in RunInput) (RunResult, error) {
 		Skill:     template.Meta{Name: skill.Frontmatter.Name},
 	}
 	outputBlocks, remaining := memory.ExtractOutputBlocks(published)
+	enter("publish")
 	dispatcher := &publish.Dispatcher{Publishers: r.deps.Publishers}
 	pubResults := dispatcher.Dispatch(ctx, sch.Destinations, func(dest config.Destination) string {
 		outputName := ""
@@ -437,7 +474,7 @@ func sortStrings(ss []string) {
 	}
 }
 
-func fail(r *RunResult, err error, now func() time.Time) (RunResult, error) {
+func failHelper(r *RunResult, err error, now func() time.Time) (RunResult, error) {
 	r.Status = StatusFailed
 	r.FinishedAt = now()
 	return *r, err
@@ -445,7 +482,7 @@ func fail(r *RunResult, err error, now func() time.Time) (RunResult, error) {
 
 func failWithKind(r *RunResult, kind string, err error, now func() time.Time) (RunResult, error) {
 	r.ErrorKind = kind
-	return fail(r, err, now)
+	return failHelper(r, err, now)
 }
 
 func resolveMaxTurns(fromSchedule, fromSkill int) int {

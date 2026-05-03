@@ -12,6 +12,7 @@ import {
   pillFromRunStatus,
 } from '../components/ui'
 import LogTail from '../components/LogTail'
+import { PhaseBar } from '../components/run/PhaseBar'
 import { formatDuration } from '../lib/derived'
 import { relativeTime } from '../lib/time'
 import { cn } from '../lib/cn'
@@ -27,11 +28,8 @@ import type { RunDetail, RunSummary } from '../lib/types'
  *     full log tail lives below.
  *   - Right rail links back to the parent Job and forward to related
  *     runs of the same schedule.
- *
- * The API timeline endpoint with phased segments (boot/secrets/exec)
- * isn't in the API yet, so we omit the segmented timeline visual from
- * the mock and instead use real duration + log-tail coverage. We can
- * layer the timeline back in once `runs.events` carries phase tags.
+ *   - Segmented phase bar (boot → secrets → exec → publish) sits between
+ *     the meta strip and the body, fed by `runs.events` phase tags.
  */
 export default function RunDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -71,6 +69,26 @@ export default function RunDetailPage() {
   const schedulesQ = useQuery({
     queryKey: ['schedules'],
     queryFn: api.schedules.list,
+  })
+
+  // Run events power the segmented phase bar. Poll while the run is
+  // active; stop once it reaches a terminal state.
+  const eventsQ = useQuery({
+    queryKey: ['run', id, 'events'],
+    queryFn: () => api.runs.events(id!),
+    enabled: !!id,
+    refetchInterval: () => {
+      const data = runQ.data
+      if (
+        data &&
+        (data.status === 'succeeded' ||
+          data.status === 'failed' ||
+          data.status === 'partial_failure')
+      ) {
+        return false
+      }
+      return 5_000
+    },
   })
 
   const reRun = useMutation({
@@ -266,6 +284,8 @@ export default function RunDetailPage() {
               : '—'}
           </MetaCell>
         </dl>
+
+        <PhaseBar events={eventsQ.data ?? []} finishedAt={run.finished_at} />
 
         <div className="grid grid-cols-[1fr_320px] gap-5">
           <div className="min-w-0">
