@@ -3,7 +3,9 @@ package webapi
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgtype"
 
@@ -48,5 +50,25 @@ type resolvedConn struct {
 type skillRepoHandler struct{ deps Deps }
 
 func (h *skillRepoHandler) proposeJob(w http.ResponseWriter, r *http.Request) {
-	writeErr(w, http.StatusNotImplemented, "skill-repo proposeJob not yet implemented", "internal")
+	var req proposeJobRequest
+	dec := json.NewDecoder(r.Body)
+	if err := dec.Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "invalid json: "+err.Error(), "bad_request")
+		return
+	}
+	if strings.TrimSpace(req.SkillPath) == "" {
+		writeErr(w, http.StatusBadRequest, "skill_path is required", "validation")
+		return
+	}
+	if req.Schedule == nil {
+		writeErr(w, http.StatusBadRequest, "schedule is required", "validation")
+		return
+	}
+	if strings.TrimSpace(req.Schedule.Name) == "" {
+		writeErr(w, http.StatusBadRequest, "schedule.name is required", "validation")
+		return
+	}
+
+	// Pipeline gets implemented in subsequent tasks.
+	writeErr(w, http.StatusNotImplemented, "pipeline not yet implemented", "internal")
 }
