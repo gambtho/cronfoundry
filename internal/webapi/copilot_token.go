@@ -3,10 +3,10 @@ package webapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -17,7 +17,25 @@ import (
 	"github.com/gambtho/cronfoundry/internal/secrets/server"
 )
 
-const copilotRefreshURL = "https://github.com/login/oauth/access_token"
+// copilotIDETokenURL is GitHub's "internal" endpoint that mints the
+// short-lived API key (the "IDE token") used for actual Copilot completions.
+// The endpoint is undocumented but stable — every official Copilot client
+// (vim/vscode/jetbrains plugins, plus third-party shims like LiteLLM's
+// github_copilot adapter) uses this exact URL. It accepts a long-lived
+// OAuth access token and returns a short-lived API key with an expires_at.
+const copilotIDETokenURL = "https://api.github.com/copilot_internal/v2/token"
+
+// copilotMintClient is a bounded HTTP client for the GitHub IDE-token mint
+// endpoint. http.DefaultClient has no timeout, so a hung GitHub upstream
+// could block a runner indefinitely.
+var copilotMintClient = &http.Client{Timeout: 15 * time.Second}
+
+// ErrCopilotReauthRequired indicates the operator must re-authenticate the
+// Copilot integration (the OAuth token is missing/empty or GitHub rejected
+// it as revoked). Surfaced as 401 by the HTTP handler so the runner — and
+// any future SPA "Copilot status" widget — can prompt for re-auth instead
+// of treating it as a transient outage.
+var ErrCopilotReauthRequired = errors.New("copilot: oauth re-auth required")
 
 // CopilotTokenRefsJSON is stored on the schedule row and identifies
 // which KV secrets hold the token pair for a copilot-enterprise schedule.
@@ -62,96 +80,166 @@ func (h *copilotTokenHandler) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	accessToken, expiresAt, err := ResolveCopilotToken(r.Context(), h.deps.Secrets, refs.Prefix, nil)
+	ideToken, expiresAt, err := ResolveCopilotToken(r.Context(), h.deps.Secrets, refs.Prefix, nil)
 	if err != nil {
 		slog.Error("copilot token resolve failed", "run_id", r.PathValue("id"), "error", err)
-		writeErr(w, http.StatusServiceUnavailable, "copilot token refresh failed", "copilot_token_refresh")
+		// Distinguish 're-auth required' (401, operator action) from
+		// transient mint outage (503, retry-friendly). Without this, a
+		// stale OAuth token looks identical to a GitHub blip.
+		if errors.Is(err, ErrCopilotReauthRequired) {
+			writeErr(w, http.StatusUnauthorized,
+				"copilot oauth token revoked or missing; re-run `cronfoundry admin connect-copilot`",
+				"copilot_token_reauth")
+			return
+		}
+		writeErr(w, http.StatusServiceUnavailable, "copilot token mint failed", "copilot_token_mint")
 		return
 	}
 
 	writeJSON(w, http.StatusOK, copilotTokenHandlerResponse{
-		AccessToken: accessToken,
+		AccessToken: ideToken,
 		ExpiresAt:   expiresAt.UTC().Format(time.RFC3339),
 	})
 }
 
-// ResolveCopilotToken reads the access token for the given prefix from the
-// secret store. If the token is within 60 seconds of expiry, it refreshes
-// using the stored refresh token and writes the new values back.
+// ResolveCopilotToken returns a fresh Copilot IDE token (the API key sent
+// to api.githubcopilot.com), minting a new one when the cached one is near
+// expiry.
 //
-// githubOverrideURL overrides the GitHub token endpoint for tests; pass nil
-// to use the real GitHub endpoint.
+// GitHub Copilot uses a two-token system:
+//
+//  1. OAuth access token ("gho_..."): obtained once via device flow,
+//     stored under <prefix>-access-token. Long-lived; doesn't expire on
+//     its own. The empty <prefix>-refresh-token slot is a vestige of an
+//     earlier (incorrect) assumption that Copilot's device flow returned
+//     an OAuth refresh token — it doesn't, and we don't need one.
+//
+//  2. IDE token / API key: short-lived (~25-30 min), minted by GET-ing
+//     https://api.github.com/copilot_internal/v2/token with the OAuth
+//     token in `Authorization: token <oauth>`. Returns
+//     {"token": "<api-key>", "expires_at": <unix>}. This is what
+//     internal/llm/copilot.go sends as the Bearer token to
+//     api.githubcopilot.com. We cache it under <prefix>-ide-token /
+//     <prefix>-ide-expiry to avoid hitting GitHub on every run.
+//
+// On a fresh install the IDE-token cache is empty, so we mint
+// unconditionally on the first call. After that we mint only when the
+// cached token is within 60s of expiry.
+//
+// githubOverrideURL overrides the api.github.com base for tests; pass nil
+// to use the real endpoint. The override applies to the IDE-token URL only;
+// the path /copilot_internal/v2/token is appended.
 func ResolveCopilotToken(ctx context.Context, store server.SecretStore, prefix string, githubOverrideURL *string) (string, time.Time, error) {
-	expiryStr, err := store.Get(ctx, prefix+"-expiry")
+	if cached, exp, ok := readCachedIDEToken(ctx, store, prefix); ok {
+		return cached, exp, nil
+	}
+
+	oauthToken, err := store.Get(ctx, prefix+"-access-token")
 	if err != nil {
-		return "", time.Time{}, fmt.Errorf("read expiry: %w", err)
+		return "", time.Time{}, fmt.Errorf("read oauth access token: %w", err)
+	}
+	if oauthToken == "" {
+		return "", time.Time{}, fmt.Errorf("%w: no oauth access token stored for prefix %q; run `cronfoundry admin connect-copilot`",
+			ErrCopilotReauthRequired, prefix)
 	}
 
-	expiryUnix, err := strconv.ParseInt(expiryStr, 10, 64)
+	ideToken, expiresAt, err := mintIDEToken(ctx, oauthToken, githubOverrideURL)
 	if err != nil {
-		return "", time.Time{}, fmt.Errorf("parse expiry %q: %w", expiryStr, err)
-	}
-	expiry := time.Unix(expiryUnix, 0)
-
-	if time.Until(expiry) >= 60*time.Second {
-		tok, err := store.Get(ctx, prefix+"-access-token")
-		if err != nil {
-			return "", time.Time{}, fmt.Errorf("read access token: %w", err)
-		}
-		return tok, expiry, nil
+		return "", time.Time{}, err
 	}
 
-	// Refresh needed.
-	refreshTok, err := store.Get(ctx, prefix+"-refresh-token")
+	if err := writeCachedIDEToken(ctx, store, prefix, ideToken, expiresAt); err != nil {
+		// Cache write failure is non-fatal — return the live token so the
+		// run can proceed. We'll just re-mint on the next call.
+		slog.Warn("copilot token: failed to cache IDE token; will re-mint next call",
+			"prefix", prefix, "err", err)
+	}
+
+	return ideToken, expiresAt, nil
+}
+
+// readCachedIDEToken returns the cached IDE token + expiry if it exists and
+// is at least 60s away from expiring. Any other condition (missing token,
+// missing expiry, parse error, near-expiry) returns ok=false so the caller
+// re-mints.
+func readCachedIDEToken(ctx context.Context, store server.SecretStore, prefix string) (string, time.Time, bool) {
+	tok, err := store.Get(ctx, prefix+"-ide-token")
+	if err != nil || tok == "" {
+		return "", time.Time{}, false
+	}
+	expStr, err := store.Get(ctx, prefix+"-ide-expiry")
+	if err != nil || expStr == "" {
+		return "", time.Time{}, false
+	}
+	expUnix, err := strconv.ParseInt(expStr, 10, 64)
 	if err != nil {
-		return "", time.Time{}, fmt.Errorf("read refresh token: %w", err)
+		return "", time.Time{}, false
 	}
+	exp := time.Unix(expUnix, 0)
+	if time.Until(exp) <= 60*time.Second {
+		// Tokens with <=60s remaining are stale by definition (CodeRabbit
+		// caught the off-by-one: '<' would let an exactly-60s-left token
+		// through to a downstream call that takes >60s).
+		return "", time.Time{}, false
+	}
+	return tok, exp, true
+}
 
-	tokenURL := copilotRefreshURL
-	if githubOverrideURL != nil {
-		tokenURL = strings.TrimRight(*githubOverrideURL, "/") + "/login/oauth/access_token"
+func writeCachedIDEToken(ctx context.Context, store server.SecretStore, prefix, token string, expiresAt time.Time) error {
+	if err := store.Put(ctx, prefix+"-ide-token", token); err != nil {
+		return fmt.Errorf("put ide token: %w", err)
 	}
+	if err := store.Put(ctx, prefix+"-ide-expiry", strconv.FormatInt(expiresAt.Unix(), 10)); err != nil {
+		return fmt.Errorf("put ide expiry: %w", err)
+	}
+	return nil
+}
 
-	params := url.Values{
-		"client_id":     {copilotClientID},
-		"grant_type":    {"refresh_token"},
-		"refresh_token": {refreshTok},
+type copilotIDETokenResponse struct {
+	Token     string `json:"token"`
+	ExpiresAt int64  `json:"expires_at"`
+}
+
+func mintIDEToken(ctx context.Context, oauthToken string, overrideBase *string) (string, time.Time, error) {
+	url := copilotIDETokenURL
+	if overrideBase != nil {
+		url = strings.TrimRight(*overrideBase, "/") + "/copilot_internal/v2/token"
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, strings.NewReader(params.Encode()))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return "", time.Time{}, fmt.Errorf("build refresh request: %w", err)
+		return "", time.Time{}, fmt.Errorf("build mint request: %w", err)
 	}
+	// Mirror the headers the official Copilot clients (and LiteLLM's adapter)
+	// send. GitHub's copilot_internal endpoint rejects requests that don't
+	// look like a Copilot client.
+	req.Header.Set("Authorization", "token "+oauthToken)
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Editor-Version", "vscode/1.85.1")
+	req.Header.Set("Editor-Plugin-Version", "copilot/1.155.0")
+	req.Header.Set("User-Agent", "GithubCopilot/1.155.0")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := copilotMintClient.Do(req)
 	if err != nil {
-		return "", time.Time{}, fmt.Errorf("refresh request: %w", err)
+		return "", time.Time{}, fmt.Errorf("mint request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		// GitHub rejected our OAuth token. Wrap the sentinel so the handler
+		// can surface a 401 with a re-auth code instead of a generic 503.
+		return "", time.Time{}, fmt.Errorf("%w: copilot_internal/v2/token returned HTTP %d",
+			ErrCopilotReauthRequired, resp.StatusCode)
+	}
 	if resp.StatusCode != http.StatusOK {
-		return "", time.Time{}, fmt.Errorf("refresh failed: HTTP %d", resp.StatusCode)
+		return "", time.Time{}, fmt.Errorf("mint failed: HTTP %d", resp.StatusCode)
 	}
 
-	var tokenResp githubTokenResponse
-	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
-		return "", time.Time{}, fmt.Errorf("refresh: malformed JSON from GitHub: %w", err)
+	var body copilotIDETokenResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return "", time.Time{}, fmt.Errorf("mint: malformed JSON from GitHub: %w", err)
 	}
-	if tokenResp.AccessToken == "" {
-		return "", time.Time{}, fmt.Errorf("refresh: GitHub returned no access_token (refresh token may be expired)")
+	if body.Token == "" {
+		return "", time.Time{}, fmt.Errorf("mint: GitHub returned no token")
 	}
-
-	newExpiry := time.Now().Add(time.Duration(tokenResp.ExpiresIn) * time.Second)
-	if err := store.Put(ctx, prefix+"-access-token", tokenResp.AccessToken); err != nil {
-		return "", time.Time{}, fmt.Errorf("store new access token: %w", err)
-	}
-	if err := store.Put(ctx, prefix+"-refresh-token", tokenResp.RefreshToken); err != nil {
-		return "", time.Time{}, fmt.Errorf("store new refresh token: %w", err)
-	}
-	if err := store.Put(ctx, prefix+"-expiry", strconv.FormatInt(newExpiry.Unix(), 10)); err != nil {
-		return "", time.Time{}, fmt.Errorf("store new expiry: %w", err)
-	}
-
-	return tokenResp.AccessToken, newExpiry, nil
+	return body.Token, time.Unix(body.ExpiresAt, 0), nil
 }

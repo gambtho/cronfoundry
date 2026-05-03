@@ -13,9 +13,10 @@ import (
 )
 
 func TestCopilotEnterprise_Chat_SetsRequiredHeaders(t *testing.T) {
-	var gotEditorVersion, gotIntegrationID, gotAuth string
+	var gotEditorVersion, gotEditorPluginVersion, gotIntegrationID, gotAuth string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotEditorVersion = r.Header.Get("Editor-Version")
+		gotEditorPluginVersion = r.Header.Get("Editor-Plugin-Version")
 		gotIntegrationID = r.Header.Get("Copilot-Integration-Id")
 		gotAuth = r.Header.Get("Authorization")
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -31,8 +32,10 @@ func TestCopilotEnterprise_Chat_SetsRequiredHeaders(t *testing.T) {
 		func(StreamChunk) {})
 
 	require.NoError(t, err)
-	assert.Equal(t, "cronfoundry/1.0", gotEditorVersion)
-	assert.Equal(t, "cronfoundry", gotIntegrationID)
+	assert.Equal(t, "vscode/1.85.1", gotEditorVersion)
+	assert.Equal(t, "copilot-chat/0.12.0", gotEditorPluginVersion,
+		"Copilot's chat endpoint requires a known Editor-Plugin-Version; arbitrary values are rejected")
+	assert.Equal(t, "vscode-chat", gotIntegrationID)
 	assert.Equal(t, "Bearer ghu_testtoken", gotAuth)
 }
 
