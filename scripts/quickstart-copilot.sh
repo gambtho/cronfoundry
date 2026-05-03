@@ -847,6 +847,13 @@ else
 
     rm -f "$TMP_YAML" "$TMP_SKILL"
 
+    # Persist the flag BEFORE the blocking read so a Ctrl-C / shell exit
+    # at the prompt doesn't leave the operator's state thinking we never
+    # pushed the PR. The PR + branch + files are real artifacts on
+    # GitHub at this point; the flag just records that fact locally so
+    # the next resume skips this whole block.
+    save CF_STARTER_PR_PUSHED 1
+
     echo ""
     echo -e "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo -e "  ${BOLD}Merge the starter PR to enable the smoke schedule:${RESET}"
@@ -859,7 +866,6 @@ else
     echo -e "  ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     read -rp "Press Enter once merged (or to continue regardless)... " _
-    save CF_STARTER_PR_PUSHED 1
   fi
 fi
 
