@@ -56,6 +56,30 @@ func TestAppendScheduleToSkill_AppendToExisting(t *testing.T) {
 	}
 }
 
+func TestAppendScheduleToSkill_AppendFirstSchedule(t *testing.T) {
+	in, expected := fixture(t, "append_first_schedule")
+	sched := &config.Schedule{
+		Name:     "hello",
+		Cron:     "*/5 * * * *",
+		Timezone: "UTC",
+		Provider: "copilot-enterprise",
+		Model:    "gpt-5-mini",
+		Destinations: []config.Destination{
+			{GitHubIssue: &config.GitHubIssueDest{Repo: "gambtho/skills", Title: "hello"}},
+		},
+	}
+	got, err := AppendScheduleToSkill(in, "skills/empty", sched)
+	if err != nil {
+		t.Fatalf("AppendScheduleToSkill: %v", err)
+	}
+	if string(got) != string(expected) {
+		t.Fatalf("mismatch\n---got---\n%s\n---want---\n%s", got, expected)
+	}
+	if _, err := config.ParseManifest(got); err != nil {
+		t.Fatalf("ParseManifest on output: %v", err)
+	}
+}
+
 func TestAppendScheduleToSkill_StubSentinelsNotReturnedWhenNotImplemented(t *testing.T) {
 	// Once implemented, this is a no-op safety net — sentinels should only fire
 	// from their real code paths.
