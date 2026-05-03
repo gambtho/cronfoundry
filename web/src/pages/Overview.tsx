@@ -163,10 +163,23 @@ export default function Overview() {
                     </span>
                   </div>
                   <div className="flex gap-1">
+                    {/* Inline icon-link to the filtered runs feed —
+                        styled to match IconButton but rendered as an
+                        anchor since it's pure navigation, not an
+                        action. Avoids nesting <button> in <a>. */}
+                    <Link
+                      to={`/runs?schedule_id=${schedule.id}`}
+                      aria-label={`View runs for ${schedule.name}`}
+                      title="View runs"
+                      className="inline-flex h-7 w-7 items-center justify-center rounded border border-rule-2 bg-bg-3 text-[11px] text-ink-2 transition-colors hover:border-ink-3 hover:bg-bg-4 hover:text-ink"
+                    >
+                      ☰
+                    </Link>
                     <IconButton
                       aria-label={`Re-run ${schedule.name}`}
                       onClick={() => runNow.mutate(schedule.id)}
                       disabled={runNow.isPending}
+                      title="Re-run now"
                     >
                       ▶
                     </IconButton>
@@ -174,6 +187,7 @@ export default function Overview() {
                       aria-label={`Pause ${schedule.name}`}
                       onClick={() => pause.mutate(schedule.id)}
                       disabled={pause.isPending}
+                      title="Pause"
                     >
                       ⏸
                     </IconButton>

@@ -16,6 +16,10 @@ vi.mock('../lib/api', () => ({
     repos: { list: vi.fn(), connect: vi.fn(), disconnect: vi.fn() },
     secrets: { list: vi.fn(), create: vi.fn(), rotate: vi.fn(), delete: vi.fn() },
     audit: { list: vi.fn() },
+    // Topbar.Search reads schedules to power the dropdown; even on
+    // settings pages where the search isn't the focus of the test
+    // we still need a stub to keep it from throwing.
+    schedules: { list: vi.fn().mockResolvedValue([]) },
   },
 }))
 
