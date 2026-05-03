@@ -139,7 +139,22 @@ func (c *Client) GetFile(ctx context.Context, installID int64, owner, repo, path
 // CreateBranch creates a new ref pointing at fromSHA. Returns ErrConflict
 // if the branch already exists.
 func (c *Client) CreateBranch(ctx context.Context, installID int64, owner, repo, branch, fromSHA string) error {
-	return errors.New("skillrepo: CreateBranch not implemented")
+	cli, err := c.gitHubClient(ctx, installID)
+	if err != nil {
+		return err
+	}
+	ref := &gh.Reference{
+		Ref:    gh.Ptr("refs/heads/" + branch),
+		Object: &gh.GitObject{SHA: gh.Ptr(fromSHA)},
+	}
+	_, resp, err := cli.Git.CreateRef(ctx, owner, repo, ref)
+	if err != nil {
+		if resp != nil && resp.StatusCode == 422 {
+			return ErrConflict
+		}
+		return fmt.Errorf("skillrepo: CreateRef: %w", err)
+	}
+	return nil
 }
 
 // PutFile creates or updates a file on the named branch. fileSHA must

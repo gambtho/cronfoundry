@@ -77,3 +77,36 @@ func TestClient_GetFile_NotFound(t *testing.T) {
 		t.Fatalf("want ErrFileNotFound, got %v", err)
 	}
 }
+
+func TestClient_CreateBranch_Happy(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/git/refs") || r.Method != "POST" {
+			http.Error(w, "unexpected: "+r.URL.Path, 500)
+			return
+		}
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if body["ref"] != "refs/heads/feat-x" {
+			t.Errorf("ref: got %v", body["ref"])
+		}
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{"ref": body["ref"]})
+	}))
+	defer srv.Close()
+	c := New(stubToken, srv.URL)
+	if err := c.CreateBranch(context.Background(), 1, "o", "r", "feat-x", "deadbeef"); err != nil {
+		t.Fatalf("CreateBranch: %v", err)
+	}
+}
+
+func TestClient_CreateBranch_AlreadyExists(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, `{"message":"Reference already exists"}`, http.StatusUnprocessableEntity)
+	}))
+	defer srv.Close()
+	c := New(stubToken, srv.URL)
+	err := c.CreateBranch(context.Background(), 1, "o", "r", "feat-x", "deadbeef")
+	if !errors.Is(err, ErrConflict) {
+		t.Fatalf("want ErrConflict, got %v", err)
+	}
+}
