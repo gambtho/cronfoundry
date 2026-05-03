@@ -33,6 +33,9 @@ type Deps struct {
 	APIBaseURL    string                    // e.g. "http://127.0.0.1:8080"
 	RunnerAPIURL  string                    // external URL the runner uses to reach serve; falls back to APIBaseURL
 	RunnerBinary  string                    // absolute path; typically os.Executable()
+	// Clock records the most recent successful tick time. Optional —
+	// nil means timing is not exposed (webapi handler degrades to "down").
+	Clock *TickClock
 }
 
 // Stats summarizes one Tick's effects.

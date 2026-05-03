@@ -118,3 +118,31 @@ export interface UserDTO {
   created_at: string
   last_login_at?: string
 }
+
+export type SystemHealth = {
+  scheduler:    { status: 'healthy' | 'degraded' | 'down'; last_tick_at: string | null }
+  queue_depth:  number
+  workers:      number
+  last_sync_at: string | null
+}
+
+export type AlertsQuietJob = {
+  schedule_id:    string
+  schedule_name:  string
+  last_success:   string | null
+  expected_every: number
+}
+
+export type AlertsRecentlyPaused = {
+  schedule_id:   string
+  schedule_name: string
+  paused_at:     string
+  reason:        string | null
+}
+
+export type Alerts = {
+  quiet_jobs:        AlertsQuietJob[]
+  recently_paused:   AlertsRecentlyPaused[]
+  expiring_secrets:  never[]
+  drift:             never[]
+}

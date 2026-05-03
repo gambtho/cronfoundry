@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
 	"github.com/gambtho/cronfoundry/internal/metrics"
+	"github.com/gambtho/cronfoundry/internal/scheduler"
 	"github.com/gambtho/cronfoundry/internal/secrets/server"
 )
 
@@ -42,6 +44,12 @@ type Deps struct {
 	// middleware as the Origin/Referer allowlist. Empty disables the Origin
 	// check (dev mode); the cookie+header double-submit check still runs.
 	PublicBaseURL string
+	// Clock provides the most recent scheduler tick time. May be nil in
+	// test environments — handlers degrade gracefully (status="down").
+	Clock *scheduler.TickClock
+	// SweepInterval is the configured cadence between scheduler ticks.
+	// Used to classify scheduler health: <2x healthy, <5x degraded, else down.
+	SweepInterval time.Duration
 }
 
 // resolveRole returns ("admin"|"viewer", nil) for allowed logins, ("", nil)
@@ -128,6 +136,14 @@ func RegisterRoutes(mux *http.ServeMux, deps Deps) {
 	// Audit log (admin-only, read-only)
 	ah := &auditHandler{deps: deps}
 	mux.Handle("GET /api/audit", adminOnly(http.HandlerFunc(ah.list)))
+
+	// Alerts (quiet jobs + recently auto-paused)
+	ah2 := newAlertsHandler(deps)
+	mux.Handle("GET /api/alerts", session(http.HandlerFunc(ah2.list)))
+
+	// System health
+	sysh := &systemHandler{deps: deps}
+	mux.Handle("GET /api/system/health", session(http.HandlerFunc(sysh.health)))
 
 	// Users (admin-only)
 	uh := &usersHandler{deps: deps}

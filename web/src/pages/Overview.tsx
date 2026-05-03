@@ -13,7 +13,6 @@ import { relativeTime } from '../lib/time'
 import {
   Button,
   Card,
-  ComingSoon,
   IconButton,
   KV,
   PageHeader,
@@ -21,6 +20,7 @@ import {
   Topbar,
 } from '../components/ui'
 import { cn } from '../lib/cn'
+import type { Alerts } from '../lib/types'
 
 /**
  * Overview — triage home. Operator opens this page first thing in
@@ -48,6 +48,16 @@ export default function Overview() {
     queryKey: ['runs', { limit: 200 }],
     queryFn: () => api.runs.list({ limit: 200 }),
     refetchInterval: 15_000,
+  })
+  const healthQ = useQuery({
+    queryKey: ['system', 'health'],
+    queryFn:  api.system.health,
+    refetchInterval: 30_000,
+  })
+  const alertsQ = useQuery({
+    queryKey: ['alerts'],
+    queryFn:  api.alerts.list,
+    refetchInterval: 30_000,
   })
 
   const runNow = useMutation({
@@ -293,43 +303,41 @@ export default function Overview() {
               </ul>
             </Card>
 
-            {/* System health — needs an endpoint we don't have yet. */}
-            <ComingSoon label="Coming soon">
-              <Card>
-                <Card.Header>System</Card.Header>
-                <Card.Body>
-                  <KV>
-                    <KV.Row label="Scheduler">
-                      <Pill variant="ok">Healthy</Pill>
-                    </KV.Row>
-                    <KV.Row label="Queue depth">0 pending</KV.Row>
-                    <KV.Row label="Workers">— / —</KV.Row>
-                    <KV.Row label="Last sync">—</KV.Row>
-                  </KV>
-                </Card.Body>
-              </Card>
-            </ComingSoon>
+            {/* System health */}
+            <Card>
+              <Card.Header>System</Card.Header>
+              <Card.Body>
+                <KV>
+                  <KV.Row label="Scheduler">
+                    <Pill variant={
+                      healthQ.data?.scheduler.status === 'healthy' ? 'ok'
+                      : healthQ.data?.scheduler.status === 'degraded' ? 'amber'
+                      : healthQ.data?.scheduler.status === 'down' ? 'fail'
+                      : 'skip'
+                    }>
+                      {healthQ.data?.scheduler.status ?? '—'}
+                    </Pill>
+                  </KV.Row>
+                  <KV.Row label="Queue depth">
+                    {healthQ.data ? `${healthQ.data.queue_depth} pending` : '—'}
+                  </KV.Row>
+                  <KV.Row label="Workers">
+                    {healthQ.data ? String(healthQ.data.workers) : '—'}
+                  </KV.Row>
+                  <KV.Row label="Last sync">
+                    {healthQ.data?.last_sync_at ? relativeTime(healthQ.data.last_sync_at) : '—'}
+                  </KV.Row>
+                </KV>
+              </Card.Body>
+            </Card>
 
-            {/* Alerts & rotations — secrets/audit don't yet expose
-                expiry/drift fields; speculative for now. */}
-            <ComingSoon label="Coming soon">
-              <Card>
-                <Card.Header>Alerts &amp; rotations</Card.Header>
-                <Card.Body>
-                  <ul className="m-0 flex list-none flex-col gap-3 p-0 text-[12px]">
-                    <li className="flex gap-3">
-                      <Pill variant="amber">Expiring</Pill>
-                      <span>
-                        Rotate keys before they expire
-                        <span className="mt-0.5 block font-mono text-[10px] uppercase tracking-[0.06em] text-ink-3">
-                          needs api support
-                        </span>
-                      </span>
-                    </li>
-                  </ul>
-                </Card.Body>
-              </Card>
-            </ComingSoon>
+            {/* Alerts */}
+            <Card>
+              <Card.Header>Alerts &amp; rotations</Card.Header>
+              <Card.Body>
+                <AlertsList data={alertsQ.data} />
+              </Card.Body>
+            </Card>
           </aside>
         </div>
 
@@ -343,6 +351,43 @@ export default function Overview() {
 }
 
 /* --------------------- helpers --------------------- */
+
+function AlertsList({ data }: { data?: Alerts }) {
+  if (!data) return <p className="text-ink-3">—</p>
+  type Item = { tone: 'amber' | 'fail'; label: string; text: string; sub?: string }
+  const items: Item[] = [
+    ...data.quiet_jobs.map((q): Item => ({
+      tone: 'amber',
+      label: 'quiet',
+      text: `${q.schedule_name} hasn't succeeded`,
+      sub:  q.last_success ? `last ok ${relativeTime(q.last_success)}` : 'never succeeded',
+    })),
+    ...data.recently_paused.map((p): Item => ({
+      tone: 'fail',
+      label: 'paused',
+      text: `${p.schedule_name} auto-paused`,
+      sub:  p.reason ?? undefined,
+    })),
+  ]
+  if (items.length === 0) return <p className="text-ink-3">All quiet.</p>
+  return (
+    <ul className="m-0 flex list-none flex-col gap-3 p-0 text-[12px]">
+      {items.map((it, i) => (
+        <li key={i} className="flex gap-3">
+          <Pill variant={it.tone}>{it.label}</Pill>
+          <span>
+            {it.text}
+            {it.sub && (
+              <span className="mt-0.5 block font-mono text-[10px] uppercase tracking-[0.06em] text-ink-3">
+                {it.sub}
+              </span>
+            )}
+          </span>
+        </li>
+      ))}
+    </ul>
+  )
+}
 
 function greetingFor(d: Date): string {
   const h = d.getHours()

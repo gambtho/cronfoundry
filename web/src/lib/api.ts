@@ -1,6 +1,7 @@
 // web/src/lib/api.ts
 import type {
-  RepoConnection, Skill, Schedule, RunSummary, RunDetail, RunEvent, SecretMeta, Me, AuditEntry, UserDTO
+  RepoConnection, Skill, Schedule, RunSummary, RunDetail, RunEvent, SecretMeta, Me, AuditEntry, UserDTO,
+  SystemHealth, Alerts
 } from './types'
 
 function csrfToken(): string | undefined {
@@ -109,6 +110,14 @@ export const api = {
       const q = qs.toString()
       return apiFetch<AuditEntry[]>(q ? `/api/audit?${q}` : '/api/audit')
     },
+  },
+
+  system: {
+    health: () => apiFetch<SystemHealth>('/api/system/health'),
+  },
+
+  alerts: {
+    list: () => apiFetch<Alerts>('/api/alerts'),
   },
 
   users: {

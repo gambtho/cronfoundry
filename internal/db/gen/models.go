@@ -81,34 +81,34 @@ type RunEvent struct {
 }
 
 type Schedule struct {
-	ID               pgtype.UUID
-	OrgID            pgtype.UUID
-	SkillID          pgtype.UUID
-	Name             string
-	Cron             string
-	Timezone         string
-	OverlapPolicy    string
-	TimeoutSec       int32
-	Enabled          bool
-	Provider         string
-	Model            string
-	LlmSecretRef     *string
-	LlmEndpoint      *string
-	LlmDeployment    *string
-	DestinationsJson []byte
-	WritebackJson    []byte
-	EnvJson          []byte
-	AutoPauseAfter   *int32
-	AutoPausedAt     pgtype.Timestamptz
-	AutoPauseReason  *string
-	LastEnabledAt    pgtype.Timestamptz
+	ID                   pgtype.UUID
+	OrgID                pgtype.UUID
+	SkillID              pgtype.UUID
+	Name                 string
+	Cron                 string
+	Timezone             string
+	OverlapPolicy        string
+	TimeoutSec           int32
+	Enabled              bool
+	Provider             string
+	Model                string
+	LlmSecretRef         *string
+	LlmEndpoint          *string
+	LlmDeployment        *string
+	DestinationsJson     []byte
+	WritebackJson        []byte
+	EnvJson              []byte
+	AutoPauseAfter       *int32
+	AutoPausedAt         pgtype.Timestamptz
+	AutoPauseReason      *string
+	LastEnabledAt        pgtype.Timestamptz
 	McpEnvJson           []byte
 	UiOverridesJson      []byte
 	MaxTurns             *int32
 	CopilotTokenRefsJson []byte
-	NextFireAt       pgtype.Timestamptz
-	CreatedAt        pgtype.Timestamptz
-	UpdatedAt        pgtype.Timestamptz
+	NextFireAt           pgtype.Timestamptz
+	CreatedAt            pgtype.Timestamptz
+	UpdatedAt            pgtype.Timestamptz
 }
 
 type Secret struct {

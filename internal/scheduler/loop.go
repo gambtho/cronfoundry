@@ -39,6 +39,9 @@ func tickOnce(ctx context.Context, deps Deps) {
 		slog.Error("scheduler: Loop: tick failed", "err", err)
 		return
 	}
+	if deps.Clock != nil {
+		deps.Clock.Record(time.Now())
+	}
 	// Log only if something happened; avoid noise when idle.
 	if stats.Dispatched > 0 || stats.Skipped > 0 || stats.Queued > 0 || stats.Errored > 0 {
 		slog.Info("scheduler: Loop: tick",
