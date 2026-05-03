@@ -3,6 +3,7 @@ package webapi_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -128,10 +129,12 @@ func TestResolveCopilotToken_NoOAuthToken(t *testing.T) {
 	_, _, err := webapi.ResolveCopilotToken(context.Background(), store, "copilot", &gh.URL)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "connect-copilot")
+	assert.True(t, errors.Is(err, webapi.ErrCopilotReauthRequired),
+		"missing OAuth token must wrap ErrCopilotReauthRequired so the handler returns 401, not 503")
 }
 
 // Mint endpoint returns 401: OAuth token has been revoked GitHub-side.
-// Resolver surfaces a remediation-friendly error.
+// Resolver wraps the sentinel so the handler can return 401 (not 503).
 func TestResolveCopilotToken_MintReturns401(t *testing.T) {
 	mint := &fakeCopilotMint{respStatus: http.StatusUnauthorized}
 	gh := httptest.NewServer(mint.handler())
@@ -143,7 +146,8 @@ func TestResolveCopilotToken_MintReturns401(t *testing.T) {
 	_, _, err := webapi.ResolveCopilotToken(context.Background(), store, "copilot", &gh.URL)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "401")
-	assert.Contains(t, err.Error(), "connect-copilot")
+	assert.True(t, errors.Is(err, webapi.ErrCopilotReauthRequired),
+		"401 from mint endpoint must wrap ErrCopilotReauthRequired")
 }
 
 // Backwards compat with installs that still have the legacy

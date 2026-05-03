@@ -3,6 +3,7 @@ package webapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -23,6 +24,18 @@ import (
 // github_copilot adapter) uses this exact URL. It accepts a long-lived
 // OAuth access token and returns a short-lived API key with an expires_at.
 const copilotIDETokenURL = "https://api.github.com/copilot_internal/v2/token"
+
+// copilotMintClient is a bounded HTTP client for the GitHub IDE-token mint
+// endpoint. http.DefaultClient has no timeout, so a hung GitHub upstream
+// could block a runner indefinitely.
+var copilotMintClient = &http.Client{Timeout: 15 * time.Second}
+
+// ErrCopilotReauthRequired indicates the operator must re-authenticate the
+// Copilot integration (the OAuth token is missing/empty or GitHub rejected
+// it as revoked). Surfaced as 401 by the HTTP handler so the runner — and
+// any future SPA "Copilot status" widget — can prompt for re-auth instead
+// of treating it as a transient outage.
+var ErrCopilotReauthRequired = errors.New("copilot: oauth re-auth required")
 
 // CopilotTokenRefsJSON is stored on the schedule row and identifies
 // which KV secrets hold the token pair for a copilot-enterprise schedule.
@@ -70,6 +83,15 @@ func (h *copilotTokenHandler) get(w http.ResponseWriter, r *http.Request) {
 	ideToken, expiresAt, err := ResolveCopilotToken(r.Context(), h.deps.Secrets, refs.Prefix, nil)
 	if err != nil {
 		slog.Error("copilot token resolve failed", "run_id", r.PathValue("id"), "error", err)
+		// Distinguish 're-auth required' (401, operator action) from
+		// transient mint outage (503, retry-friendly). Without this, a
+		// stale OAuth token looks identical to a GitHub blip.
+		if errors.Is(err, ErrCopilotReauthRequired) {
+			writeErr(w, http.StatusUnauthorized,
+				"copilot oauth token revoked or missing; re-run `cronfoundry admin connect-copilot`",
+				"copilot_token_reauth")
+			return
+		}
 		writeErr(w, http.StatusServiceUnavailable, "copilot token mint failed", "copilot_token_mint")
 		return
 	}
@@ -117,7 +139,8 @@ func ResolveCopilotToken(ctx context.Context, store server.SecretStore, prefix s
 		return "", time.Time{}, fmt.Errorf("read oauth access token: %w", err)
 	}
 	if oauthToken == "" {
-		return "", time.Time{}, fmt.Errorf("no oauth access token stored for prefix %q; run `cronfoundry admin connect-copilot`", prefix)
+		return "", time.Time{}, fmt.Errorf("%w: no oauth access token stored for prefix %q; run `cronfoundry admin connect-copilot`",
+			ErrCopilotReauthRequired, prefix)
 	}
 
 	ideToken, expiresAt, err := mintIDEToken(ctx, oauthToken, githubOverrideURL)
@@ -153,7 +176,10 @@ func readCachedIDEToken(ctx context.Context, store server.SecretStore, prefix st
 		return "", time.Time{}, false
 	}
 	exp := time.Unix(expUnix, 0)
-	if time.Until(exp) < 60*time.Second {
+	if time.Until(exp) <= 60*time.Second {
+		// Tokens with <=60s remaining are stale by definition (CodeRabbit
+		// caught the off-by-one: '<' would let an exactly-60s-left token
+		// through to a downstream call that takes >60s).
 		return "", time.Time{}, false
 	}
 	return tok, exp, true
@@ -192,14 +218,20 @@ func mintIDEToken(ctx context.Context, oauthToken string, overrideBase *string) 
 	req.Header.Set("Editor-Plugin-Version", "copilot/1.155.0")
 	req.Header.Set("User-Agent", "GithubCopilot/1.155.0")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := copilotMintClient.Do(req)
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("mint request: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		// GitHub rejected our OAuth token. Wrap the sentinel so the handler
+		// can surface a 401 with a re-auth code instead of a generic 503.
+		return "", time.Time{}, fmt.Errorf("%w: copilot_internal/v2/token returned HTTP %d",
+			ErrCopilotReauthRequired, resp.StatusCode)
+	}
 	if resp.StatusCode != http.StatusOK {
-		return "", time.Time{}, fmt.Errorf("mint failed: HTTP %d (oauth token may be revoked; re-run `cronfoundry admin connect-copilot`)", resp.StatusCode)
+		return "", time.Time{}, fmt.Errorf("mint failed: HTTP %d", resp.StatusCode)
 	}
 
 	var body copilotIDETokenResponse
