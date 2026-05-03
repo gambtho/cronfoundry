@@ -12,6 +12,7 @@ import (
 
 	"github.com/gambtho/cronfoundry/internal/config"
 	"github.com/gambtho/cronfoundry/internal/skillrepo"
+	"github.com/gambtho/cronfoundry/internal/yamledit"
 )
 
 // fakeSkillRepoClient lets tests assert calls and inject errors.
@@ -92,12 +93,6 @@ func TestProposeJob_RejectsMalformedJSON(t *testing.T) {
 		t.Errorf("status: got %d, want 400", w.Code)
 	}
 }
-
-// silence "imported and not used" until later tasks reference these.
-var (
-	_ = errors.New
-	_ = context.Background
-)
 
 const sampleManifest = `version: 1
 skills:
@@ -211,5 +206,131 @@ skills:
 	}
 	if calls.getFile != 1 || calls.createBranch != 1 || calls.putFile != 1 || calls.createPR != 1 {
 		t.Errorf("call counts: %+v", calls)
+	}
+}
+
+func TestProposeJob_412_PermissionRequired(t *testing.T) {
+	fakeClient := &fakeSkillRepoClient{
+		getFile: func(_ context.Context, _ int64, _, _, _, _ string) (*skillrepo.FileContents, error) {
+			return &skillrepo.FileContents{Content: []byte(sampleManifest), FileSHA: "f", HeadSHA: "h"}, nil
+		},
+		createBranch: func(_ context.Context, _ int64, _, _, _, _ string) error { return nil },
+		putFile: func(_ context.Context, _ int64, _, _, _, _, _, _ string, _ []byte) error { return nil },
+		createPR: func(_ context.Context, _ int64, _ skillrepo.PRRequest) (*skillrepo.PRResult, error) {
+			return nil, skillrepo.ErrPermissionRequired
+		},
+	}
+	yamlFn := YamlAppendScheduleFunc(func(b []byte, _ string, _ *config.Schedule) ([]byte, error) {
+		// Return the same input as a valid manifest so ParseManifest passes.
+		return b, nil
+	})
+	h := &skillRepoHandler{deps: Deps{
+		SkillRepoClient:        fakeClient,
+		YamlEditAppendSchedule: yamlFn,
+		GitHubAppSlug:          "cronfoundry-test",
+		testConnOverride: &resolvedConn{
+			Owner:         "o",
+			Name:          "r",
+			DefaultBranch: "main",
+			InstallID:     1,
+		},
+	}}
+	w := proposeJobReq(t, http.HandlerFunc(h.proposeJob), proposeJobRequest{
+		SkillPath: "skills/smoke",
+		Schedule:  &config.Schedule{Name: "x"},
+	})
+	if w.Code != http.StatusPreconditionFailed {
+		t.Fatalf("status: %d, body: %s", w.Code, w.Body.String())
+	}
+	var body map[string]string
+	_ = json.Unmarshal(w.Body.Bytes(), &body)
+	if body["code"] != "permission_required" {
+		t.Errorf("code: %q", body["code"])
+	}
+	if !strings.Contains(body["review_url"], "cronfoundry-test") {
+		t.Errorf("review_url should include slug: %q", body["review_url"])
+	}
+}
+
+func TestProposeJob_409_SkillNotFound(t *testing.T) {
+	fakeClient := &fakeSkillRepoClient{
+		getFile: func(_ context.Context, _ int64, _, _, _, _ string) (*skillrepo.FileContents, error) {
+			return &skillrepo.FileContents{Content: []byte(sampleManifest), FileSHA: "f", HeadSHA: "h"}, nil
+		},
+	}
+	yamlFn := YamlAppendScheduleFunc(func(_ []byte, _ string, _ *config.Schedule) ([]byte, error) {
+		return nil, yamledit.ErrSkillNotFound
+	})
+	h := &skillRepoHandler{deps: Deps{
+		SkillRepoClient:        fakeClient,
+		YamlEditAppendSchedule: yamlFn,
+		testConnOverride: &resolvedConn{
+			Owner:         "o",
+			Name:          "r",
+			DefaultBranch: "main",
+			InstallID:     1,
+		},
+	}}
+	w := proposeJobReq(t, http.HandlerFunc(h.proposeJob), proposeJobRequest{
+		SkillPath: "skills/missing",
+		Schedule:  &config.Schedule{Name: "x"},
+	})
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status: %d, body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestProposeJob_400_ParseManifestFails(t *testing.T) {
+	fakeClient := &fakeSkillRepoClient{
+		getFile: func(_ context.Context, _ int64, _, _, _, _ string) (*skillrepo.FileContents, error) {
+			return &skillrepo.FileContents{Content: []byte(sampleManifest), FileSHA: "f", HeadSHA: "h"}, nil
+		},
+	}
+	// Return clearly invalid YAML so config.ParseManifest errors.
+	yamlFn := YamlAppendScheduleFunc(func(_ []byte, _ string, _ *config.Schedule) ([]byte, error) {
+		return []byte("\t\tnot a manifest at all"), nil
+	})
+	h := &skillRepoHandler{deps: Deps{
+		SkillRepoClient:        fakeClient,
+		YamlEditAppendSchedule: yamlFn,
+		testConnOverride: &resolvedConn{
+			Owner:         "o",
+			Name:          "r",
+			DefaultBranch: "main",
+			InstallID:     1,
+		},
+	}}
+	w := proposeJobReq(t, http.HandlerFunc(h.proposeJob), proposeJobRequest{
+		SkillPath: "skills/smoke",
+		Schedule:  &config.Schedule{Name: "x"},
+	})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status: %d, body: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestProposeJob_502_OnGitHubError(t *testing.T) {
+	fakeClient := &fakeSkillRepoClient{
+		getFile: func(_ context.Context, _ int64, _, _, _, _ string) (*skillrepo.FileContents, error) {
+			return nil, errors.New("boom")
+		},
+	}
+	yamlFn := YamlAppendScheduleFunc(func(b []byte, _ string, _ *config.Schedule) ([]byte, error) { return b, nil })
+	h := &skillRepoHandler{deps: Deps{
+		SkillRepoClient:        fakeClient,
+		YamlEditAppendSchedule: yamlFn,
+		testConnOverride: &resolvedConn{
+			Owner:         "o",
+			Name:          "r",
+			DefaultBranch: "main",
+			InstallID:     1,
+		},
+	}}
+	w := proposeJobReq(t, http.HandlerFunc(h.proposeJob), proposeJobRequest{
+		SkillPath: "skills/smoke",
+		Schedule:  &config.Schedule{Name: "x"},
+	})
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("status: %d, body: %s", w.Code, w.Body.String())
 	}
 }
