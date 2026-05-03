@@ -98,4 +98,30 @@ describe('JobNew', () => {
     fireEvent.submit(screen.getByRole('button', { name: /open pr/i }).closest('form')!)
     expect(await screen.findByText(/Review the GitHub App permissions/)).toBeInTheDocument()
   })
+
+  it('serializes destinations and writeback into the request', async () => {
+    ;(api.skillRepo.proposeJob as any).mockResolvedValue({
+      pr_url: 'u',
+      pr_number: 1,
+      branch: 'b',
+    })
+    renderJobNew()
+    // wait for skill option to render before changing the select
+    await screen.findByRole('option', { name: 'skills/smoke' })
+    fireEvent.change(screen.getByLabelText(/skill/i), { target: { value: 'skills/smoke' } })
+    fireEvent.change(screen.getByLabelText(/^name$/i), { target: { value: 'newjob' } })
+    fireEvent.change(screen.getByLabelText(/cron/i), { target: { value: '0 9 * * *' } })
+
+    // add a github-issue destination (default type)
+    fireEvent.click(screen.getByRole('button', { name: /\+ add destination/i }))
+    fireEvent.change(screen.getByLabelText(/^repo$/i), { target: { value: 'o/r' } })
+    fireEvent.change(screen.getByLabelText(/^title$/i), { target: { value: 't' } })
+
+    fireEvent.click(screen.getByRole('button', { name: /open pr/i }))
+    await waitFor(() => expect(api.skillRepo.proposeJob).toHaveBeenCalled())
+    const arg = (api.skillRepo.proposeJob as any).mock.calls[0][0]
+    expect(arg.schedule.destinations).toHaveLength(1)
+    expect(arg.schedule.destinations[0]['github-issue'].repo).toBe('o/r')
+    expect(arg.schedule.destinations[0]['github-issue'].title).toBe('t')
+  })
 })
