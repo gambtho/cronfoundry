@@ -98,9 +98,42 @@ func (c *Client) gitHubClient(ctx context.Context, installID int64) (*gh.Client,
 	return cli, nil
 }
 
-// GetFile fetches cronfoundry.yaml at the named ref.
+// GetFile fetches a file at the named ref. Returns ErrFileNotFound on 404.
 func (c *Client) GetFile(ctx context.Context, installID int64, owner, repo, path, ref string) (*FileContents, error) {
-	return nil, errors.New("skillrepo: GetFile not implemented")
+	cli, err := c.gitHubClient(ctx, installID)
+	if err != nil {
+		return nil, err
+	}
+	opts := &gh.RepositoryContentGetOptions{Ref: ref}
+	fileC, _, resp, err := cli.Repositories.GetContents(ctx, owner, repo, path, opts)
+	if err != nil {
+		if resp != nil && resp.StatusCode == 404 {
+			return nil, ErrFileNotFound
+		}
+		return nil, fmt.Errorf("skillrepo: GetContents: %w", err)
+	}
+	if fileC == nil {
+		// GetContents returns dirContents when path is a directory; we want a file.
+		return nil, fmt.Errorf("skillrepo: %s is not a file", path)
+	}
+	content, err := fileC.GetContent()
+	if err != nil {
+		return nil, fmt.Errorf("skillrepo: decode content: %w", err)
+	}
+	// Look up the head commit sha of ref.
+	branch, _, err := cli.Repositories.GetBranch(ctx, owner, repo, ref, 0)
+	if err != nil {
+		return nil, fmt.Errorf("skillrepo: GetBranch: %w", err)
+	}
+	headSHA := ""
+	if branch != nil && branch.Commit != nil && branch.Commit.SHA != nil {
+		headSHA = *branch.Commit.SHA
+	}
+	fileSHA := ""
+	if fileC.SHA != nil {
+		fileSHA = *fileC.SHA
+	}
+	return &FileContents{Content: []byte(content), FileSHA: fileSHA, HeadSHA: headSHA}, nil
 }
 
 // CreateBranch creates a new ref pointing at fromSHA. Returns ErrConflict
