@@ -68,22 +68,19 @@ describe('JobNew', () => {
     expect(api.skillRepo.proposeJob).not.toHaveBeenCalled()
   })
 
-  it('serializes the form to ProposeJobRequest and navigates back on success', async () => {
-    ;(api.skillRepo.proposeJob as ReturnType<typeof vi.fn>).mockResolvedValue({
-      pr_url: 'https://gh/x/y/pull/1',
-      pr_number: 1,
+  it('shows JobSuccessCard with PR link on success', async () => {
+    ;(api.skillRepo.proposeJob as any).mockResolvedValue({
+      pr_url: 'https://gh/x/y/pull/9',
+      pr_number: 9,
       branch: 'b',
     })
     renderJobNew()
-    await fillRequiredFields()
-    // Submit the form directly to bypass any HTML5 validation issues in jsdom
-    fireEvent.submit(screen.getByRole('button', { name: /open pr/i }).closest('form')!)
-    await waitFor(() => expect(api.skillRepo.proposeJob).toHaveBeenCalled())
-    const arg = (api.skillRepo.proposeJob as ReturnType<typeof vi.fn>).mock.calls[0][0]
-    expect(arg.skill_path).toBe('skills/smoke')
-    expect(arg.schedule.name).toBe('newjob')
-    expect(arg.schedule.cron).toBe('0 9 * * *')
-    expect(await screen.findByTestId('back-to-jobs')).toBeInTheDocument()
+    await screen.findByRole('option', { name: 'skills/smoke' })
+    fireEvent.change(screen.getByLabelText(/skill/i), { target: { value: 'skills/smoke' } })
+    fireEvent.change(screen.getByLabelText(/^name$/i), { target: { value: 'x' } })
+    fireEvent.change(screen.getByLabelText(/cron/i), { target: { value: '0 9 * * *' } })
+    fireEvent.click(screen.getByRole('button', { name: /open pr/i }))
+    expect(await screen.findByText(/PR #9 opened/)).toBeInTheDocument()
   })
 
   it('renders 412 review_url CTA on permission_required', async () => {

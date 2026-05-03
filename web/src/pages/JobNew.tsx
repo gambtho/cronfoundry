@@ -1,6 +1,5 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQuery } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
 import { api, type ProposeJobRequest } from '../lib/api'
 import { isApiError } from '../lib/api-error'
 import { Button, Card, Input, PageHeader, Select, Topbar } from '../components/ui'
@@ -10,9 +9,9 @@ import {
   type DestinationsValue,
 } from '../components/forms/DestinationsField'
 import { EnvField, serializeEnv } from '../components/forms/EnvField'
+import { JobSuccessCard } from '../components/forms/JobSuccessCard'
 
 export default function JobNew() {
-  const navigate = useNavigate()
   const skillsQ = useQuery({ queryKey: ['skills'], queryFn: api.skills.list })
 
   const [skillPath, setSkillPath] = useState('')
@@ -36,14 +35,15 @@ export default function JobNew() {
 
   const [submitError, setSubmitError] = useState<string | null>(null)
   const [reviewURL, setReviewURL] = useState<string | null>(null)
+  const [success, setSuccess] = useState<{
+    pr_url: string
+    pr_number: number
+    branch: string
+  } | null>(null)
 
   const propose = useMutation({
     mutationFn: api.skillRepo.proposeJob,
-    onSuccess: (data) => {
-      // Task 23 replaces this with a JobSuccessCard. For v1 minimum, route
-      // back to /jobs with a query string the page can render.
-      navigate(`/jobs?pr=${data.pr_number}`)
-    },
+    onSuccess: (data) => setSuccess(data),
     onError: (err) => {
       if (isApiError(err) && err.code === 'permission_required') {
         setReviewURL((err.extras.review_url as string) ?? null)
@@ -96,6 +96,13 @@ export default function JobNew() {
           subtitle="propose a new schedule by opening a PR against the connected skill repo"
         />
         <form onSubmit={onSubmit} className="grid grid-cols-1 gap-3">
+          {success && (
+            <JobSuccessCard
+              prURL={success.pr_url}
+              prNumber={success.pr_number}
+              branch={success.branch}
+            />
+          )}
           {submitError && (
             <Card>
               <p className="text-accent-red">{submitError}</p>
