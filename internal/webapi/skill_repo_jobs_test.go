@@ -102,6 +102,7 @@ skills:
         cron: "0 9 * * *"
         timezone: UTC
         provider: copilot-enterprise
+        copilot_prefix: copilot
         model: gpt-5-mini
         destinations:
           - github-issue:
@@ -174,6 +175,7 @@ skills:
         cron: "0 9 * * *"
         timezone: UTC
         provider: copilot-enterprise
+        copilot_prefix: copilot
         model: gpt-5-mini
         destinations:
           - github-issue:

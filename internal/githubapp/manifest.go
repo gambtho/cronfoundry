@@ -43,8 +43,9 @@ type HookAttributes struct {
 
 // BuildManifest renders a Manifest from the given input. Permissions and
 // events match what CronFoundry needs: Contents R+W (read/push skill files),
-// Issues W (file reports), Metadata R (required by GitHub for any App),
-// Push events.
+// Issues W (file reports), Pull Requests W (open skill-repo PRs from
+// `+ Add job` / `+ Import job` flows), Metadata R (required by GitHub for
+// any App), Push events.
 func BuildManifest(in ManifestInput) Manifest {
 	base := in.CallbackURL
 	homepage := in.HomepageURL

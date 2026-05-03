@@ -34,9 +34,12 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     }
   }
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    const message = (body as { error?: string }).error ?? res.statusText
-    const code = (body as { code?: string }).code ?? 'unknown'
+    const raw: unknown = await res.json().catch(() => null)
+    const body: Record<string, unknown> =
+      raw !== null && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+    const message =
+      typeof body.error === 'string' && body.error ? body.error : res.statusText
+    const code = typeof body.code === 'string' && body.code ? body.code : 'unknown'
     const extras: Record<string, unknown> = { ...body }
     delete extras.error
     delete extras.code

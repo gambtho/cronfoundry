@@ -144,8 +144,16 @@ func (h *skillRepoHandler) proposeJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Belt-and-suspenders: rerun ParseManifest on the rewritten YAML.
-	if _, err := config.ParseManifest(updated); err != nil {
+	// Belt-and-suspenders: parse + semantic validate the rewritten YAML.
+	// ParseManifest catches structural issues; Validate catches runtime
+	// constraints (cron syntax, required fields, destination shape, etc.)
+	// that the sync poller checks before dispatch.
+	parsed, err := config.ParseManifest(updated)
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "manifest validation: "+err.Error(), "validation")
+		return
+	}
+	if err := parsed.Validate(); err != nil {
 		writeErr(w, http.StatusBadRequest, "manifest validation: "+err.Error(), "validation")
 		return
 	}

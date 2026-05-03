@@ -109,7 +109,14 @@ export function serializeDestinations(value: DestinationsValue[]) {
             ? Object.fromEntries(
                 d.fields.headers
                   .split(',')
-                  .map((kv) => kv.split('=').map((s) => s.trim()))
+                  .map((kv) => {
+                    // Split on the FIRST '=' only — values like
+                    // "Authorization=Bearer abc==" must keep their trailing
+                    // '=' characters.
+                    const i = kv.indexOf('=')
+                    if (i < 0) return [kv.trim(), '']
+                    return [kv.slice(0, i).trim(), kv.slice(i + 1).trim()]
+                  })
                   .filter(([k]) => !!k),
               )
             : undefined,

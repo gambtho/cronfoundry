@@ -10,6 +10,7 @@ import {
 } from '../components/forms/DestinationsField'
 import { EnvField, serializeEnv } from '../components/forms/EnvField'
 import { JobSuccessCard } from '../components/forms/JobSuccessCard'
+import { isSafeReviewURL } from '../lib/safe-url'
 
 export default function JobNew() {
   const skillsQ = useQuery({ queryKey: ['skills'], queryFn: api.skills.list })
@@ -46,7 +47,8 @@ export default function JobNew() {
     onSuccess: (data) => setSuccess(data),
     onError: (err) => {
       if (isApiError(err) && err.code === 'permission_required') {
-        setReviewURL((err.extras.review_url as string) ?? null)
+        const url = err.extras.review_url
+        setReviewURL(typeof url === 'string' && isSafeReviewURL(url) ? url : null)
       }
       setSubmitError(err instanceof Error ? err.message : String(err))
     },
@@ -54,8 +56,10 @@ export default function JobNew() {
 
   function onSubmit(e: FormEvent) {
     e.preventDefault()
+    if (propose.isPending) return // ignore double-clicks while inflight
     setSubmitError(null)
     setReviewURL(null)
+    setSuccess(null)
     if (!skillPath || !name || !cron || !provider || !model) {
       setSubmitError('skill, name, cron, provider, and model are required')
       return

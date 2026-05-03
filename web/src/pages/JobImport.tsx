@@ -5,6 +5,7 @@ import { api, type ProposeJobRequest, type ProposeJobScheduleInput } from '../li
 import { isApiError } from '../lib/api-error'
 import { Button, Card, PageHeader, Select, Topbar } from '../components/ui'
 import { JobSuccessCard } from '../components/forms/JobSuccessCard'
+import { isSafeReviewURL } from '../lib/safe-url'
 
 const PLACEHOLDER = `name: hourly-pulse
 cron: "0 * * * *"
@@ -35,7 +36,8 @@ export default function JobImport() {
     onSuccess: (data) => setSuccess(data),
     onError: (err) => {
       if (isApiError(err) && err.code === 'permission_required') {
-        setReviewURL((err.extras.review_url as string) ?? null)
+        const url = err.extras.review_url
+        setReviewURL(typeof url === 'string' && isSafeReviewURL(url) ? url : null)
       }
       setSubmitError(err instanceof Error ? err.message : String(err))
     },
@@ -43,9 +45,11 @@ export default function JobImport() {
 
   function onSubmit(e: FormEvent) {
     e.preventDefault()
+    if (propose.isPending) return // ignore double-clicks while inflight
     setParseError(null)
     setSubmitError(null)
     setReviewURL(null)
+    setSuccess(null)
     if (!skillPath) {
       setSubmitError('skill is required')
       return

@@ -27,11 +27,12 @@ func TestAppendScheduleToSkill_AppendToExisting(t *testing.T) {
 	in, expected := fixture(t, "append_to_existing")
 
 	sched := &config.Schedule{
-		Name:     "hourly-pulse",
-		Cron:     "0 * * * *",
-		Timezone: "UTC",
-		Provider: "copilot-enterprise",
-		Model:    "gpt-5-mini",
+		Name:          "hourly-pulse",
+		Cron:          "0 * * * *",
+		Timezone:      "UTC",
+		Provider:      "copilot-enterprise",
+		CopilotPrefix: "copilot",
+		Model:         "gpt-5-mini",
 		Destinations: []config.Destination{
 			{
 				GitHubIssue: &config.GitHubIssueDest{
@@ -50,20 +51,25 @@ func TestAppendScheduleToSkill_AppendToExisting(t *testing.T) {
 		t.Fatalf("output mismatch.\n--- got ---\n%s\n--- expected ---\n%s", got, expected)
 	}
 
-	// Belt-and-suspenders: the produced YAML must re-parse via config.ParseManifest.
-	if _, err := config.ParseManifest(got); err != nil {
+	// Belt-and-suspenders: the produced YAML must re-parse and re-validate.
+	m, err := config.ParseManifest(got)
+	if err != nil {
 		t.Fatalf("output failed to ParseManifest: %v", err)
+	}
+	if err := m.Validate(); err != nil {
+		t.Fatalf("output failed to Validate: %v", err)
 	}
 }
 
 func TestAppendScheduleToSkill_AppendFirstSchedule(t *testing.T) {
 	in, expected := fixture(t, "append_first_schedule")
 	sched := &config.Schedule{
-		Name:     "hello",
-		Cron:     "*/5 * * * *",
-		Timezone: "UTC",
-		Provider: "copilot-enterprise",
-		Model:    "gpt-5-mini",
+		Name:          "hello",
+		Cron:          "*/5 * * * *",
+		Timezone:      "UTC",
+		Provider:      "copilot-enterprise",
+		CopilotPrefix: "copilot",
+		Model:         "gpt-5-mini",
 		Destinations: []config.Destination{
 			{GitHubIssue: &config.GitHubIssueDest{Repo: "gambtho/skills", Title: "hello"}},
 		},
@@ -75,8 +81,10 @@ func TestAppendScheduleToSkill_AppendFirstSchedule(t *testing.T) {
 	if string(got) != string(expected) {
 		t.Fatalf("mismatch\n---got---\n%s\n---want---\n%s", got, expected)
 	}
-	if _, err := config.ParseManifest(got); err != nil {
+	if m, err := config.ParseManifest(got); err != nil {
 		t.Fatalf("ParseManifest on output: %v", err)
+	} else if err := m.Validate(); err != nil {
+		t.Fatalf("Validate on output: %v", err)
 	}
 }
 

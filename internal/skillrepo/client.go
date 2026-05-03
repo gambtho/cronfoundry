@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	gh "github.com/google/go-github/v74/github"
 )
@@ -71,8 +72,15 @@ type Client struct {
 }
 
 // New constructs a Client. baseURL defaults to "https://api.github.com" if empty.
+// HTTPClient defaults to a 30s-timeout client so a hung GitHub call doesn't
+// hold the calling request open indefinitely; callers that need a different
+// timeout (or a transport with retry) can set Client.HTTPClient after construction.
 func New(token TokenFunc, baseURL string) *Client {
-	return &Client{Token: token, BaseURL: baseURL}
+	return &Client{
+		Token:      token,
+		BaseURL:    baseURL,
+		HTTPClient: &http.Client{Timeout: 30 * time.Second},
+	}
 }
 
 // gitHubClient mints an install token and returns a configured go-github
