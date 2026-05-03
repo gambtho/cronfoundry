@@ -96,6 +96,27 @@ func TestOpenAI_Chat_400ErrorIncludesBody(t *testing.T) {
 		"error must include the response body so operators can diagnose 400s")
 }
 
+func TestOpenAI_ChatTurn_400ErrorIncludesBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":{"message":"model 'gpt-4o' is not supported","code":"model_not_found"}}`))
+	}))
+	defer srv.Close()
+
+	p := NewOpenAI(srv.URL).(ToolCapableProvider)
+	_, err := p.ChatTurn(context.Background(),
+		[]Message{{Role: RoleUser, Content: "u"}},
+		nil,
+		CallOptions{Model: "gpt-4o", APIKey: "k"},
+		func(StreamChunk) {})
+	require.Error(t, err)
+	msg := err.Error()
+	assert.Contains(t, msg, "openai chat_turn", "error must keep the operation prefix")
+	assert.Contains(t, msg, "400")
+	assert.Contains(t, msg, "model_not_found",
+		"ChatTurn must surface the response body for operator diagnosis too")
+}
+
 func TestOpenAI_Chat_RetriesOn500UpTo3Times(t *testing.T) {
 	var attempts int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

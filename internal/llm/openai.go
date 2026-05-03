@@ -34,6 +34,16 @@ func chatErr(prefix string, err error) error {
 	if errors.As(err, &apiErr) {
 		body := apiErr.RawJSON()
 		if body == "" && apiErr.Response != nil {
+			// Non-JSON body (Copilot/other gateways occasionally return
+			// text/html for misconfigured requests). DumpResponse(true)
+			// reads the buffered response body the SDK retained on the
+			// error; safe to call without closing — the SDK has already
+			// drained and rewound it.
+			if dump := apiErr.DumpResponse(true); len(dump) > 0 {
+				body = string(dump)
+			}
+		}
+		if body == "" {
 			body = "(empty body)"
 		}
 		return fmt.Errorf("%s: status=%d body=%s: %w",
