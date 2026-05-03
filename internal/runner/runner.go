@@ -92,6 +92,10 @@ const (
 	EventMCPToolCallOK     EventType = "mcp.tool.call.ok"
 	EventMCPToolCallFail   EventType = "mcp.tool.call.fail"
 	EventMCPToolCallTimeout EventType = "mcp.tool.call.timeout"
+	// EventPhaseEnter marks entry into a coarse lifecycle phase
+	// (boot|secrets|exec|publish|fail). Payload: {"phase": "<name>"} on
+	// the happy path; {"phase":"fail","prev":"<name>"} on terminal error.
+	EventPhaseEnter EventType = "phase.enter"
 )
 
 // RunEvent is a structured event the runner emits during execution.
@@ -130,6 +134,17 @@ func New(d Deps) *Runner {
 		d.EventSink = func(RunEvent) {}
 	}
 	return &Runner{deps: d}
+}
+
+// enterPhase emits a phase.enter boundary event. The runner tracks
+// `last` so the failure path can record which phase was active at
+// the time of the error. Pass prev="" on the happy path.
+func (r *Runner) enterPhase(phase, prev string) {
+	payload := map[string]any{"phase": phase}
+	if prev != "" {
+		payload["prev"] = prev
+	}
+	r.deps.EventSink(RunEvent{Type: EventPhaseEnter, Payload: payload})
 }
 
 // Run executes a full skill invocation: load → LLM → parse → publish → writeback.
