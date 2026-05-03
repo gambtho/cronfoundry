@@ -91,7 +91,7 @@ VALUES ($1, $2, $3, $4, $5, $6);
 -- name: ListRunNotifications :many
 SELECT id, run_id, kind, target, status, reason, created_at
 FROM run_notification
-WHERE run_id = $1
+WHERE run_id = $1 AND org_id = $2
 ORDER BY id ASC;
 ```
 
@@ -320,23 +320,33 @@ func TestFinalize_RejectsInvalidNotificationStatus(t *testing.T) {
 }
 
 func TestFinalize_RollsBackOnFailedInsert(t *testing.T) {
+    // MANDATORY. The transactional invariant ("either the run row
+    // is finalized AND every notification row is inserted, or
+    // nothing is") is the entire reason this handler uses pgx.Tx.
+    // It MUST be exercised by the test suite.
+    //
     // Validation rejects pre-transaction, so an oversized field
     // never exercises rollback. To actually exercise rollback,
     // force InsertRunNotification to fail *after* FinalizeRun has
-    // already executed inside the transaction. Two viable
-    // approaches:
-    //   a) Inject a stub Queries (or a wrapping pgxpool.Pool) whose
-    //      InsertRunNotification returns an error on the second call.
-    //   b) Drop a temporary CHECK constraint on run_notification (or
-    //      a trigger) that rejects a specific marker value, send a
-    //      notification carrying that marker.
-    // After the failed POST, assert run row status is still
-    // 'running' (not finalized) AND zero rows in run_notification
-    // for that run id — that's the proof the whole tx rolled back.
+    // already executed inside the transaction. Pick whichever
+    // approach the harness supports — do NOT skip:
     //
-    // If neither hook is feasible in the harness (the project uses
-    // black-box httptest + a real pool), document the transactional
-    // safety as a code-review property and skip with a clear TODO.
+    //   a) Add a temporary partial CHECK constraint or BEFORE
+    //      INSERT trigger on run_notification that rejects rows
+    //      whose `kind` matches a sentinel string ("__force_fail").
+    //      The test sends a finalize body with one valid notification
+    //      followed by one carrying the sentinel. Drop the
+    //      constraint/trigger in t.Cleanup.
+    //   b) Inject a stub Queries (or a wrapping pgxpool.Pool) whose
+    //      InsertRunNotification returns an error on the second
+    //      call. Requires plumbing a Queries interface into the
+    //      handler — preferred only if the harness already supports
+    //      injection.
+    //
+    // After the failed POST (expect 500), assert:
+    //   - run row status is still 'running' (NOT finalized)
+    //   - zero rows in run_notification for that run id
+    // Both assertions together prove the tx rolled back.
 }
 ```
 
