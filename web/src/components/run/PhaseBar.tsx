@@ -27,7 +27,7 @@ export function PhaseBar({ events, finishedAt }: Props) {
     <div
       role="img"
       aria-label="run phase timeline"
-      className="flex h-2 w-full overflow-hidden rounded bg-rule"
+      className="mb-4 flex h-2 w-full overflow-hidden rounded bg-rule"
     >
       {segments.map((s, i) => {
         const dur = Math.max(1, Date.parse(s.end) - Date.parse(s.start))

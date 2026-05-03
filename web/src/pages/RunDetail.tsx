@@ -285,9 +285,7 @@ export default function RunDetailPage() {
           </MetaCell>
         </dl>
 
-        <div className="mb-4">
-          <PhaseBar events={eventsQ.data ?? []} finishedAt={run.finished_at} />
-        </div>
+        <PhaseBar events={eventsQ.data ?? []} finishedAt={run.finished_at} />
 
         <div className="grid grid-cols-[1fr_320px] gap-5">
           <div className="min-w-0">

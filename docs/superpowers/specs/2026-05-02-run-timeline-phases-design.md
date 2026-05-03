@@ -41,7 +41,7 @@ Rules:
 - `fail` is a terminal phase. The runner emits it with a `prev` field
   naming the phase that was active so the UI can paint that segment
   red and cap the bar there.
-- The terminal status (`succeeded`/`failed`/`canceled`) lives on the
+- The terminal status (`succeeded`/`failed`/`partial_failure`) lives on the
   `runs` row. The timeline doesn't need a separate "done" event;
   the last `phase.enter` plus the run's `finished_at` bound the final
   segment.

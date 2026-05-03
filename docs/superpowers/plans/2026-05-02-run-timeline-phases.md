@@ -106,7 +106,7 @@ enter("boot")
 
 In `Run()` only (not other functions), replace every `return fail(&result, err, r.deps.Now)` with `return fail(err)`. Replace every `return failWithKind(&result, kind, err, r.deps.Now)` with `return failKind(kind, err)`. The package-level `fail` is renamed to `failHelper` to avoid the shadow conflict — update its definition and all *non-Run* call sites accordingly. Verify with:
 
-```
+```bash
 grep -n "fail(\|failWithKind(" internal/runner/runner.go
 ```
 
@@ -370,7 +370,7 @@ git commit -m "feat(web): timeline reducer for phase.enter events"
 
 - [ ] **Step 1: Locate the existing timeline placeholder**
 
-```
+```bash
 grep -n "timeline\|phase\|segment" web/src/pages/RunDetail.tsx
 ```
 
