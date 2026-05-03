@@ -97,5 +97,119 @@ func TestProposeJob_RejectsMalformedJSON(t *testing.T) {
 var (
 	_ = errors.New
 	_ = context.Background
-	_ = (*fakeSkillRepoClient)(nil)
 )
+
+const sampleManifest = `version: 1
+skills:
+  - path: skills/smoke
+    schedules:
+      - name: existing
+        cron: "0 9 * * *"
+        timezone: UTC
+        provider: copilot-enterprise
+        model: gpt-5-mini
+        destinations:
+          - github-issue:
+              repo: o/r
+              title: t
+`
+
+func TestProposeJob_HappyPath(t *testing.T) {
+	const (
+		owner = "o"
+		repo  = "r"
+	)
+	calls := struct {
+		getFile      int
+		createBranch int
+		putFile      int
+		createPR     int
+	}{}
+	fakeClient := &fakeSkillRepoClient{
+		getFile: func(_ context.Context, _ int64, _, _, p, ref string) (*skillrepo.FileContents, error) {
+			calls.getFile++
+			if p != "cronfoundry.yaml" {
+				t.Errorf("expected cronfoundry.yaml, got %s", p)
+			}
+			return &skillrepo.FileContents{
+				Content: []byte(sampleManifest),
+				FileSHA: "filesha",
+				HeadSHA: "headsha",
+			}, nil
+		},
+		createBranch: func(_ context.Context, _ int64, _, _, branch, sha string) error {
+			calls.createBranch++
+			if !strings.HasPrefix(branch, "cronfoundry/add-job-newjob-") {
+				t.Errorf("branch: %s", branch)
+			}
+			if sha != "headsha" {
+				t.Errorf("sha: %s", sha)
+			}
+			return nil
+		},
+		putFile: func(_ context.Context, _ int64, _, _, _, _, sha, msg string, content []byte) error {
+			calls.putFile++
+			if sha != "filesha" {
+				t.Errorf("file sha: %s", sha)
+			}
+			if !bytes.Contains(content, []byte("newjob")) {
+				t.Errorf("expected new job in content; got: %s", content)
+			}
+			if !strings.Contains(msg, "newjob") {
+				t.Errorf("commit msg: %s", msg)
+			}
+			return nil
+		},
+		createPR: func(_ context.Context, _ int64, req skillrepo.PRRequest) (*skillrepo.PRResult, error) {
+			calls.createPR++
+			if req.Base != "main" {
+				t.Errorf("base: %s", req.Base)
+			}
+			return &skillrepo.PRResult{HTMLURL: "https://github.com/o/r/pull/9", Number: 9}, nil
+		},
+	}
+	yamlFn := YamlAppendScheduleFunc(func(b []byte, p string, s *config.Schedule) ([]byte, error) {
+		// For the happy-path test, return a small but valid manifest with the
+		// new schedule's name visible so the PutFile assertion can find it.
+		out := []byte(`version: 1
+skills:
+  - path: ` + p + `
+    schedules:
+      - name: ` + s.Name + `
+        cron: "0 9 * * *"
+        timezone: UTC
+        provider: copilot-enterprise
+        model: gpt-5-mini
+        destinations:
+          - github-issue:
+              repo: o/r
+              title: ` + s.Name + `
+`)
+		return out, nil
+	})
+	h := &skillRepoHandler{deps: Deps{
+		SkillRepoClient:        fakeClient,
+		YamlEditAppendSchedule: yamlFn,
+		testConnOverride: &resolvedConn{
+			Owner:         owner,
+			Name:          repo,
+			DefaultBranch: "main",
+			InstallID:     12345,
+		},
+	}}
+	w := proposeJobReq(t, http.HandlerFunc(h.proposeJob), proposeJobRequest{
+		SkillPath: "skills/smoke",
+		Schedule:  &config.Schedule{Name: "newjob"},
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("status: got %d, body=%s", w.Code, w.Body.String())
+	}
+	var got proposeJobResponse
+	_ = json.Unmarshal(w.Body.Bytes(), &got)
+	if got.PRURL != "https://github.com/o/r/pull/9" || got.PRNumber != 9 {
+		t.Errorf("response: %+v", got)
+	}
+	if calls.getFile != 1 || calls.createBranch != 1 || calls.putFile != 1 || calls.createPR != 1 {
+		t.Errorf("call counts: %+v", calls)
+	}
+}
