@@ -336,9 +336,21 @@ func buildNotifications(results []publish.Result) []finalizeNotification {
 	}
 	out := make([]finalizeNotification, 0, len(results))
 	for _, pr := range results {
+		// Empty Type/Target would trip the API's required-field
+		// validation. A publisher that didn't supply a target is a
+		// real signal worth recording — surface it as a stable
+		// placeholder rather than dropping the row.
+		kind := clip(pr.Type, notificationKindMax)
+		if kind == "" {
+			kind = "<unknown>"
+		}
+		target := clip(redact.Target(pr.Type, pr.Target), notificationTargetMax)
+		if target == "" {
+			target = "<unknown>"
+		}
 		n := finalizeNotification{
-			Kind:   clip(pr.Type, notificationKindMax),
-			Target: clip(redact.Target(pr.Type, pr.Target), notificationTargetMax),
+			Kind:   kind,
+			Target: target,
 		}
 		switch {
 		case pr.OK && !pr.Skipped:

@@ -53,11 +53,15 @@ func (p *githubIssuePub) Type() string { return "github-issue" }
 func (p *githubIssuePub) Publish(ctx context.Context, dest config.Destination, output string, tctx template.Context, secrets SecretGetter) Result {
 	d := dest.GitHubIssue
 	if d == nil {
-		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("github-issue: config missing")}
+		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("github-issue: config missing"), Target: "<missing-config>"}
 	}
 	owner, repo, ok := splitRepo(d.Repo)
 	if !ok {
-		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("github-issue: repo must be owner/name (got %q)", d.Repo), Target: d.Repo}
+		target := d.Repo
+		if target == "" {
+			target = "<invalid-repo>"
+		}
+		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("github-issue: repo must be owner/name (got %q)", d.Repo), Target: target}
 	}
 
 	token, err := secrets.Get("github_token")

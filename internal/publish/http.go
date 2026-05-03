@@ -29,11 +29,11 @@ func (p *httpPub) Type() string { return "http" }
 func (p *httpPub) Publish(ctx context.Context, dest config.Destination, output string, tctx template.Context, secrets SecretGetter) Result {
 	d := dest.HTTP
 	if d == nil || d.URL == "" {
-		target := ""
-		if d != nil {
-			target = d.URL
-		}
-		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("http: url required"), Target: target}
+		// Target must be non-empty for downstream finalize validation.
+		// When the destination didn't supply a URL there's nothing
+		// useful to record, so emit a stable placeholder. The runner's
+		// redact.Target passes this through unchanged.
+		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("http: url required"), Target: "<missing-url>"}
 	}
 
 	method := d.Method
