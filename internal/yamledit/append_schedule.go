@@ -200,6 +200,13 @@ func canonicalScheduleKeys() []string {
 
 // isEmptyScalar reports whether a yaml.Node represents a zero/empty value
 // that should be omitted from the output.
+//
+// Note on `!!bool false`: this is safe to strip at the schedule level
+// because reorderAndFilter only rewrites the top-level schedule mapping —
+// it does not recurse into sub-mappings like writeback{}. So a nested
+// `enabled: false` inside an explicitly-set Writeback block survives.
+// The schedule itself has no top-level boolean fields today, but the
+// strip rule is defensive against future additions.
 func isEmptyScalar(n *yaml.Node) bool {
 	if n == nil {
 		return true
