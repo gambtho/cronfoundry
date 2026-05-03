@@ -1,4 +1,10 @@
 # Starter smoke skill — adjust cron, destinations, and writeback before going live.
+#
+# `model:` must be one of the model IDs your Copilot plan exposes. Run
+# `gh copilot models` (or check the Copilot docs for your account) to see
+# what's available; pick a fast/cheap one for the smoke run. Older
+# identifiers your plan no longer accepts will get a 400 from
+# /chat/completions.
 version: 1
 skills:
   - path: skills/smoke
@@ -8,7 +14,7 @@ skills:
         timezone: UTC
         provider: copilot-enterprise
         copilot_prefix: copilot
-        model: gpt-4o
+        model: gpt-5-mini
         destinations:
           - github-issue:
               repo: __REPORTS_REPO__
