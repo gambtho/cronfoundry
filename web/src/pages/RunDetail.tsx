@@ -374,7 +374,11 @@ export default function RunDetailPage() {
               <Card>
                 <Card.Header>Notifications sent</Card.Header>
                 <Card.Body>
-                  {(notifsQ.data ?? []).length === 0 ? (
+                  {notifsQ.isLoading ? (
+                    <p className="text-ink-3">Loading…</p>
+                  ) : notifsQ.error ? (
+                    <p className="text-ink-3">Failed to load notifications.</p>
+                  ) : (notifsQ.data ?? []).length === 0 ? (
                     <p className="text-ink-3">No destinations configured for this run.</p>
                   ) : (
                     <ul className="m-0 flex list-none flex-col gap-2 p-0 text-[12px]">

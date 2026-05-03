@@ -14,7 +14,7 @@ import (
 func Target(kind, raw string) string {
 	raw = strings.TrimSpace(raw)
 	switch kind {
-	case "slack", "discord", "teams", "http-json":
+	case "slack", "discord", "teams", "http-json", "http":
 		if strings.HasPrefix(raw, "http://") || strings.HasPrefix(raw, "https://") {
 			if u, err := url.Parse(raw); err == nil && u.Host != "" {
 				return u.Host

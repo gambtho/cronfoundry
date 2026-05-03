@@ -70,6 +70,7 @@ func TestFinalize_PersistsNotifications(t *testing.T) {
 		require.NoError(t, rows.Scan(&r.kind, &r.target, &r.status, &r.reason))
 		got = append(got, r)
 	}
+	require.NoError(t, rows.Err())
 	require.Len(t, got, 2)
 	assert.Equal(t, "slack", got[0].kind)
 	assert.Equal(t, "#alerts", got[0].target)

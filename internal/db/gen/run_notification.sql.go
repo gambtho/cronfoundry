@@ -40,9 +40,14 @@ func (q *Queries) InsertRunNotification(ctx context.Context, arg InsertRunNotifi
 const listRunNotifications = `-- name: ListRunNotifications :many
 SELECT id, run_id, kind, target, status, reason, created_at
 FROM run_notification
-WHERE run_id = $1
+WHERE run_id = $1 AND org_id = $2
 ORDER BY id ASC
 `
+
+type ListRunNotificationsParams struct {
+	RunID pgtype.UUID
+	OrgID pgtype.UUID
+}
 
 type ListRunNotificationsRow struct {
 	ID        int64
@@ -54,8 +59,8 @@ type ListRunNotificationsRow struct {
 	CreatedAt pgtype.Timestamptz
 }
 
-func (q *Queries) ListRunNotifications(ctx context.Context, runID pgtype.UUID) ([]ListRunNotificationsRow, error) {
-	rows, err := q.db.Query(ctx, listRunNotifications, runID)
+func (q *Queries) ListRunNotifications(ctx context.Context, arg ListRunNotificationsParams) ([]ListRunNotificationsRow, error) {
+	rows, err := q.db.Query(ctx, listRunNotifications, arg.RunID, arg.OrgID)
 	if err != nil {
 		return nil, err
 	}

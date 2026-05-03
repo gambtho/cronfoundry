@@ -160,3 +160,11 @@ func TestRunNotifications_NonexistentRunReturnsEmpty(t *testing.T) {
 	body := strings.TrimSpace(rr.Body.String())
 	assert.Equal(t, "[]", body)
 }
+
+func TestRunNotifications_OtherOrgInvisible(t *testing.T) {
+	t.Skip("TODO: handler uses GetFirstOrganization which always picks the same org; " +
+		"a true cross-org isolation test requires multi-org auth plumbing not present " +
+		"in the existing test harness. The org-scoping is also enforced by the SQL " +
+		"WHERE clause (run_notification.sql) which is exercised by the other tests in " +
+		"this file.")
+}

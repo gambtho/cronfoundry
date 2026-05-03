@@ -454,3 +454,18 @@ func TestBuildNotifications_Empty(t *testing.T) {
 	assert.Nil(t, buildNotifications(nil))
 	assert.Nil(t, buildNotifications([]publish.Result{}))
 }
+
+// TestBuildNotifications_TruncatesLongReason guards against finalize 400s by
+// asserting that an oversize error message is clipped to notificationReasonMax
+// bytes and ends with the visible truncation marker.
+func TestBuildNotifications_TruncatesLongReason(t *testing.T) {
+	long := strings.Repeat("x", 3000)
+	results := []publish.Result{
+		{Type: "http", OK: false, Err: errors.New(long), Target: "https://api.example.com/h"},
+	}
+	got := buildNotifications(results)
+	require.Len(t, got, 1)
+	require.NotNil(t, got[0].Reason)
+	assert.LessOrEqual(t, len(*got[0].Reason), notificationReasonMax)
+	assert.True(t, strings.HasSuffix(*got[0].Reason, "…"), "truncated reason must end with …")
+}

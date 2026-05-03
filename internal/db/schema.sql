@@ -148,7 +148,7 @@ CREATE INDEX app_user_org_role_idx ON app_user (org_id, role);
 CREATE TABLE run_notification (
     id          bigserial   PRIMARY KEY,
     run_id      uuid        NOT NULL REFERENCES run(id) ON DELETE CASCADE,
-    org_id      uuid        NOT NULL,
+    org_id      uuid        NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
     kind        text        NOT NULL,
     target      text        NOT NULL,
     status      text        NOT NULL CHECK (status IN ('sent','skipped','failed')),

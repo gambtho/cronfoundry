@@ -2,7 +2,7 @@
 CREATE TABLE run_notification (
     id          bigserial   PRIMARY KEY,
     run_id      uuid        NOT NULL REFERENCES run(id) ON DELETE CASCADE,
-    org_id      uuid        NOT NULL,
+    org_id      uuid        NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
     kind        text        NOT NULL,
     target      text        NOT NULL,
     status      text        NOT NULL CHECK (status IN ('sent','skipped','failed')),

@@ -13,6 +13,7 @@ func TestTarget(t *testing.T) {
 		{"slack", "#alerts", "#alerts"},
 		{"email", "team@example.com", "team@example.com"},
 		{"unknown", "anything", "anything"},
+		{"http", "https://api.example.com/webhook?key=secret", "api.example.com"},
 	}
 	for _, c := range cases {
 		if got := Target(c.kind, c.raw); got != c.want {

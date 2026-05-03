@@ -43,7 +43,15 @@ func (h *runNotificationsHandler) list(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid run id", "bad_request")
 		return
 	}
-	rows, err := h.deps.Queries.ListRunNotifications(r.Context(), pgtype.UUID{Bytes: id, Valid: true})
+	org, err := h.deps.Queries.GetFirstOrganization(r.Context())
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "load org", "internal")
+		return
+	}
+	rows, err := h.deps.Queries.ListRunNotifications(r.Context(), dbgen.ListRunNotificationsParams{
+		RunID: pgtype.UUID{Bytes: id, Valid: true},
+		OrgID: org.ID,
+	})
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "failed to list notifications", "internal")
 		return

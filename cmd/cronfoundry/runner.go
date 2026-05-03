@@ -337,8 +337,8 @@ func buildNotifications(results []publish.Result) []finalizeNotification {
 	out := make([]finalizeNotification, 0, len(results))
 	for _, pr := range results {
 		n := finalizeNotification{
-			Kind:   pr.Type,
-			Target: redact.Target(pr.Type, pr.Target),
+			Kind:   clip(pr.Type, notificationKindMax),
+			Target: clip(redact.Target(pr.Type, pr.Target), notificationTargetMax),
 		}
 		switch {
 		case pr.OK && !pr.Skipped:
@@ -346,19 +346,41 @@ func buildNotifications(results []publish.Result) []finalizeNotification {
 		case pr.OK && pr.Skipped:
 			n.Status = "skipped"
 			if pr.SkipReason != "" {
-				r := pr.SkipReason
+				r := clip(pr.SkipReason, notificationReasonMax)
 				n.Reason = &r
 			}
 		default:
 			n.Status = "failed"
 			if pr.Err != nil {
-				r := pr.Err.Error()
+				r := clip(pr.Err.Error(), notificationReasonMax)
 				n.Reason = &r
 			}
 		}
 		out = append(out, n)
 	}
 	return out
+}
+
+// API limits enforced by the webapi finalize endpoint. Truncating client-side
+// keeps a deeply nested error message from tripping a 400.
+const (
+	notificationTargetMax = 200
+	notificationReasonMax = 2000
+	notificationKindMax   = 200
+)
+
+// clip truncates s to max bytes, appending an ellipsis to make truncation
+// visible. The ellipsis is a 3-byte UTF-8 rune ("…"); we reserve 3 bytes for
+// it so the returned string is at most max bytes when len(s) > max.
+func clip(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	const ell = "…"
+	if max <= len(ell) {
+		return s[:max]
+	}
+	return s[:max-len(ell)] + ell
 }
 
 // redactCloneURL strips the userinfo component (which holds the installation
