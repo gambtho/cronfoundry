@@ -53,6 +53,7 @@ const (
 	envChatProvider      = "CRONFOUNDRY_CHAT_PROVIDER"
 	envChatModel         = "CRONFOUNDRY_CHAT_MODEL"
 	envChatAPIKeySecret  = "CRONFOUNDRY_CHAT_API_KEY_SECRET"
+	envChatCopilotPrefix = "CRONFOUNDRY_CHAT_COPILOT_PREFIX"
 	envChatMaxTurns      = "CRONFOUNDRY_CHAT_MAX_TURNS"
 	envChatMaxTokens     = "CRONFOUNDRY_CHAT_MAX_TOKENS"
 )
@@ -234,22 +235,29 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 	}
 	metrics.Disabled = envBool(envMetricsDisabled)
 
-	// Chat is opt-in. The operator enables it by setting the three core
-	// env vars (provider/model/secret name). When any one is missing we
-	// keep the feature disabled but the rest of the service still comes
-	// up — chat is a help surface, not a critical path.
+	// Chat is opt-in. The operator enables it by setting provider+model
+	// plus the credential pointer appropriate to that provider:
+	// _API_KEY_SECRET for openai/anthropic/azure-foundry/openrouter, or
+	// _COPILOT_PREFIX for copilot-enterprise. When the required vars are
+	// missing we keep the feature disabled but the rest of the service
+	// still comes up — chat is a help surface, not a critical path.
 	chatCfg := webapi.ChatConfig{
-		Provider:     os.Getenv(envChatProvider),
-		Model:        os.Getenv(envChatModel),
-		APIKeySecret: os.Getenv(envChatAPIKeySecret),
-		MaxTurns:     envInt(envChatMaxTurns, 0),
-		MaxTokens:    envInt(envChatMaxTokens, 0),
+		Provider:      os.Getenv(envChatProvider),
+		Model:         os.Getenv(envChatModel),
+		APIKeySecret:  os.Getenv(envChatAPIKeySecret),
+		CopilotPrefix: os.Getenv(envChatCopilotPrefix),
+		MaxTurns:      envInt(envChatMaxTurns, 0),
+		MaxTokens:     envInt(envChatMaxTokens, 0),
 	}
-	if chatCfg.Provider != "" && chatCfg.Model != "" && chatCfg.APIKeySecret != "" {
+	credentialReady := chatCfg.APIKeySecret != ""
+	if chatCfg.Provider == "copilot-enterprise" {
+		credentialReady = chatCfg.CopilotPrefix != ""
+	}
+	if chatCfg.Provider != "" && chatCfg.Model != "" && credentialReady {
 		chatCfg.Enabled = true
 		slog.Info("serve: chat assistant enabled", "provider", chatCfg.Provider, "model", chatCfg.Model)
 	} else {
-		slog.Info("serve: chat assistant disabled (set CRONFOUNDRY_CHAT_PROVIDER/_MODEL/_API_KEY_SECRET to enable)")
+		slog.Info("serve: chat assistant disabled (set CRONFOUNDRY_CHAT_PROVIDER/_MODEL plus _API_KEY_SECRET or _COPILOT_PREFIX to enable)")
 	}
 
 	clock := &scheduler.TickClock{}

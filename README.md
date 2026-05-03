@@ -274,12 +274,18 @@ assistant is read-only — it cannot mutate schedules, secrets, or repos —
 and is opt-in via env vars on the server:
 
 - `CRONFOUNDRY_CHAT_PROVIDER` — `openai` | `anthropic` | `azure-foundry` |
-  `openrouter` (must be a tool-capable provider; `copilot-enterprise` is
-  not supported here).
+  `openrouter` | `copilot-enterprise`.
 - `CRONFOUNDRY_CHAT_MODEL` — provider-specific model id, e.g.
-  `claude-sonnet-4-5` or `gpt-4o`.
-- `CRONFOUNDRY_CHAT_API_KEY_SECRET` — name of a secret in the secret
-  store that holds the API key. Add it via Settings → Secrets first.
+  `claude-sonnet-4-5`, `gpt-4o`, or a Copilot model like `gpt-4o`.
+- One of:
+  - `CRONFOUNDRY_CHAT_API_KEY_SECRET` — name of a secret in the secret
+    store that holds the API key (for openai / anthropic / azure-foundry
+    / openrouter). Add it via Settings → Secrets first.
+  - `CRONFOUNDRY_CHAT_COPILOT_PREFIX` — secret-store prefix for a
+    Copilot Enterprise connection (for `copilot-enterprise`). Connect
+    Copilot once via Settings → Providers; the chat handler reuses the
+    same OAuth-mint path the runner uses, with transparent IDE-token
+    caching, so re-auth is rare.
 - Optional: `CRONFOUNDRY_CHAT_MAX_TURNS` (default 6) and
   `CRONFOUNDRY_CHAT_MAX_TOKENS` (default 2048).
 

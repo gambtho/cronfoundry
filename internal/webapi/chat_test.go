@@ -77,6 +77,34 @@ func TestChatInfo_RequiresSession(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, rr.Code)
 }
 
+func TestChatInfo_EnabledForCopilot(t *testing.T) {
+	key := testKey()
+	mux := http.NewServeMux()
+	webapi.RegisterRoutes(mux, webapi.Deps{
+		MasterKey:         key,
+		OAuthClientID:     "cid",
+		OAuthClientSecret: "csec",
+		AdminLogins:       []string{"alice"},
+		Chat: webapi.ChatConfig{
+			Enabled:       true,
+			Provider:      "copilot-enterprise",
+			Model:         "gpt-4o",
+			CopilotPrefix: "copilot",
+		},
+	})
+
+	req := requestWithSession(t, "alice", "admin")
+	req.URL.Path = "/api/chat/info"
+	rr := httptest.NewRecorder()
+	mux.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	var got map[string]any
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &got))
+	assert.Equal(t, true, got["enabled"])
+	assert.Equal(t, "gpt-4o", got["model"])
+}
+
 func TestChatStream_DisabledReturns503(t *testing.T) {
 	key := testKey()
 	mux := http.NewServeMux()

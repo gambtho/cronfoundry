@@ -22,13 +22,24 @@ type ChatConfig struct {
 	// 503 and the SPA hides the dock. Defaults to false; the operator must
 	// opt in by setting the assistant env vars.
 	Enabled bool
-	// Provider is the llm.NewProvider name ("openai", "anthropic", ...).
+	// Provider is the llm.NewProvider name ("openai", "anthropic",
+	// "copilot-enterprise", ...).
 	Provider string
 	// Model is the provider-specific model id (e.g. "claude-sonnet-4-5").
 	Model string
-	// APIKeySecret is the secret store NAME holding the API key. Resolved
-	// per-request through deps.Secrets so rotations take effect immediately.
+	// APIKeySecret is the secret store NAME holding the API key. Used by
+	// providers that authenticate with a long-lived API key (openai,
+	// anthropic, azure-foundry, openrouter). Ignored when Provider is
+	// "copilot-enterprise" — see CopilotPrefix.
 	APIKeySecret string
+	// CopilotPrefix is the secret-store prefix that holds the Copilot
+	// Enterprise token bundle (e.g. "copilot" maps to
+	// copilot-access-token + cached copilot-ide-token / -ide-expiry).
+	// Used only when Provider == "copilot-enterprise". The operator
+	// connects Copilot once via the OAuth device flow (Settings →
+	// Providers); ResolveCopilotToken handles IDE-token caching on the
+	// way to api.githubcopilot.com.
+	CopilotPrefix string
 	// MaxTurns caps the tool-using loop. 0 ⇒ chat package default.
 	MaxTurns int
 	// MaxTokens caps each turn's output. 0 ⇒ chat package default.
@@ -92,15 +103,17 @@ func (h *chatHandler) stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	apiKey, err := h.deps.Secrets.Get(r.Context(), h.deps.Chat.APIKeySecret)
+	apiKey, err := resolveChatCredentials(r.Context(), h.deps)
 	if err != nil {
-		if errors.Is(err, server.ErrNotFound) {
-			writeErr(w, http.StatusServiceUnavailable,
-				fmt.Sprintf("chat api key secret %q is not set", h.deps.Chat.APIKeySecret),
-				"chat_disabled")
+		// resolveChatCredentials maps known failure modes to a structured
+		// error so we can surface re-auth (Copilot OAuth revoked) distinctly
+		// from a missing secret or a transient mint outage.
+		var ce credentialErr
+		if errors.As(err, &ce) {
+			writeErr(w, ce.status, ce.msg, ce.code)
 			return
 		}
-		slog.Error("chat: secret fetch failed", "err", err)
+		slog.Error("chat: credential fetch failed", "err", err)
 		writeErr(w, http.StatusInternalServerError, "failed to load chat credentials", "internal")
 		return
 	}
@@ -141,6 +154,74 @@ func (h *chatHandler) stream(w http.ResponseWriter, r *http.Request) {
 		"input_tokens":  usage.InputTokens,
 		"output_tokens": usage.OutputTokens,
 	})
+}
+
+// credentialErr is returned by resolveChatCredentials when the operator
+// needs to take a specific action (re-auth, configure a missing secret).
+// Mapping it to writeErr at one place keeps the handler readable and the
+// failure-mode → HTTP-code mapping consistent.
+type credentialErr struct {
+	status int
+	code   string
+	msg    string
+}
+
+func (e credentialErr) Error() string { return e.msg }
+
+// resolveChatCredentials returns a usable bearer token for the configured
+// chat provider. For long-lived-API-key providers (openai, anthropic,
+// azure-foundry, openrouter) it reads APIKeySecret from the secret store.
+// For copilot-enterprise it resolves the short-lived IDE token via the same
+// OAuth-mint path the runner uses. Both paths return tokens with no
+// per-request user identity attached — chat is a single-tenant assistant,
+// not a per-user proxy to GitHub Copilot.
+func resolveChatCredentials(ctx context.Context, deps Deps) (string, error) {
+	if deps.Chat.Provider == "copilot-enterprise" {
+		if deps.Chat.CopilotPrefix == "" {
+			return "", credentialErr{
+				status: http.StatusServiceUnavailable,
+				code:   "chat_disabled",
+				msg:    "chat copilot prefix is not configured (set CRONFOUNDRY_CHAT_COPILOT_PREFIX)",
+			}
+		}
+		token, _, err := ResolveCopilotToken(ctx, deps.Secrets, deps.Chat.CopilotPrefix, nil)
+		if err != nil {
+			if errors.Is(err, ErrCopilotReauthRequired) {
+				return "", credentialErr{
+					status: http.StatusUnauthorized,
+					code:   "copilot_token_reauth",
+					msg:    "copilot oauth token revoked or missing; reconnect from Settings → Providers",
+				}
+			}
+			slog.Error("chat: copilot token resolve failed", "err", err)
+			return "", credentialErr{
+				status: http.StatusServiceUnavailable,
+				code:   "copilot_token_mint",
+				msg:    "copilot token mint failed",
+			}
+		}
+		return token, nil
+	}
+
+	if deps.Chat.APIKeySecret == "" {
+		return "", credentialErr{
+			status: http.StatusServiceUnavailable,
+			code:   "chat_disabled",
+			msg:    "chat api key secret is not configured",
+		}
+	}
+	apiKey, err := deps.Secrets.Get(ctx, deps.Chat.APIKeySecret)
+	if err != nil {
+		if errors.Is(err, server.ErrNotFound) {
+			return "", credentialErr{
+				status: http.StatusServiceUnavailable,
+				code:   "chat_disabled",
+				msg:    fmt.Sprintf("chat api key secret %q is not set", deps.Chat.APIKeySecret),
+			}
+		}
+		return "", err
+	}
+	return apiKey, nil
 }
 
 // sanitizePageContext bounds the size of the operator-supplied context so
@@ -208,8 +289,3 @@ func (h *chatHandler) info(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, o)
 }
-
-// chatStreamingClient is unused in production — kept here as a doc anchor
-// for the SSE wire format. The browser EventSource API uses GET only, so
-// the dock uses fetch + ReadableStream against POST /api/chat/stream.
-var _ = context.Background
