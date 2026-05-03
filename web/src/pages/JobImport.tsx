@@ -75,7 +75,13 @@ export default function JobImport() {
 
   return (
     <>
-      <Topbar />
+      <Topbar>
+        <Topbar.Crumbs>
+          <Topbar.Crumb href="/jobs">Jobs</Topbar.Crumb>
+          <Topbar.Sep />
+          <Topbar.Here>import</Topbar.Here>
+        </Topbar.Crumbs>
+      </Topbar>
       <div className="w-full max-w-[820px] px-6 pb-16 pt-7">
         <PageHeader
           title="+ Import job"

@@ -25,7 +25,9 @@ vi.mock('../lib/api', () => ({
 }))
 const { api } = await import('../lib/api')
 
-beforeEach(() => vi.clearAllMocks())
+beforeEach(() => {
+  vi.clearAllMocks()
+})
 
 function renderImport() {
   return render(
