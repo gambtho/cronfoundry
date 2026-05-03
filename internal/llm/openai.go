@@ -3,6 +3,7 @@ package llm
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	"github.com/openai/openai-go"
@@ -19,6 +20,26 @@ type openAIProvider struct {
 // When baseURL is empty, the SDK's default (api.openai.com) is used.
 func NewOpenAI(baseURL string) Provider {
 	return &openAIProvider{baseURL: baseURL}
+}
+
+// chatErr unwraps a streaming error so the response body is visible in logs.
+// The openai-go SDK's *openai.Error.Error() includes JSON.raw, but only when
+// the response body is parseable JSON; non-JSON 400s (which Copilot tends to
+// return for bad models or missing headers) lose the body in the wrapping.
+// Pull StatusCode + RawJSON explicitly so 'POST .../chat/completions: 400
+// Bad Request' becomes 'POST .../chat/completions: 400 Bad Request: model
+// "gpt-4o" is not supported'.
+func chatErr(prefix string, err error) error {
+	var apiErr *openai.Error
+	if errors.As(err, &apiErr) {
+		body := apiErr.RawJSON()
+		if body == "" && apiErr.Response != nil {
+			body = "(empty body)"
+		}
+		return fmt.Errorf("%s: status=%d body=%s: %w",
+			prefix, apiErr.StatusCode, body, err)
+	}
+	return fmt.Errorf("%s: %w", prefix, err)
 }
 
 func (p *openAIProvider) newClient(apiKey string) *openai.Client {
@@ -73,7 +94,7 @@ func (p *openAIProvider) Chat(ctx context.Context, messages []Message, opts Call
 		}
 	}
 	if err := stream.Err(); err != nil {
-		return usage, fmt.Errorf("openai chat: %w", err)
+		return usage, chatErr("openai chat", err)
 	}
 	return usage, nil
 }
@@ -192,7 +213,7 @@ func (p *openAIProvider) ChatTurn(
 		}
 	}
 	if err := stream.Err(); err != nil {
-		return result, fmt.Errorf("openai chat_turn: %w", err)
+		return result, chatErr("openai chat_turn", err)
 	}
 
 	for i := int64(0); ; i++ {

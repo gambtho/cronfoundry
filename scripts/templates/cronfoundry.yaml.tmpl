@@ -1,4 +1,10 @@
 # Starter smoke skill — adjust cron, destinations, and writeback before going live.
+#
+# `model: gpt-5-mini` — fast and cheap, included on every Copilot
+# Enterprise plan we've seen. Swap to anything `gh copilot` lists for
+# your account (e.g. claude-haiku-4.5, gpt-5.2, claude-sonnet-4.6).
+# Older identifiers like `gpt-4o` are not accepted on current Copilot
+# plans and will get a 400 from /chat/completions.
 version: 1
 skills:
   - path: skills/smoke
@@ -8,7 +14,7 @@ skills:
         timezone: UTC
         provider: copilot-enterprise
         copilot_prefix: copilot
-        model: gpt-4o
+        model: gpt-5-mini
         destinations:
           - github-issue:
               repo: __REPORTS_REPO__
