@@ -115,11 +115,22 @@ integration; pass real `subnetId`/`privateDnsZoneId` to
 
 ## Upgrading the image
 
+The serve container, the runner Container App Job, **and** the
+`AZURE_CAE_JOB_IMAGE` env var on the serve container all need to advance
+together — `AZURE_CAE_JOB_IMAGE` is what the dispatcher uses when it
+spawns runner executions, and a stale value silently runs old code on
+new dispatches.
+
 ```bash
-az containerapp update --resource-group rg-cronfoundry-<env> --name cf-serve-<env> \
-  --image ghcr.io/gambtho/cronfoundry:0.X.Y
-az containerapp job update --resource-group rg-cronfoundry-<env> --name cf-runner-<env> \
-  --image ghcr.io/gambtho/cronfoundry:0.X.Y
+TAG=0.X.Y
+RG=rg-cronfoundry-<env>
+ENV=<env>
+
+az containerapp update --resource-group "$RG" --name "cf-serve-$ENV" \
+  --image "ghcr.io/gambtho/cronfoundry:$TAG" \
+  --set-env-vars "AZURE_CAE_JOB_IMAGE=ghcr.io/gambtho/cronfoundry:$TAG"
+az containerapp job update --resource-group "$RG" --name "cf-runner-$ENV" \
+  --image "ghcr.io/gambtho/cronfoundry:$TAG"
 ```
 
 ## Teardown
