@@ -407,17 +407,18 @@ func (h *runNotificationsHandler) list(w http.ResponseWriter, r *http.Request) {
         writeErr(w, http.StatusBadRequest, "invalid run id", "bad_request"); return
     }
 
-    // Org-scope: verify run belongs to caller's org. Use the same helper
-    // events.go uses (look for the run-fetch + org-check pattern there).
-    runRow, err := h.deps.Queries.GetRun(r.Context(), pgtype.UUID{Bytes: id, Valid: true})
+    // Org-scope: ListRunNotifications enforces org_id at the DB
+    // boundary (WHERE run_id = $1 AND org_id = $2). Look up the
+    // caller's org and pass both IDs.
+    org, err := h.deps.Queries.GetFirstOrganization(r.Context())
     if err != nil {
-        writeErr(w, http.StatusNotFound, "run not found", "not_found"); return
-    }
-    if !sameOrg(r, runRow.OrgID) {  // use the existing org-comparison helper; rename if different
-        writeErr(w, http.StatusNotFound, "run not found", "not_found"); return
+        writeErr(w, http.StatusInternalServerError, "load org", "internal"); return
     }
 
-    rows, err := h.deps.Queries.ListRunNotifications(r.Context(), pgtype.UUID{Bytes: id, Valid: true})
+    rows, err := h.deps.Queries.ListRunNotifications(r.Context(), dbgen.ListRunNotificationsParams{
+        RunID: pgtype.UUID{Bytes: id, Valid: true},
+        OrgID: org.ID,
+    })
     if err != nil {
         writeErr(w, http.StatusInternalServerError, "list notifications", "internal"); return
     }
@@ -433,7 +434,7 @@ func (h *runNotificationsHandler) list(w http.ResponseWriter, r *http.Request) {
 }
 ```
 
-(If `sameOrg` / `GetRun` helpers don't exist verbatim, look at how `events.go` enforces org scope and copy that exact pattern. Don't invent new helpers.)
+(`GetFirstOrganization` is the same helper `runs.list` and `audit.list` use — single-org deployment pattern. Don't invent new helpers.)
 
 - [ ] **Step 2: Register the route**
 
@@ -493,57 +494,122 @@ type finalizeRequest struct {
 }
 ```
 
-- [ ] **Step 2: Build the notifications slice from `result.PublishResults`**
+- [ ] **Step 2: Prerequisite — extend `publish.Result` with `Target`**
 
-Right before `if err := client.PostFinalize(...)`:
+This is a separate, mechanical change in `internal/publish/`. Do it
+*before* the runner snippet below; the runner reads `pr.Target` and
+won't compile otherwise.
+
+In `internal/publish/publisher.go` (or wherever `Result` is defined),
+add the field:
+
+```go
+type Result struct {
+    Type       string
+    OK         bool
+    Skipped    bool
+    SkipReason string
+    Err        error
+    Detail     string
+    // Target is the raw destination identifier the publisher was
+    // asked to deliver to (channel, webhook URL, repo path, email
+    // address). It may contain secret material — callers MUST redact
+    // via redact.Target before persisting or logging.
+    Target     string
+}
+```
+
+Then update *every* publisher to set `Target` on every `Result{...}`
+literal where a destination is known:
+
+| File | Target value |
+| --- | --- |
+| `internal/publish/slack.go` | resolved webhook URL on success; `"<missing-secret>"` placeholder when secret resolution fails (Target must never be empty — finalize rejects empty strings) |
+| `internal/publish/discord.go` | same shape as slack |
+| `internal/publish/teams.go` | same shape as slack |
+| `internal/publish/http.go` | `d.URL` on success; `"<missing-url>"` when `d == nil \|\| d.URL == ""` |
+| `internal/publish/httpjson.go` | the resolved URL (handled in `postJSON`) |
+| `internal/publish/githubissue.go` | `d.Repo` on success; `"<missing-config>"` when `d == nil`; `"<invalid-repo>"` when `splitRepo` fails |
+| `internal/publish/email.go` | `strings.Join(d.To, ", ")`; `"<missing-config>"` when `d == nil` |
+| `internal/publish/dispatcher.go` | synthesized "skipped" / "no publisher" results may leave Target empty — the runner backstops with `<unknown>` |
+
+Existing `internal/publish/...` tests should continue to pass — they
+ignore the new field.
+
+- [ ] **Step 3: Build the notifications slice from `result.PublishResults`**
+
+In `cmd/cronfoundry/runner.go`, add the clip helper and constants near
+the top of the file:
+
+```go
+const (
+    notificationKindMax   = 200
+    notificationTargetMax = 200
+    notificationReasonMax = 2000
+)
+
+// clip truncates s to max bytes, appending "…" when truncated so the
+// truncation is visible in the persisted record.
+func clip(s string, max int) string {
+    const ellipsis = "…"
+    if len(s) <= max {
+        return s
+    }
+    return s[:max-len(ellipsis)] + ellipsis
+}
+```
+
+Then, immediately before `if err := client.PostFinalize(...)`:
 
 ```go
 for _, pr := range result.PublishResults {
-    n := finalizeNotification{
-        Kind:   pr.Type,
-        Target: redact.Target(pr.Type, pr.Target),
+    // Empty Type/Target trips the API's required-field validation;
+    // surface as a stable placeholder rather than dropping the row.
+    kind := clip(pr.Type, notificationKindMax)
+    if kind == "" {
+        kind = "<unknown>"
     }
+    target := clip(redact.Target(pr.Type, pr.Target), notificationTargetMax)
+    if target == "" {
+        target = "<unknown>"
+    }
+    n := finalizeNotification{Kind: kind, Target: target}
+
     switch {
     case pr.OK && !pr.Skipped:
         n.Status = "sent"
     case pr.OK && pr.Skipped:
         n.Status = "skipped"
-        if pr.SkipReason != "" { n.Reason = &pr.SkipReason }
+        if pr.SkipReason != "" {
+            r := clip(pr.SkipReason, notificationReasonMax)
+            n.Reason = &r
+        }
     default:
         n.Status = "failed"
         if pr.Err != nil {
-            msg := pr.Err.Error()
-            n.Reason = &msg
+            r := clip(pr.Err.Error(), notificationReasonMax)
+            n.Reason = &r
         }
     }
     body.Notifications = append(body.Notifications, n)
 }
 ```
 
-`pr.Target` carries the raw destination identifier (channel name,
-webhook URL, repo path) the publisher worked with. `publish.Result`
-does not currently expose this — extend `publish.Result` with a
-`Target string` field, set by every publisher
-(`internal/publish/slack.go`, `discord.go`, `teams.go`,
-`github_issue.go`, `http.go`, `httpjson.go`, `email.go`) on every
-`Result{...}` literal where a destination is known. Read `pr.Target`
-here. The runner's `redact.Target(pr.Type, pr.Target)` produces the
-human-readable, secret-free identifier persisted on the wire.
+The clipping ensures a pathological `pr.Err.Error()` never produces a
+400 back from finalize. The runner's `redact.Target(pr.Type, pr.Target)`
+collapses webhook URLs to host before transmission so secret-bearing
+URLs never reach the wire.
 
-In addition, clip `Kind`/`Target`/`Reason` to the API limits
-(200/200/2000 chars) before sending — a pathological `pr.Err.Error()`
-should never produce a 400 back from finalize.
+- [ ] **Step 4: Tests**
 
-- [ ] **Step 3: Tests**
+Add to `runner_test.go`: a test that intercepts the POST to `/internal/runs/.../finalize` and asserts the JSON body includes the expected `notifications` array given a stubbed `PublishResults`. The file already has the `mux.HandleFunc("/internal/runs/run-1/finalize", ...)` pattern (see line 202 area) — extend that case to capture and verify the body. Add a separate unit test on `buildNotifications` that pumps a 3000-char `pr.Err` and asserts the produced `*Reason` is ≤ `notificationReasonMax` and ends with `…`.
 
-Add to `runner_test.go`: a test that intercepts the POST to `/internal/runs/.../finalize` and asserts the JSON body includes the expected `notifications` array given a stubbed `PublishResults`. The file already has the `mux.HandleFunc("/internal/runs/run-1/finalize", ...)` pattern (see line 202 area) — extend that case to capture and verify the body.
-
-- [ ] **Step 4: Run tests**
+- [ ] **Step 5: Run tests**
 
 Run: `go test ./cmd/cronfoundry/...`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add cmd/cronfoundry/runner.go cmd/cronfoundry/runner_test.go internal/publish/
