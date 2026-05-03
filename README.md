@@ -266,6 +266,27 @@ CI runs the same target on every PR and on pushes to `main`.
 - `GET /metrics` — Prometheus text-format scrape endpoint (see
   [`docs/guides/observability.md`](docs/guides/observability.md))
 
+### In-app assistant (chat)
+
+The operator UI ships a floating chat dock that helps users understand the
+app, troubleshoot failed runs, and draft `cronfoundry.yaml` snippets. The
+assistant is read-only — it cannot mutate schedules, secrets, or repos —
+and is opt-in via env vars on the server:
+
+- `CRONFOUNDRY_CHAT_PROVIDER` — `openai` | `anthropic` | `azure-foundry` |
+  `openrouter` (must be a tool-capable provider; `copilot-enterprise` is
+  not supported here).
+- `CRONFOUNDRY_CHAT_MODEL` — provider-specific model id, e.g.
+  `claude-sonnet-4-5` or `gpt-4o`.
+- `CRONFOUNDRY_CHAT_API_KEY_SECRET` — name of a secret in the secret
+  store that holds the API key. Add it via Settings → Secrets first.
+- Optional: `CRONFOUNDRY_CHAT_MAX_TURNS` (default 6) and
+  `CRONFOUNDRY_CHAT_MAX_TOKENS` (default 2048).
+
+When all three core vars are set the dock appears in the bottom-right
+corner of every page; otherwise the SPA hides it. The wire endpoints are
+`GET /api/chat/info` and `POST /api/chat/stream` (SSE).
+
 ### CSRF & origin allowlist
 
 Set `CRONFOUNDRY_PUBLIC_BASE_URL` to the externally-reachable URL of the

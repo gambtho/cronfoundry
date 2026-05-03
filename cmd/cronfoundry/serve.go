@@ -22,10 +22,10 @@ import (
 	"github.com/gambtho/cronfoundry/internal/api"
 	"github.com/gambtho/cronfoundry/internal/cloud"
 	cloudazure "github.com/gambtho/cronfoundry/internal/cloud/azure"
-	"github.com/gambtho/cronfoundry/internal/jobdispatch/flymachines"
-	"github.com/gambtho/cronfoundry/internal/jobdispatch/k8sjobs"
 	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
 	"github.com/gambtho/cronfoundry/internal/github"
+	"github.com/gambtho/cronfoundry/internal/jobdispatch/flymachines"
+	"github.com/gambtho/cronfoundry/internal/jobdispatch/k8sjobs"
 	"github.com/gambtho/cronfoundry/internal/metrics"
 	"github.com/gambtho/cronfoundry/internal/scheduler"
 	"github.com/gambtho/cronfoundry/internal/secrets/server"
@@ -50,6 +50,11 @@ const (
 	envRateDisabled      = "CRONFOUNDRY_RATE_DISABLED"
 	envPublicBaseURL     = "CRONFOUNDRY_PUBLIC_BASE_URL"
 	envMetricsDisabled   = "CRONFOUNDRY_METRICS_DISABLED"
+	envChatProvider      = "CRONFOUNDRY_CHAT_PROVIDER"
+	envChatModel         = "CRONFOUNDRY_CHAT_MODEL"
+	envChatAPIKeySecret  = "CRONFOUNDRY_CHAT_API_KEY_SECRET"
+	envChatMaxTurns      = "CRONFOUNDRY_CHAT_MAX_TURNS"
+	envChatMaxTokens     = "CRONFOUNDRY_CHAT_MAX_TOKENS"
 )
 
 func newServeCmd() *cobra.Command {
@@ -228,6 +233,25 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 		slog.Warn("CRONFOUNDRY_PUBLIC_BASE_URL not set; CSRF Origin check disabled (dev mode)")
 	}
 	metrics.Disabled = envBool(envMetricsDisabled)
+
+	// Chat is opt-in. The operator enables it by setting the three core
+	// env vars (provider/model/secret name). When any one is missing we
+	// keep the feature disabled but the rest of the service still comes
+	// up — chat is a help surface, not a critical path.
+	chatCfg := webapi.ChatConfig{
+		Provider:     os.Getenv(envChatProvider),
+		Model:        os.Getenv(envChatModel),
+		APIKeySecret: os.Getenv(envChatAPIKeySecret),
+		MaxTurns:     envInt(envChatMaxTurns, 0),
+		MaxTokens:    envInt(envChatMaxTokens, 0),
+	}
+	if chatCfg.Provider != "" && chatCfg.Model != "" && chatCfg.APIKeySecret != "" {
+		chatCfg.Enabled = true
+		slog.Info("serve: chat assistant enabled", "provider", chatCfg.Provider, "model", chatCfg.Model)
+	} else {
+		slog.Info("serve: chat assistant disabled (set CRONFOUNDRY_CHAT_PROVIDER/_MODEL/_API_KEY_SECRET to enable)")
+	}
+
 	clock := &scheduler.TickClock{}
 	webapi.RegisterRoutes(mux, webapi.Deps{
 		MasterKey:         master,
@@ -244,6 +268,7 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 		RateLimit:         rateCfg,
 		Clock:             clock,
 		SweepInterval:     cadence,
+		Chat:              chatCfg,
 	})
 	srv := &http.Server{
 		Addr:              addr,

@@ -50,6 +50,9 @@ type Deps struct {
 	// SweepInterval is the configured cadence between scheduler ticks.
 	// Used to classify scheduler health: <2x healthy, <5x degraded, else down.
 	SweepInterval time.Duration
+	// Chat configures the in-app assistant. Disabled by default; the
+	// operator opts in by setting the assistant env vars.
+	Chat ChatConfig
 }
 
 // resolveRole returns ("admin"|"viewer", nil) for allowed logins, ("", nil)
@@ -155,6 +158,15 @@ func RegisterRoutes(mux *http.ServeMux, deps Deps) {
 	mux.Handle("POST /api/users", adminOnly(http.HandlerFunc(uh.create)))
 	mux.Handle("PATCH /api/users/{login}", adminOnly(http.HandlerFunc(uh.updateRole)))
 	mux.Handle("DELETE /api/users/{login}", adminOnly(http.HandlerFunc(uh.delete)))
+
+	// Chat assistant (in-app help). info is a GET so the SPA can decide
+	// whether to render the dock; stream is a POST that the dock uses with
+	// fetch + ReadableStream. Both go through SSE rate limiting because
+	// the stream may be long-lived and we don't want a single tab to pin
+	// multiple model calls.
+	ch := &chatHandler{deps: deps}
+	mux.Handle("GET /api/chat/info", session(http.HandlerFunc(ch.info)))
+	mux.Handle("POST /api/chat/stream", csrfMW(rl.SSE(RequireSession(deps.MasterKey, http.HandlerFunc(ch.stream)))))
 
 	// Webhooks (unauthenticated; HMAC-verified)
 	wh := &webhookHandler{deps: deps, secret: deps.WebhookSecret, syncer: deps.Syncer}
