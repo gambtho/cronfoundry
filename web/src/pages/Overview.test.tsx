@@ -17,6 +17,12 @@ vi.mock('../lib/api', () => ({
       list: vi.fn(),
       get: vi.fn(),
     },
+    system: {
+      health: vi.fn(),
+    },
+    alerts: {
+      list: vi.fn(),
+    },
     me: vi.fn(),
   },
 }))
@@ -24,6 +30,19 @@ vi.mock('../lib/api', () => ({
 import { api } from '../lib/api'
 
 afterEach(cleanup)
+
+const defaultHealth = {
+  scheduler: { status: 'healthy' as const, last_tick_at: null },
+  queue_depth: 0,
+  workers: 1,
+  last_sync_at: null,
+}
+const defaultAlerts = {
+  quiet_jobs: [],
+  recently_paused: [],
+  expiring_secrets: [] as never[],
+  drift: [] as never[],
+}
 
 const sched = (over: Partial<Schedule> = {}): Schedule => ({
   id: 's1',
@@ -92,6 +111,8 @@ describe('Overview page', () => {
       sched({ id: 's1', name: 'broken-job' }),
     ])
     vi.mocked(api.runs.list).mockResolvedValue([run('broken-job', 'failed')])
+    vi.mocked(api.system.health).mockResolvedValue(defaultHealth)
+    vi.mocked(api.alerts.list).mockResolvedValue(defaultAlerts)
 
     const { findByText } = render(withProviders(<Overview />))
 
@@ -105,6 +126,8 @@ describe('Overview page', () => {
       sched({ id: 's1', name: 'happy-job' }),
     ])
     vi.mocked(api.runs.list).mockResolvedValue([run('happy-job', 'succeeded')])
+    vi.mocked(api.system.health).mockResolvedValue(defaultHealth)
+    vi.mocked(api.alerts.list).mockResolvedValue(defaultAlerts)
 
     const { findByText, queryByText } = render(withProviders(<Overview />))
 
