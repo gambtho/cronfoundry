@@ -1,4 +1,5 @@
 // web/src/lib/api.ts
+import { ApiError } from './api-error'
 import type {
   RepoConnection, Skill, Schedule, RunSummary, RunDetail, RunEvent, RunNotification, SecretMeta, Me, AuditEntry, UserDTO,
   SystemHealth, Alerts
@@ -33,8 +34,13 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     }
   }
   if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: res.statusText }))
-    throw new Error((body as { error?: string }).error ?? res.statusText)
+    const body = await res.json().catch(() => ({}))
+    const message = (body as { error?: string }).error ?? res.statusText
+    const code = (body as { code?: string }).code ?? 'unknown'
+    const extras: Record<string, unknown> = { ...body }
+    delete extras.error
+    delete extras.code
+    throw new ApiError(message, res.status, code, extras)
   }
   if (res.status === 204) return undefined as T
   return res.json()
