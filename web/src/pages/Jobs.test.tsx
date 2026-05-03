@@ -206,4 +206,23 @@ describe('Jobs page nav buttons', () => {
     fireEvent.keyDown(window, { key: 'n' })
     expect(await screen.findByTestId('new-page')).toBeInTheDocument()
   })
+
+  it('Run-now navigates to /runs/<id> on success', async () => {
+    vi.mocked(api.schedules.runNow as any).mockResolvedValue({ run_id: 'run-xyz' })
+    vi.mocked(api.schedules.list).mockResolvedValue([sched()])
+    vi.mocked(api.runs.list).mockResolvedValue([])
+    render(
+      <MemoryRouter initialEntries={['/jobs']}>
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })}>
+          <Routes>
+            <Route path="/jobs" element={<Jobs />} />
+            <Route path="/runs/:id" element={<div data-testid="run-page" />} />
+          </Routes>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    )
+    const btn = await screen.findByLabelText(/run nightly-backup now/i)
+    fireEvent.click(btn)
+    expect(await screen.findByTestId('run-page')).toBeInTheDocument()
+  })
 })

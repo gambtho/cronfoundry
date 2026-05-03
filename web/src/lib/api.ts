@@ -68,7 +68,7 @@ export const api = {
     list: () => apiFetch<Schedule[]>('/api/schedules'),
     pause: (id: string) => apiFetch<Schedule>(`/api/schedules/${id}/pause`, { method: 'POST' }),
     resume: (id: string) => apiFetch<Schedule>(`/api/schedules/${id}/resume`, { method: 'POST' }),
-    runNow: (id: string) => apiFetch<void>(`/api/schedules/${id}/run-now`, { method: 'POST' }),
+    runNow: (id: string) => apiFetch<{ run_id: string }>(`/api/schedules/${id}/run-now`, { method: 'POST' }),
     patchOverrides: (id: string, overrides: { cron?: string; timezone?: string; timeout_sec?: number; enabled?: boolean }) =>
       apiFetch<void>(`/api/schedules/${id}/overrides`, {
         method: 'PATCH',

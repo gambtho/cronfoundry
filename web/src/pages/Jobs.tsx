@@ -55,7 +55,10 @@ export default function Jobs() {
 
   const runNow = useMutation({
     mutationFn: api.schedules.runNow,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['runs'] }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['runs'] })
+      navigate(`/runs/${data.run_id}`)
+    },
   })
   const resume = useMutation({
     mutationFn: api.schedules.resume,
