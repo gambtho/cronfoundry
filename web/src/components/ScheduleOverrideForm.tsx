@@ -2,24 +2,46 @@ import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import type { Schedule } from '../lib/types'
+import { Button, Input, Modal } from './ui'
 
 interface Props {
   schedule: Schedule
   onClose: () => void
 }
 
+/**
+ * ScheduleOverrideForm — edit cron/timezone/timeout for a single
+ * schedule. YAML in the repo remains the source of truth; overrides
+ * are stored separately and "Reset to YAML" wipes them.
+ *
+ * Backdrop-click is allowed to dismiss because the form is small,
+ * keystrokes are cheap to retype, and operators frequently misclick
+ * out of edit modes — letting them is kinder than locking them in.
+ */
 export function ScheduleOverrideForm({ schedule, onClose }: Props) {
   const qc = useQueryClient()
   const [cron, setCron] = useState(schedule.cron)
   const [timezone, setTimezone] = useState(schedule.timezone)
-  const [timeoutSec, setTimeoutSec] = useState(schedule.timeout_sec)
+  // undefined when the field is empty/invalid so we can omit it from
+  // the payload entirely rather than send 0/NaN.
+  const [timeoutSec, setTimeoutSec] = useState<number | undefined>(
+    schedule.timeout_sec,
+  )
 
   const save = useMutation({
-    mutationFn: () => api.schedules.patchOverrides(schedule.id, {
-      cron,
-      timezone,
-      timeout_sec: timeoutSec,
-    }),
+    mutationFn: () => {
+      const overrides: {
+        cron: string
+        timezone: string
+        timeout_sec?: number
+      } = { cron, timezone }
+      // Only include timeout_sec when it's a positive finite number;
+      // anything else is treated as "don't touch this field".
+      if (typeof timeoutSec === 'number' && Number.isFinite(timeoutSec) && timeoutSec > 0) {
+        overrides.timeout_sec = timeoutSec
+      }
+      return api.schedules.patchOverrides(schedule.id, overrides)
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['schedules'] })
       onClose()
@@ -35,64 +57,68 @@ export function ScheduleOverrideForm({ schedule, onClose }: Props) {
   })
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-gray-900 border border-gray-700 rounded-lg p-6 w-full max-w-md space-y-4">
-        <h2 className="text-lg font-semibold text-white">Edit Schedule — {schedule.name}</h2>
-        <p className="text-xs text-gray-400">YAML remains the source of truth. These overrides apply on top.</p>
-
-        <div className="space-y-3">
-          <div>
-            <label className="block text-xs text-gray-400 mb-1">Cron expression</label>
-            <input
-              className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm text-white font-mono"
-              value={cron}
-              onChange={e => setCron(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-400 mb-1">Timezone</label>
-            <input
-              className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm text-white"
-              value={timezone}
-              onChange={e => setTimezone(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-400 mb-1">Timeout (seconds)</label>
-            <input
-              type="number"
-              className="w-full bg-gray-800 border border-gray-600 rounded px-3 py-2 text-sm text-white"
-              value={timeoutSec}
-              onChange={e => setTimeoutSec(Number(e.target.value))}
-            />
-          </div>
-        </div>
-
-        <div className="flex gap-2 pt-2">
-          <button
-            onClick={() => save.mutate()}
-            disabled={save.isPending}
-            className="flex-1 bg-indigo-700 hover:bg-indigo-600 text-white text-sm py-2 rounded disabled:opacity-50"
+    <Modal title={`Edit schedule · ${schedule.name}`} onClose={onClose}>
+      <Modal.Body>
+        <p className="m-0 font-mono text-[11px] text-ink-3">
+          YAML in the repo is the source of truth. Overrides apply on top.
+        </p>
+        <Input
+          label="Cron expression"
+          variant="mono"
+          value={cron}
+          onChange={(e) => setCron(e.target.value)}
+        />
+        <Input
+          label="Timezone"
+          variant="mono"
+          value={timezone}
+          onChange={(e) => setTimezone(e.target.value)}
+        />
+        <Input
+          label="Timeout (seconds)"
+          type="number"
+          variant="mono"
+          min={1}
+          value={timeoutSec ?? ''}
+          onChange={(e) => {
+            // Empty string clears the override. parseInt rejects bare
+            // letters; we further check finite + > 0 so 0/-1/NaN can't
+            // sneak through into the payload.
+            const raw = e.target.value
+            if (raw === '') {
+              setTimeoutSec(undefined)
+              return
+            }
+            const n = parseInt(raw, 10)
+            setTimeoutSec(Number.isFinite(n) && n > 0 ? n : undefined)
+          }}
+        />
+      </Modal.Body>
+      <Modal.Actions>
+        {schedule.has_ui_overrides && (
+          <Button
+            variant="ghost"
+            onClick={() => clear.mutate()}
+            disabled={clear.isPending}
+            // Push the destructive-ish "reset" affordance to the left
+            // so the primary save action stays in the rightmost slot
+            // where users expect it.
+            className="mr-auto"
           >
-            Save overrides
-          </button>
-          {schedule.has_ui_overrides && (
-            <button
-              onClick={() => clear.mutate()}
-              disabled={clear.isPending}
-              className="px-3 py-2 text-xs border border-gray-600 text-gray-300 hover:bg-gray-800 rounded disabled:opacity-50"
-            >
-              Reset to YAML
-            </button>
-          )}
-          <button
-            onClick={onClose}
-            className="px-3 py-2 text-xs border border-gray-600 text-gray-300 hover:bg-gray-800 rounded"
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
+            Reset to YAML
+          </Button>
+        )}
+        <Button variant="ghost" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          variant="primary"
+          onClick={() => save.mutate()}
+          disabled={save.isPending}
+        >
+          Save overrides
+        </Button>
+      </Modal.Actions>
+    </Modal>
   )
 }

@@ -26,6 +26,9 @@ const VARIANT: Record<Variant, string> = {
     'border-transparent bg-transparent text-ink-2 hover:bg-bg-3 hover:text-ink',
 }
 
+const BUTTON_BASE_CLASSES =
+  'inline-flex items-center justify-center gap-2 rounded border px-3.5 py-1.5 font-mono text-[11.5px] transition-colors disabled:cursor-not-allowed disabled:opacity-50'
+
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ variant = 'default', shortcut, children, className, type, ...rest }, ref) => {
     return (
@@ -35,13 +38,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         // doesn't accidentally submit. Callers can still override
         // (e.g. type="submit" on a real submit affordance).
         type={type ?? 'button'}
-        className={cn(
-          'inline-flex items-center justify-center gap-2 rounded border px-3.5 py-1.5',
-          'font-mono text-[11.5px] transition-colors',
-          'disabled:cursor-not-allowed disabled:opacity-50',
-          VARIANT[variant],
-          className,
-        )}
+        className={cn(BUTTON_BASE_CLASSES, VARIANT[variant], className)}
         {...rest}
       >
         {children}
@@ -109,3 +106,29 @@ export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
   },
 )
 IconButton.displayName = 'IconButton'
+
+/**
+ * LinkButton — anchor styled as a Button.
+ *
+ * Use when the affordance navigates to a real URL (especially
+ * external, target="_blank") so we don't nest a <button> inside an
+ * <a>, which is invalid HTML and creates duplicate interactive
+ * targets for assistive tech.
+ */
+interface LinkButtonProps
+  extends React.AnchorHTMLAttributes<HTMLAnchorElement> {
+  variant?: Variant
+}
+
+export const LinkButton = React.forwardRef<HTMLAnchorElement, LinkButtonProps>(
+  ({ variant = 'default', className, children, ...rest }, ref) => (
+    <a
+      ref={ref}
+      className={cn(BUTTON_BASE_CLASSES, VARIANT[variant], className)}
+      {...rest}
+    >
+      {children}
+    </a>
+  ),
+)
+LinkButton.displayName = 'LinkButton'

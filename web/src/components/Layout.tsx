@@ -114,7 +114,9 @@ export default function Layout() {
           <span className="font-medium text-ink">
             cron<span className="text-accent-green">foundry</span>
           </span>
-          <span className="ml-auto text-[10px] text-ink-3">v0.4</span>
+          <span className="ml-auto text-[10px] text-ink-3">
+            v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0'}
+          </span>
         </div>
 
         {/* sections */}

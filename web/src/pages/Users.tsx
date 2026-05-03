@@ -1,11 +1,31 @@
+// web/src/pages/Users.tsx
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import type { UserDTO } from '../lib/types'
 import { ConfirmDialog } from '../components/ConfirmDialog'
+import {
+  Button,
+  Card,
+  DataTable,
+  ErrorBanner,
+  IconButton,
+  Input,
+  PageHeader,
+  Pill,
+  Select,
+  Topbar,
+} from '../components/ui'
+import { relativeTime } from '../lib/time'
 
 type Role = 'admin' | 'viewer'
 
+/**
+ * Users — admin/viewer ACL. Self-protections enforced server-side
+ * (can't demote/delete your last admin or yourself); we surface the
+ * resulting errors via opError so the operator sees why an action
+ * was rejected.
+ */
 export default function Users() {
   const qc = useQueryClient()
   const [newLogin, setNewLogin] = useState('')
@@ -15,7 +35,7 @@ export default function Users() {
   const [opError, setOpError] = useState<string | null>(null)
 
   const meQuery = useQuery({ queryKey: ['me'], queryFn: api.me })
-  const { data: users = [], isLoading, error } = useQuery<UserDTO[]>({
+  const usersQ = useQuery<UserDTO[]>({
     queryKey: ['users'],
     queryFn: api.users.list,
     refetchInterval: 30_000,
@@ -39,8 +59,8 @@ export default function Users() {
       setOpError(null)
       qc.invalidateQueries({ queryKey: ['users'] })
     },
-    // Surface backend failures (409 last_admin, 404 not_found, 500 infra)
-    // — without this the <select> silently reverts on refetch and the
+    // Surface backend failures (409 last_admin, 404 not_found, 500 infra).
+    // Without this the <select> silently reverts on refetch and the
     // operator has no signal that the change failed.
     onError: (err: Error) => {
       setOpError(err.message)
@@ -55,142 +75,191 @@ export default function Users() {
       setOpError(null)
       qc.invalidateQueries({ queryKey: ['users'] })
     },
-    // Close the confirm dialog on failure so a stale 'Delete' click can't
-    // re-fire the mutation; surface the reason (last_user, self_delete, etc.).
     onError: (err: Error) => {
       setPendingDelete(null)
       setOpError(err.message)
     },
   })
 
-  if (isLoading) return <div className="text-gray-400">Loading users…</div>
-  if (error) return <div className="text-red-400">Failed to load: {(error as Error).message}</div>
-
+  const users = usersQ.data ?? []
   const myLogin = meQuery.data?.login
 
   return (
-    <div>
-      <h1 className="text-2xl font-bold mb-4">Users</h1>
+    <>
+      <Topbar>
+        <Topbar.Crumbs>
+          <Topbar.Crumb href="/settings/repos">Settings</Topbar.Crumb>
+          <Topbar.Sep />
+          <Topbar.Here>Users</Topbar.Here>
+        </Topbar.Crumbs>
+        <Topbar.Spacer />
+        <Topbar.Search />
+      </Topbar>
 
-      {opError && (
-        <div className="mb-4 px-3 py-2 rounded bg-red-950 border border-red-800 text-red-300 text-sm">
-          {opError}{' '}
-          <button
-            type="button"
-            onClick={() => setOpError(null)}
-            className="ml-2 text-red-400 hover:text-red-200 text-xs"
-          >
-            dismiss
-          </button>
-        </div>
-      )}
+      <div className="w-full max-w-[1100px] px-6 pb-16 pt-7">
+        <PageHeader
+          title="Users"
+          subtitle={`${users.length} member${users.length === 1 ? '' : 's'}`}
+        />
 
-      <form
-        onSubmit={e => {
-          e.preventDefault()
-          if (!newLogin.trim()) return
-          createMutation.mutate()
-        }}
-        className="mb-6 flex items-end gap-2"
-      >
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">GitHub login</label>
-          <input
-            type="text"
-            value={newLogin}
-            onChange={e => setNewLogin(e.target.value)}
-            placeholder="octocat"
-            className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm text-white"
+        {opError && (
+          <ErrorBanner
+            message={opError}
+            onDismiss={() => setOpError(null)}
           />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Role</label>
-          <select
-            value={newRole}
-            onChange={e => setNewRole(e.target.value as Role)}
-            className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-sm text-white"
-          >
-            <option value="admin">admin</option>
-            <option value="viewer">viewer</option>
-          </select>
-        </div>
-        <button
-          type="submit"
-          disabled={createMutation.isPending || !newLogin.trim()}
-          className="px-3 py-1.5 rounded bg-indigo-700 hover:bg-indigo-600 disabled:bg-gray-700 text-white text-sm"
-        >
-          Add user
-        </button>
-        {createError && <span className="text-red-400 text-xs">{createError}</span>}
-      </form>
+        )}
 
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-left text-gray-500 border-b border-gray-800">
-            <th className="pb-2 pr-4">Login</th>
-            <th className="pb-2 pr-4 w-32">Role</th>
-            <th className="pb-2 pr-4 w-56">Created</th>
-            <th className="pb-2 pr-4 w-56">Last login</th>
-            <th className="pb-2 w-24"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {users.map(u => {
-            const isMe = u.login === myLogin
-            return (
-              <tr key={u.login} className="border-b border-gray-800">
-                <td className="py-2 pr-4 text-white">
-                  {u.login}
-                  {isMe && (
-                    <span className="ml-2 text-xs px-1.5 py-0.5 rounded bg-gray-800 text-gray-400">
-                      you
-                    </span>
-                  )}
-                </td>
-                <td className="py-2 pr-4">
-                  <select
-                    value={u.role}
-                    onChange={e =>
-                      updateMutation.mutate({ login: u.login, role: e.target.value as Role })
-                    }
-                    disabled={isMe}
-                    className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs text-white disabled:text-gray-500"
-                    title={isMe ? 'Cannot change your own role' : ''}
-                  >
-                    <option value="admin">admin</option>
-                    <option value="viewer">viewer</option>
-                  </select>
-                </td>
-                <td className="py-2 pr-4 text-gray-400">
-                  {new Date(u.created_at).toLocaleString()}
-                </td>
-                <td className="py-2 pr-4 text-gray-400">
-                  {u.last_login_at ? new Date(u.last_login_at).toLocaleString() : 'Never'}
-                </td>
-                <td className="py-2">
+        {/* add user form */}
+        <Card>
+          <Card.Header>Invite user</Card.Header>
+          <Card.Body>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                if (!newLogin.trim()) return
+                createMutation.mutate()
+              }}
+              className="flex flex-wrap items-end gap-3"
+            >
+              <Input
+                label="GitHub login"
+                placeholder="octocat"
+                value={newLogin}
+                onChange={(e) => setNewLogin(e.target.value)}
+                variant="mono"
+                className="w-[200px]"
+              />
+              <Select
+                label="Role"
+                value={newRole}
+                onChange={(e) => setNewRole(e.target.value as Role)}
+                className="w-[140px]"
+              >
+                <option value="admin">admin</option>
+                <option value="viewer">viewer</option>
+              </Select>
+              <Button
+                type="submit"
+                variant="primary"
+                disabled={createMutation.isPending || !newLogin.trim()}
+              >
+                Add user
+              </Button>
+              {createError && (
+                <span className="font-mono text-[11px] text-accent-red">
+                  {createError}
+                </span>
+              )}
+            </form>
+          </Card.Body>
+        </Card>
+
+        <Card>
+          <DataTable>
+            <DataTable.Head>
+              <DataTable.HeadCell>Login</DataTable.HeadCell>
+              <DataTable.HeadCell>Role</DataTable.HeadCell>
+              <DataTable.HeadCell>Created</DataTable.HeadCell>
+              <DataTable.HeadCell>Last login</DataTable.HeadCell>
+              <DataTable.HeadCell align="right">Actions</DataTable.HeadCell>
+            </DataTable.Head>
+            <tbody>
+              {usersQ.isError ? (
+                <DataTable.Message colSpan={5} tone="error">
+                  Could not load users:{' '}
+                  {usersQ.error instanceof Error
+                    ? usersQ.error.message
+                    : 'request failed'}
+                  .{' '}
                   <button
                     type="button"
-                    onClick={() => setPendingDelete(u)}
-                    disabled={isMe}
-                    className="text-xs text-red-400 hover:text-red-300 disabled:text-gray-600 disabled:hover:text-gray-600"
-                    title={isMe ? 'Cannot delete your own user' : ''}
+                    onClick={() => usersQ.refetch()}
+                    className="text-ink underline-offset-2 hover:underline"
                   >
-                    Delete
+                    Retry
                   </button>
-                </td>
-              </tr>
-            )
-          })}
-        </tbody>
-      </table>
+                </DataTable.Message>
+              ) : usersQ.isLoading ? (
+                <DataTable.Message colSpan={5}>
+                  Loading users…
+                </DataTable.Message>
+              ) : users.length === 0 ? (
+                <DataTable.Message colSpan={5}>No users yet.</DataTable.Message>
+              ) : (
+                users.map((u) => {
+                  const isMe = u.login === myLogin
+                  return (
+                    <DataTable.Row key={u.login}>
+                      <DataTable.Cell className="text-ink">
+                        <span className="font-mono">{u.login}</span>
+                        {isMe && (
+                          <Pill variant="skip" className="ml-2">
+                            you
+                          </Pill>
+                        )}
+                      </DataTable.Cell>
+                      <DataTable.Cell>
+                        <select
+                          value={u.role}
+                          onChange={(e) =>
+                            updateMutation.mutate({
+                              login: u.login,
+                              role: e.target.value as Role,
+                            })
+                          }
+                          disabled={isMe}
+                          aria-label={`Role for ${u.login}`}
+                          title={
+                            isMe ? 'Cannot change your own role' : undefined
+                          }
+                          className="rounded border border-rule bg-bg px-2 py-1 text-[12px] text-ink focus:border-ink-3 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <option value="admin">admin</option>
+                          <option value="viewer">viewer</option>
+                        </select>
+                      </DataTable.Cell>
+                      <DataTable.Cell>
+                        {relativeTime(u.created_at)}
+                      </DataTable.Cell>
+                      <DataTable.Cell>
+                        {u.last_login_at
+                          ? relativeTime(u.last_login_at)
+                          : 'never'}
+                      </DataTable.Cell>
+                      <DataTable.Cell align="right">
+                        <IconButton
+                          aria-label={`Delete user ${u.login}`}
+                          disabled={isMe}
+                          onClick={() => setPendingDelete(u)}
+                          title={
+                            isMe ? 'Cannot delete your own user' : 'Delete'
+                          }
+                        >
+                          ✕
+                        </IconButton>
+                      </DataTable.Cell>
+                    </DataTable.Row>
+                  )
+                })
+              )}
+            </tbody>
+          </DataTable>
+        </Card>
+
+        <p className="mt-8 flex justify-between border-t border-rule pt-3 font-mono text-[10px] uppercase tracking-[0.08em] text-ink-3">
+          <span>{users.length} users</span>
+          <span>{usersQ.isFetching ? 'refreshing…' : 'live'}</span>
+        </p>
+      </div>
 
       {pendingDelete && (
         <ConfirmDialog
+          title="Delete user?"
           message={`Delete user ${pendingDelete.login}? Audit history is preserved.`}
           onConfirm={() => deleteMutation.mutate(pendingDelete.login)}
           onCancel={() => setPendingDelete(null)}
         />
       )}
-    </div>
+    </>
   )
 }
