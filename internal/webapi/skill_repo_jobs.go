@@ -12,9 +12,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
+	"github.com/gambtho/cronfoundry/internal/audit"
 	"github.com/gambtho/cronfoundry/internal/config"
 	"github.com/gambtho/cronfoundry/internal/skillrepo"
 	"github.com/gambtho/cronfoundry/internal/yamledit"
@@ -190,7 +192,32 @@ func (h *skillRepoHandler) proposeJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	actor := SessionClaimsFromContext(r.Context()).Login
+	if actor == "" {
+		actor = "system"
+	}
+
+	// Audit log: one entry per successful PR open. Guarded on Queries
+	// because unit tests inject testConnOverride without a DB.
+	if h.deps.Queries != nil {
+		connIDCopy := uuid.UUID(conn.ConnID.Bytes)
+		auditLog(r.Context(), h.deps.Queries, actor, audit.Entry{
+			OrgID:      conn.OrgID,
+			Action:     "schedule.proposed",
+			TargetKind: "repo_connection",
+			TargetID:   &connIDCopy,
+			Detail: map[string]any{
+				"skill_path":    req.SkillPath,
+				"schedule_name": req.Schedule.Name,
+				"pr_url":        pr.HTMLURL,
+				"pr_number":     pr.Number,
+				"branch":        branch,
+			},
+		})
+	}
+
 	slog.Info("skill_repo: PR opened",
+		"actor", actor,
 		"skill_path", req.SkillPath,
 		"schedule_name", req.Schedule.Name,
 		"pr_url", pr.HTMLURL,
