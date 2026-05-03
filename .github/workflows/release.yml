@@ -188,8 +188,8 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       # Combine the platform-specific tags into a single multi-arch
-      # manifest at the unsuffixed tag. Run for serve and runner. Each
-      # invocation is ~30s — it's a manifest operation, not a rebuild.
+      # manifest at the unsuffixed tag. Serve is the only image we
+      # publish; the operation is ~30s — a manifest update, not a rebuild.
       - name: Merge serve manifest
         env:
           IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
