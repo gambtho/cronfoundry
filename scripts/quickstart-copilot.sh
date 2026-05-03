@@ -533,9 +533,22 @@ else
         --resource-group "rg-cronfoundry-${CF_ENV}" \
         --name "cf-serve-${CF_ENV}" \
         --query 'properties.provisioningState' -o tsv 2>/dev/null || echo "")
+      # provisioningState alone doesn't prove the PATCH applied — an
+      # auth/validation failure can leave the resource in `Succeeded` from
+      # an earlier write. Read RESTART_TRIGGER back and confirm it matches
+      # the value we just set; if not, the patch never landed.
+      LIVE_TS=$(az containerapp show \
+        --resource-group "rg-cronfoundry-${CF_ENV}" \
+        --name "cf-serve-${CF_ENV}" \
+        --query "properties.template.containers[0].env[?name=='RESTART_TRIGGER'].value | [0]" \
+        -o tsv 2>/dev/null || echo "")
       case "$PROV" in
         Succeeded|Updating|InProgress)
-          ok "Container App provisioningState=$PROV — restart trigger accepted, continuing."
+          if [[ "$LIVE_TS" == "$RESTART_TS" ]]; then
+            ok "Container App provisioningState=$PROV, RESTART_TRIGGER=$LIVE_TS — restart trigger applied, continuing."
+          else
+            die "Restart PATCH did not apply: provisioningState=$PROV but RESTART_TRIGGER=${LIVE_TS:-unset} (expected ${RESTART_TS}).\nSee §14 of $GUIDE_URL"
+          fi
           ;;
         *)
           die "Failed to trigger Container App restart (provisioningState=${PROV:-unknown}).\nSee §14 of $GUIDE_URL"
