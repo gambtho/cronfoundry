@@ -510,12 +510,38 @@ else
     CRONFOUNDRY_MASTER_KEY="$CF_MASTER_KEY" \
     ./cronfoundry admin init
 
+    # Persist the init flag BEFORE the restart attempt: `admin init` is
+    # idempotent in spirit but we don't want to re-run it on resume, and the
+    # restart trigger below is just an env-var bump that the resume path can
+    # safely retry. Saving here means a flaky `az containerapp update` doesn't
+    # force the operator to re-init the DB.
+    save CF_DB_INITIALIZED 1
+
     RESTART_TS=$(date +%s)
-    az containerapp update \
+    # `az containerapp update` long-polls until the revision is fully
+    # provisioned and frequently times out client-side from sandboxes /
+    # WSL2 even though the underlying PATCH succeeds. Treat a non-zero
+    # exit as "verify, don't die": re-read provisioning state and only
+    # bail if the server itself reports a failure.
+    if ! az containerapp update \
       --resource-group "rg-cronfoundry-${CF_ENV}" \
       --name "cf-serve-${CF_ENV}" \
       --set-env-vars "RESTART_TRIGGER=${RESTART_TS}" \
-      || die "Failed to trigger Container App restart.\nSee §14 of $GUIDE_URL"
+      -o none 2>/dev/null; then
+      warn "az containerapp update returned non-zero (often a client-side long-poll timeout); verifying server state..."
+      PROV=$(az containerapp show \
+        --resource-group "rg-cronfoundry-${CF_ENV}" \
+        --name "cf-serve-${CF_ENV}" \
+        --query 'properties.provisioningState' -o tsv 2>/dev/null || echo "")
+      case "$PROV" in
+        Succeeded|Updating|InProgress)
+          ok "Container App provisioningState=$PROV — restart trigger accepted, continuing."
+          ;;
+        *)
+          die "Failed to trigger Container App restart (provisioningState=${PROV:-unknown}).\nSee §14 of $GUIDE_URL"
+          ;;
+      esac
+    fi
 
     info "Waiting for Container App to become healthy..."
     HEALTH="unknown"
@@ -537,7 +563,6 @@ else
     else
       ok "Container App health: $HEALTH"
     fi
-    save CF_DB_INITIALIZED 1
   fi
 fi
 
