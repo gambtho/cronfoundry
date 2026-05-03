@@ -80,15 +80,34 @@ func TestAppendScheduleToSkill_AppendFirstSchedule(t *testing.T) {
 	}
 }
 
-func TestAppendScheduleToSkill_StubSentinelsNotReturnedWhenNotImplemented(t *testing.T) {
-	// Once implemented, this is a no-op safety net — sentinels should only fire
-	// from their real code paths.
-	_, err := AppendScheduleToSkill([]byte("version: 1\nskills: []\n"), "skills/missing", &config.Schedule{Name: "x"})
-	if err == nil {
-		// Permitted once full impl lands; no-op assertion.
-		return
-	}
+func TestAppendScheduleToSkill_SkillNotFound(t *testing.T) {
+	in := []byte(`version: 1
+skills:
+  - path: skills/exists
+`)
+	_, err := AppendScheduleToSkill(in, "skills/nope", &config.Schedule{Name: "x"})
 	if !errors.Is(err, ErrSkillNotFound) {
-		t.Logf("note: error from missing skill: %v", err)
+		t.Fatalf("want ErrSkillNotFound, got %v", err)
+	}
+}
+
+func TestAppendScheduleToSkill_DuplicateName(t *testing.T) {
+	in := []byte(`version: 1
+skills:
+  - path: skills/dup
+    schedules:
+      - name: same
+        cron: "0 0 * * *"
+        timezone: UTC
+        provider: copilot-enterprise
+        model: gpt-5-mini
+        destinations:
+          - github-issue:
+              repo: x/y
+              title: t
+`)
+	_, err := AppendScheduleToSkill(in, "skills/dup", &config.Schedule{Name: "same"})
+	if !errors.Is(err, ErrDuplicateScheduleName) {
+		t.Fatalf("want ErrDuplicateScheduleName, got %v", err)
 	}
 }
