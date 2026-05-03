@@ -228,6 +228,7 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 		slog.Warn("CRONFOUNDRY_PUBLIC_BASE_URL not set; CSRF Origin check disabled (dev mode)")
 	}
 	metrics.Disabled = envBool(envMetricsDisabled)
+	clock := &scheduler.TickClock{}
 	webapi.RegisterRoutes(mux, webapi.Deps{
 		MasterKey:         master,
 		OAuthClientID:     oauthClientID,
@@ -241,6 +242,8 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 		PublicBaseURL:     os.Getenv(envPublicBaseURL),
 		Syncer:            poller,
 		RateLimit:         rateCfg,
+		Clock:             clock,
+		SweepInterval:     cadence,
 	})
 	srv := &http.Server{
 		Addr:              addr,
@@ -258,8 +261,6 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 	if err != nil {
 		return fmt.Errorf("build job dispatcher: %w", err)
 	}
-	clock := &scheduler.TickClock{}
-	_ = clock // wired into webapi.Deps in a later task
 	schedDeps := scheduler.Deps{
 		Pool:          pool,
 		Signer:        signer,
