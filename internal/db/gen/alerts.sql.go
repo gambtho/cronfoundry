@@ -54,9 +54,9 @@ func (q *Queries) ListRecentAutoPaused(ctx context.Context, orgID pgtype.UUID) (
 }
 
 const listSchedulesForQuietCheck = `-- name: ListSchedulesForQuietCheck :many
-SELECT s.id, s.name, s.cron,
+SELECT s.id, s.name, s.cron, s.timezone,
        (SELECT MAX(r.finished_at) FROM run r
-         WHERE r.schedule_id = s.id AND r.status = 'succeeded') AS last_success
+         WHERE r.schedule_id = s.id AND r.status = 'succeeded')::timestamptz AS last_success
   FROM schedule s
  WHERE s.org_id = $1
    AND s.enabled = true
@@ -68,7 +68,8 @@ type ListSchedulesForQuietCheckRow struct {
 	ID          pgtype.UUID
 	Name        string
 	Cron        string
-	LastSuccess interface{}
+	Timezone    string
+	LastSuccess pgtype.Timestamptz
 }
 
 func (q *Queries) ListSchedulesForQuietCheck(ctx context.Context, orgID pgtype.UUID) ([]ListSchedulesForQuietCheckRow, error) {
@@ -84,6 +85,7 @@ func (q *Queries) ListSchedulesForQuietCheck(ctx context.Context, orgID pgtype.U
 			&i.ID,
 			&i.Name,
 			&i.Cron,
+			&i.Timezone,
 			&i.LastSuccess,
 		); err != nil {
 			return nil, err

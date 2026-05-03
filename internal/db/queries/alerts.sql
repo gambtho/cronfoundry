@@ -1,7 +1,7 @@
 -- name: ListSchedulesForQuietCheck :many
-SELECT s.id, s.name, s.cron,
+SELECT s.id, s.name, s.cron, s.timezone,
        (SELECT MAX(r.finished_at) FROM run r
-         WHERE r.schedule_id = s.id AND r.status = 'succeeded') AS last_success
+         WHERE r.schedule_id = s.id AND r.status = 'succeeded')::timestamptz AS last_success
   FROM schedule s
  WHERE s.org_id = $1
    AND s.enabled = true

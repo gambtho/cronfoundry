@@ -137,6 +137,10 @@ func RegisterRoutes(mux *http.ServeMux, deps Deps) {
 	ah := &auditHandler{deps: deps}
 	mux.Handle("GET /api/audit", adminOnly(http.HandlerFunc(ah.list)))
 
+	// Alerts (quiet jobs + recently auto-paused)
+	ah2 := newAlertsHandler(deps)
+	mux.Handle("GET /api/alerts", session(http.HandlerFunc(ah2.list)))
+
 	// System health
 	sysh := &systemHandler{deps: deps}
 	mux.Handle("GET /api/system/health", session(http.HandlerFunc(sysh.health)))
