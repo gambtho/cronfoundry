@@ -167,6 +167,77 @@ func TestFinalize_RollsBackOnInvalidNotification(t *testing.T) {
 	assert.Equal(t, 0, n)
 }
 
+// TestFinalize_RollsBackOnMidTxInsertFailure proves the transactional
+// invariant: when InsertRunNotification fails *after* FinalizeRun has
+// already executed inside the same transaction, the entire tx rolls
+// back — the run row stays non-terminal and no notification rows are
+// committed. This is the failure mode the validation tests cannot
+// exercise (they reject pre-tx).
+//
+// The mid-tx failure is forced via a sentinel CHECK constraint added
+// for the lifetime of the test: any notification with kind="__force_fail"
+// is rejected by Postgres at INSERT time, after the FinalizeRun update
+// in the same tx.
+func TestFinalize_RollsBackOnMidTxInsertFailure(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, cleanup := testdb.BootPG(t)
+	defer cleanup()
+
+	runID, orgID := seedRun(t, pool)
+	signer := token.New(randomMaster(t))
+	tok, hash, err := signer.Sign(token.RunClaims{
+		RunID: runID, OrgID: uuid.UUID(orgID.Bytes), ExpiresAt: time.Now().Add(time.Minute),
+	})
+	require.NoError(t, err)
+	bindRunHash(t, pool, runID, hash)
+
+	// Install the sentinel constraint, drop it on cleanup.
+	const constraint = "run_notification_force_fail_chk"
+	_, err = pool.Exec(context.Background(),
+		`ALTER TABLE run_notification ADD CONSTRAINT `+constraint+` CHECK (kind <> '__force_fail')`)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_, _ = pool.Exec(context.Background(),
+			`ALTER TABLE run_notification DROP CONSTRAINT IF EXISTS `+constraint)
+	})
+
+	srv := NewServer("127.0.0.1:0", Deps{Pool: pool, Signer: signer})
+	ts := httptest.NewServer(srv.Handler)
+	defer ts.Close()
+
+	body := map[string]any{
+		"status": "succeeded",
+		"notifications": []map[string]any{
+			{"kind": "slack", "target": "#ok", "status": "sent"},
+			{"kind": "__force_fail", "target": "#bad", "status": "sent"},
+		},
+	}
+	buf, _ := json.Marshal(body)
+	req, _ := http.NewRequest("POST", ts.URL+"/internal/runs/"+runID.String()+"/finalize", bytes.NewReader(buf))
+	req.Header.Set("Authorization", "Bearer "+tok)
+	resp, err := ts.Client().Do(req)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	require.Equal(t, http.StatusInternalServerError, resp.StatusCode,
+		"insert violation must surface as 500, not 204")
+
+	// The whole transaction rolled back: run still non-terminal AND
+	// zero notifications committed (including the first one that
+	// passed validation and would have been inserted).
+	var status string
+	require.NoError(t, pool.QueryRow(context.Background(),
+		`SELECT status FROM run WHERE id=$1`, pgtype.UUID{Bytes: runID, Valid: true}).Scan(&status))
+	assert.NotEqual(t, "succeeded", status, "FinalizeRun update must be rolled back")
+
+	var n int
+	require.NoError(t, pool.QueryRow(context.Background(),
+		`SELECT count(*) FROM run_notification WHERE run_id=$1`,
+		pgtype.UUID{Bytes: runID, Valid: true}).Scan(&n))
+	assert.Equal(t, 0, n, "first (valid) notification must also be rolled back")
+}
+
 func TestFinalize_PersistsSuccess(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
