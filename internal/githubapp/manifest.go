@@ -70,9 +70,10 @@ func BuildManifest(in ManifestInput) Manifest {
 		Public:         false,
 		DefaultEvents:  []string{"push"},
 		DefaultPerms: map[string]string{
-			"contents": "write",
-			"issues":   "write",
-			"metadata": "read",
+			"contents":      "write",
+			"issues":        "write",
+			"metadata":      "read",
+			"pull_requests": "write",
 		},
 	}
 }
