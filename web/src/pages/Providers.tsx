@@ -1,11 +1,18 @@
 // web/src/pages/Providers.tsx
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button, Card, Input, PageHeader, Pill, Topbar } from '../components/ui'
 
 /**
  * Providers — connect external LLM providers. Today: GitHub Copilot
  * Enterprise via OAuth device flow. The flow is multi-stage so the
  * card content swaps depending on `flow.phase`.
+ *
+ * Concurrency notes:
+ *   - A monotonic run-token guards against overlapping connect
+ *     attempts. If the user clicks Connect twice (or remounts the
+ *     page mid-flow), the older loop's writes are dropped.
+ *   - On unmount, the active token is invalidated so a still-running
+ *     poll loop can't call setState after the component is gone.
  */
 
 type FlowPhase =
@@ -29,42 +36,69 @@ export default function Providers() {
   const [prefix, setPrefix] = useState('copilot')
   const [flow, setFlow] = useState<FlowPhase>({ phase: 'idle' })
 
+  // Token of the most recent run. Each startConnect bumps it; any
+  // outstanding poll loop checks the token at every await boundary
+  // and bails on mismatch. Set to 0 on unmount to invalidate all
+  // in-flight loops at once.
+  const runIdRef = useRef(0)
+
+  useEffect(() => {
+    return () => {
+      runIdRef.current = 0
+    }
+  }, [])
+
   async function startConnect() {
+    // Prevent overlap: ignore the click if a connect attempt is
+    // currently in-flight. Operators can hit Cancel — well, there's
+    // no Cancel today, but they can refresh — and try again.
+    if (flow.phase === 'authorizing' || flow.phase === 'polling') return
+
+    const myRunId = runIdRef.current + 1
+    runIdRef.current = myRunId
     setFlow({ phase: 'idle' })
+
     try {
       const res = await fetch('/api/copilot/connect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prefix }),
       })
+      if (runIdRef.current !== myRunId) return
       if (!res.ok) {
         setFlow({ phase: 'error', message: 'Failed to start authorization.' })
         return
       }
       const data = await res.json()
+      if (runIdRef.current !== myRunId) return
       setFlow({
         phase: 'authorizing',
         userCode: data.user_code,
         verificationUri: data.verification_uri,
         deviceCode: data.device_code,
       })
-      poll(data.device_code, data.user_code, data.verification_uri)
+      poll(myRunId, data.device_code, data.user_code, data.verification_uri)
     } catch {
+      if (runIdRef.current !== myRunId) return
       setFlow({ phase: 'error', message: 'Network error. Try again.' })
     }
   }
 
   async function poll(
+    runId: number,
     deviceCode: string,
     userCode: string,
     verificationUri: string,
   ) {
+    if (runIdRef.current !== runId) return
     setFlow({ phase: 'polling', deviceCode, userCode, verificationUri })
     const deadline = Date.now() + 5 * 60 * 1000
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 5000))
+      if (runIdRef.current !== runId) return
       try {
         const res = await fetch(`/api/copilot/connect/${deviceCode}/poll`)
+        if (runIdRef.current !== runId) return
         if (!res.ok) {
           setFlow({
             phase: 'error',
@@ -73,6 +107,7 @@ export default function Providers() {
           return
         }
         const data = await res.json()
+        if (runIdRef.current !== runId) return
         if (data.status === 'success') {
           setFlow({ phase: 'success', prefix })
           return
@@ -90,6 +125,7 @@ export default function Providers() {
         }
         // pending — keep polling
       } catch {
+        if (runIdRef.current !== runId) return
         setFlow({
           phase: 'error',
           message: 'Network error during authorization.',
@@ -97,6 +133,7 @@ export default function Providers() {
         return
       }
     }
+    if (runIdRef.current !== runId) return
     setFlow({ phase: 'error', message: 'Timed out waiting for authorization.' })
   }
 

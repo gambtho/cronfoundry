@@ -62,7 +62,13 @@ export function SecretModal({
         <Button
           variant="primary"
           disabled={!canSubmit}
-          onClick={() => onSubmit(name, value)}
+          onClick={() => {
+            // Trim only the name; secret VALUES are intentionally
+            // sent verbatim because trailing whitespace can be
+            // significant (e.g. multi-line PEMs).
+            const trimmedName = name.trim()
+            onSubmit(trimmedName, value)
+          }}
         >
           Save
         </Button>

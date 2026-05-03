@@ -8,6 +8,7 @@ import {
   Button,
   Card,
   DataTable,
+  ErrorBanner,
   IconButton,
   PageHeader,
   Topbar,
@@ -25,6 +26,9 @@ export default function Secrets() {
   const [creating, setCreating] = useState(false)
   const [rotating, setRotating] = useState<SecretMeta | null>(null)
   const [deleting, setDeleting] = useState<SecretMeta | null>(null)
+  // Surfaces mutation failures (delete most importantly, but also
+  // create/rotate) so the dialog flow can't leave the UI silent.
+  const [opError, setOpError] = useState<string | null>(null)
 
   const secretsQ = useQuery({
     queryKey: ['secrets'],
@@ -37,7 +41,9 @@ export default function Secrets() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['secrets'] })
       setCreating(false)
+      setOpError(null)
     },
+    onError: (err: Error) => setOpError(err.message),
   })
   const rotate = useMutation({
     mutationFn: ({ name, value }: { name: string; value: string }) =>
@@ -45,13 +51,25 @@ export default function Secrets() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['secrets'] })
       setRotating(null)
+      setOpError(null)
     },
+    // Keep the rotate modal open so the user doesn't lose the value
+    // they typed — they can retry without re-entering.
+    onError: (err: Error) => setOpError(err.message),
   })
   const del = useMutation({
     mutationFn: (name: string) => api.secrets.delete(name),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['secrets'] })
       setDeleting(null)
+      setOpError(null)
+    },
+    // Close the confirmation dialog so a stale Delete click can't
+    // re-fire the mutation; surface the reason so the operator knows
+    // why the row is still present.
+    onError: (err: Error) => {
+      setDeleting(null)
+      setOpError(err.message)
     },
   })
 
@@ -83,6 +101,13 @@ export default function Secrets() {
             </Button>
           }
         />
+
+        {opError && (
+          <ErrorBanner
+            message={opError}
+            onDismiss={() => setOpError(null)}
+          />
+        )}
 
         <Card>
           <DataTable>

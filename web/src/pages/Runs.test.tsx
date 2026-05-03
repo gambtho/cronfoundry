@@ -7,7 +7,7 @@ import type { RunSummary } from '../lib/types'
 
 vi.mock('../lib/api', () => ({
   api: {
-    runs: { list: vi.fn(), get: vi.fn() },
+    runs: { list: vi.fn() },
     schedules: { list: vi.fn() },
   },
 }))

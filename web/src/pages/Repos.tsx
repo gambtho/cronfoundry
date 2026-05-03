@@ -4,10 +4,11 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import {
-  Button,
   Card,
   DataTable,
+  ErrorBanner,
   IconButton,
+  LinkButton,
   PageHeader,
   Pill,
   Topbar,
@@ -30,6 +31,10 @@ export default function Repos() {
   const [disconnecting, setDisconnecting] = useState<RepoConnection | null>(
     null,
   )
+  // Surfaced in a dismissible banner when disconnect fails. Same
+  // pattern as Users.tsx — without it, errors leave the dialog
+  // open with no explanation.
+  const [opError, setOpError] = useState<string | null>(null)
 
   const reposQ = useQuery({
     queryKey: ['repos'],
@@ -41,6 +46,13 @@ export default function Repos() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['repos'] })
       setDisconnecting(null)
+      setOpError(null)
+    },
+    // Close the confirm dialog on failure so a stale Disconnect click
+    // can't re-fire, and surface the reason so the operator knows.
+    onError: (err: Error) => {
+      setDisconnecting(null)
+      setOpError(err.message)
     },
   })
 
@@ -76,17 +88,23 @@ export default function Repos() {
           title="Source repos"
           subtitle="GitHub repos cronfoundry watches for cron schedules"
           actions={
-            <a
+            <LinkButton
+              variant="primary"
               href={`https://github.com/apps/${GITHUB_APP_NAME}/installations/new`}
               target="_blank"
               rel="noopener noreferrer"
             >
-              <Button variant="primary" className="w-full">
-                + Connect repo
-              </Button>
-            </a>
+              + Connect repo
+            </LinkButton>
           }
         />
+
+        {opError && (
+          <ErrorBanner
+            message={opError}
+            onDismiss={() => setOpError(null)}
+          />
+        )}
 
         <Card>
           <DataTable>

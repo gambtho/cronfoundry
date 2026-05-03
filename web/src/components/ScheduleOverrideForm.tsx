@@ -22,15 +22,26 @@ export function ScheduleOverrideForm({ schedule, onClose }: Props) {
   const qc = useQueryClient()
   const [cron, setCron] = useState(schedule.cron)
   const [timezone, setTimezone] = useState(schedule.timezone)
-  const [timeoutSec, setTimeoutSec] = useState(schedule.timeout_sec)
+  // undefined when the field is empty/invalid so we can omit it from
+  // the payload entirely rather than send 0/NaN.
+  const [timeoutSec, setTimeoutSec] = useState<number | undefined>(
+    schedule.timeout_sec,
+  )
 
   const save = useMutation({
-    mutationFn: () =>
-      api.schedules.patchOverrides(schedule.id, {
-        cron,
-        timezone,
-        timeout_sec: timeoutSec,
-      }),
+    mutationFn: () => {
+      const overrides: {
+        cron: string
+        timezone: string
+        timeout_sec?: number
+      } = { cron, timezone }
+      // Only include timeout_sec when it's a positive finite number;
+      // anything else is treated as "don't touch this field".
+      if (typeof timeoutSec === 'number' && Number.isFinite(timeoutSec) && timeoutSec > 0) {
+        overrides.timeout_sec = timeoutSec
+      }
+      return api.schedules.patchOverrides(schedule.id, overrides)
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['schedules'] })
       onClose()
@@ -67,8 +78,20 @@ export function ScheduleOverrideForm({ schedule, onClose }: Props) {
           label="Timeout (seconds)"
           type="number"
           variant="mono"
-          value={timeoutSec}
-          onChange={(e) => setTimeoutSec(Number(e.target.value))}
+          min={1}
+          value={timeoutSec ?? ''}
+          onChange={(e) => {
+            // Empty string clears the override. parseInt rejects bare
+            // letters; we further check finite + > 0 so 0/-1/NaN can't
+            // sneak through into the payload.
+            const raw = e.target.value
+            if (raw === '') {
+              setTimeoutSec(undefined)
+              return
+            }
+            const n = parseInt(raw, 10)
+            setTimeoutSec(Number.isFinite(n) && n > 0 ? n : undefined)
+          }}
         />
       </Modal.Body>
       <Modal.Actions>

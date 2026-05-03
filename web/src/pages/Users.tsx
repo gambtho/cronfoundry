@@ -8,6 +8,7 @@ import {
   Button,
   Card,
   DataTable,
+  ErrorBanner,
   IconButton,
   Input,
   PageHeader,
@@ -102,17 +103,10 @@ export default function Users() {
         />
 
         {opError && (
-          <div className="mb-4 flex items-center gap-3 rounded border border-accent-red-dim bg-red-bg px-3.5 py-2.5 font-mono text-[12px] text-accent-red">
-            <span>{opError}</span>
-            <button
-              type="button"
-              onClick={() => setOpError(null)}
-              className="ml-auto text-ink-3 hover:text-ink"
-              aria-label="Dismiss error"
-            >
-              ✕
-            </button>
-          </div>
+          <ErrorBanner
+            message={opError}
+            onDismiss={() => setOpError(null)}
+          />
         )}
 
         {/* add user form */}

@@ -56,6 +56,10 @@ const secret = (over: Partial<SecretMeta> = {}): SecretMeta => ({
   name: 'API_KEY',
   version: 1,
   last_updated: new Date().toISOString(),
+  // last_used is optional on SecretMeta but Secrets.tsx renders it
+  // either way; default to undefined here so the factory mirrors
+  // the wire shape and `over` can override.
+  last_used: undefined,
   ...over,
 })
 

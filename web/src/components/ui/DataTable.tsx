@@ -56,6 +56,7 @@ interface HeadCellProps {
 function HeadCell({ children, align = 'left', className }: HeadCellProps) {
   return (
     <th
+      scope="col"
       className={cn(
         'whitespace-nowrap px-4 py-2.5 font-medium',
         align === 'right' ? 'text-right' : 'text-left',

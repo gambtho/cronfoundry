@@ -69,20 +69,22 @@ export default function Runs() {
     return { all: runs.length, failed, running, succeeded }
   }, [runs])
 
-  const matchStatus = (s: RunStatus): boolean => {
-    switch (statusFilter) {
-      case 'failed':
-        return s === 'failed' || s === 'partial_failure'
-      case 'running':
-        return s === 'running'
-      case 'succeeded':
-        return s === 'succeeded'
-      default:
-        return true
-    }
-  }
-
   const visible = useMemo(() => {
+    // matchStatus lives inside the memo so it has the same dependency
+    // lifetime as `visible` itself — no chance of a stale closure
+    // when statusFilter changes between renders.
+    const matchStatus = (s: RunStatus): boolean => {
+      switch (statusFilter) {
+        case 'failed':
+          return s === 'failed' || s === 'partial_failure'
+        case 'running':
+          return s === 'running'
+        case 'succeeded':
+          return s === 'succeeded'
+        default:
+          return true
+      }
+    }
     const q = query.trim().toLowerCase()
     return runs.filter((r) => {
       if (!matchStatus(r.status)) return false

@@ -5,11 +5,24 @@
  * since the user isn't authenticated yet. Pure brand mark + sign-in.
  */
 export default function Login() {
+  // Build-time stamp so the UI matches whatever the deployed binary
+  // is serving. Falls back to a placeholder in dev when define isn't
+  // applied (e.g. test runs).
+  const version =
+    typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0'
+
   return (
     <div className="grid min-h-screen place-items-center bg-bg text-ink">
       <div className="flex w-full max-w-sm flex-col items-center gap-6 px-6">
+        {/* Visually hidden h1 — gives screen-reader users a real
+            page heading without disturbing the centred layout. */}
+        <h1 className="sr-only">Sign in to cronfoundry</h1>
+
         {/* brand */}
-        <div className="flex items-center gap-2.5 font-mono text-[18px] tracking-[0.04em]">
+        <div
+          className="flex items-center gap-2.5 font-mono text-[18px] tracking-[0.04em]"
+          aria-hidden="true"
+        >
           <span className="h-2.5 w-2.5 rounded-full bg-accent-green shadow-[0_0_12px_var(--green)]" />
           <span className="font-medium text-ink">
             cron<span className="text-accent-green">foundry</span>
@@ -29,7 +42,7 @@ export default function Login() {
         </a>
 
         <p className="m-0 mt-2 text-center font-mono text-[10px] uppercase tracking-[0.14em] text-ink-4">
-          cronfoundry · v0.4
+          cronfoundry · v{version}
         </p>
       </div>
     </div>

@@ -19,11 +19,20 @@ interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
 }
 
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ label, hint, variant = 'default', className, id, ...rest }, ref) => {
+  (
+    { label, hint, variant = 'default', className, id, 'aria-describedby': describedBy, ...rest },
+    ref,
+  ) => {
     // Generate a stable id when one isn't provided so we can wire
     // <label htmlFor=…> for screen readers.
     const reactId = React.useId()
     const inputId = id ?? reactId
+    const hintId = `${inputId}-hint`
+    // Compose any caller-supplied aria-describedby with our hint id
+    // so we don't clobber an explicit description.
+    const ariaDescribedBy = [describedBy, hint != null ? hintId : null]
+      .filter(Boolean)
+      .join(' ') || undefined
     return (
       <div className="flex flex-col gap-1">
         {label != null && (
@@ -37,6 +46,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
         <input
           ref={ref}
           id={inputId}
+          aria-describedby={ariaDescribedBy}
           className={cn(
             'rounded border border-rule bg-bg px-2.5 py-1.5 text-[13px] text-ink',
             'placeholder:text-ink-3 focus:border-ink-3 focus:outline-none',
@@ -47,7 +57,9 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
           {...rest}
         />
         {hint != null && (
-          <p className="m-0 font-mono text-[10px] text-ink-3">{hint}</p>
+          <p id={hintId} className="m-0 font-mono text-[10px] text-ink-3">
+            {hint}
+          </p>
         )}
       </div>
     )
@@ -66,9 +78,16 @@ interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
 }
 
 export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
-  ({ label, hint, className, id, children, ...rest }, ref) => {
+  (
+    { label, hint, className, id, children, 'aria-describedby': describedBy, ...rest },
+    ref,
+  ) => {
     const reactId = React.useId()
     const selectId = id ?? reactId
+    const hintId = `${selectId}-hint`
+    const ariaDescribedBy = [describedBy, hint != null ? hintId : null]
+      .filter(Boolean)
+      .join(' ') || undefined
     return (
       <div className="flex flex-col gap-1">
         {label != null && (
@@ -82,6 +101,7 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
         <select
           ref={ref}
           id={selectId}
+          aria-describedby={ariaDescribedBy}
           className={cn(
             'rounded border border-rule bg-bg px-2.5 py-1.5 text-[13px] text-ink',
             'focus:border-ink-3 focus:outline-none',
@@ -93,7 +113,9 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
           {children}
         </select>
         {hint != null && (
-          <p className="m-0 font-mono text-[10px] text-ink-3">{hint}</p>
+          <p id={hintId} className="m-0 font-mono text-[10px] text-ink-3">
+            {hint}
+          </p>
         )}
       </div>
     )
