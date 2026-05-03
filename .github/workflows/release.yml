@@ -3,7 +3,7 @@ name: Release
 # Tag-driven release. Three stages:
 #
 #   release-amd64 (~10 min, runs first)
-#       Native amd64 build of serve + runner. Publishes :VERSION,
+#       Native amd64 build of the serve image. Publishes :VERSION,
 #       :VERSION-MAJOR.MINOR, :latest as single-arch (amd64) manifests
 #       so amd64-only consumers (ACA consumption, fly.io, the AKS chart's
 #       default node pool) can pull immediately. Also creates the GitHub
@@ -88,28 +88,6 @@ jobs:
           cache-from: type=gha,scope=amd64
           cache-to: type=gha,scope=amd64,mode=max
 
-      - name: Extract runner metadata
-        id: runner-meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-runner
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
-
-      - name: Build and push runner image (amd64)
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: deploy/Dockerfile.runner
-          platforms: linux/amd64
-          push: true
-          tags: ${{ steps.runner-meta.outputs.tags }}
-          labels: ${{ steps.runner-meta.outputs.labels }}
-          cache-from: type=gha,scope=runner-amd64
-          cache-to: type=gha,scope=runner-amd64,mode=max
-
       - name: Bundle deploy artifacts
         run: |
           tar -czf cronfoundry-azure-deploy-${{ github.ref_name }}.tar.gz \
@@ -178,30 +156,6 @@ jobs:
           cache-from: type=gha,scope=arm64
           cache-to: type=gha,scope=arm64,mode=max
 
-      - name: Extract runner metadata (arm64)
-        id: runner-meta-arm64
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-runner
-          flavor: |
-            suffix=-arm64,onlatest=true
-          tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest
-
-      - name: Build and push runner image (arm64)
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: deploy/Dockerfile.runner
-          platforms: linux/arm64
-          push: true
-          tags: ${{ steps.runner-meta-arm64.outputs.tags }}
-          labels: ${{ steps.runner-meta-arm64.outputs.labels }}
-          cache-from: type=gha,scope=runner-arm64
-          cache-to: type=gha,scope=runner-arm64,mode=max
-
   release-merge:
     runs-on: ubuntu-latest
     needs: [release-amd64, release-arm64]
@@ -233,22 +187,11 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       # Combine the platform-specific tags into a single multi-arch
-      # manifest at the unsuffixed tag. Run for serve and runner. Each
-      # invocation is ~30s — it's a manifest operation, not a rebuild.
+      # manifest at the unsuffixed tag. Serve is the only image we
+      # publish; the operation is ~30s — a manifest update, not a rebuild.
       - name: Merge serve manifest
         env:
           IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          V: ${{ steps.tags.outputs.version }}
-          MM: ${{ steps.tags.outputs.major_minor }}
-        run: |
-          for t in "$V" "$MM" "latest"; do
-            docker buildx imagetools create -t "${IMAGE}:${t}" \
-              "${IMAGE}:${t}" "${IMAGE}:${t}-arm64"
-          done
-
-      - name: Merge runner manifest
-        env:
-          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-runner
           V: ${{ steps.tags.outputs.version }}
           MM: ${{ steps.tags.outputs.major_minor }}
         run: |
