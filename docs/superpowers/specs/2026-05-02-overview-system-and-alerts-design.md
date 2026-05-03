@@ -21,7 +21,7 @@ from the *current* schema land in v1. Speculative signals
 (secrets-expiry, drift) are wired into the response shape with
 empty arrays so the frontend doesn't reshape when those land.
 
-## Endpoint 1: `GET /system/health`
+## Endpoint 1: `GET /api/system/health`
 
 Response:
 
@@ -57,7 +57,7 @@ timestamp is one atomic store per sweep — cheaper than persisting,
 and a process restart legitimately *should* show "scheduler not
 yet ticked" until the first sweep.
 
-## Endpoint 2: `GET /alerts`
+## Endpoint 2: `GET /api/alerts`
 
 Response:
 
@@ -91,16 +91,26 @@ A schedule is "quiet" when its last successful run is older than
 noisy minutely-cron alerts on transient blips):
 
 ```sql
-SELECT s.id, s.name,
-       (SELECT MAX(finished_at) FROM run r
-         WHERE r.schedule_id = s.id AND r.status = 'succeeded') AS last_success
+SELECT s.id, s.name, s.cron, s.timezone,
+       (SELECT MAX(r.finished_at) FROM run r
+         WHERE r.schedule_id = s.id AND r.status = 'succeeded')::timestamptz
+       AS last_success
   FROM schedule s
  WHERE s.org_id = $1
-   AND s.paused_at IS NULL
+   AND s.enabled = true
    AND s.auto_paused_at IS NULL
-HAVING last_success IS NULL
-    OR now() - last_success > GREATEST(interval '1 hour', 3 * <expected_interval>);
+ ORDER BY s.name ASC;
 ```
+
+The "is it quiet?" filter (`last_success IS NULL OR now() - last_success >
+GREATEST(interval '1 hour', 3 * expected_interval)`) is applied in Go
+rather than SQL: `expected_interval` requires parsing the cron expression
+in the schedule's timezone (via `scheduler.NextFire`), which is easier in
+the handler than as a Postgres extension. Schedules whose cron fails to
+parse are filtered out silently (not surfaced as an alert).
+
+Note: the schedule "paused" state is determined via `enabled = false`,
+not a `paused_at` column.
 
 `expected_interval` is computed in Go from the cron expression
 (the scheduler already parses cron; reuse `cron.NextN` to derive

@@ -12,7 +12,7 @@ applicable. The runner already computes this list
 
 Persist delivery records in a new `run_notification` table written
 during finalize, and expose them via
-`GET /runs/{id}/notifications`. This is *not* an event log — it's an
+`GET /api/runs/{id}/notifications`. This is *not* an event log — it's an
 audit-style record table answering "what got sent for this run".
 
 Rejected alternatives:
@@ -119,10 +119,11 @@ class of inconsistency is introduced.
 
 ## Read path
 
-New endpoint `GET /runs/{id}/notifications`, org-scoped (mirrors
-`GET /runs/{id}/events`):
+New endpoint `GET /api/runs/{id}/notifications`, org-scoped (mirrors
+`GET /api/runs/{id}/events`):
 
-- Authn: existing org bearer.
+- Authn: session-based auth (matches existing `/api/runs` endpoints
+  in `internal/webapi/server.go`).
 - Authz: 404 if the run isn't in the caller's org.
 - Response: `[]runNotificationDTO`, ordered by `id ASC` (insertion
   order matches dispatch order).

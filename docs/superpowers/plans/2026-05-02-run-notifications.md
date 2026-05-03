@@ -320,9 +320,23 @@ func TestFinalize_RejectsInvalidNotificationStatus(t *testing.T) {
 }
 
 func TestFinalize_RollsBackOnFailedInsert(t *testing.T) {
-    // Skipped if the test infra makes this hard to provoke; otherwise
-    // pass an oversized reason to trip validation and verify run row
-    // was not finalized (status remains pending).
+    // Validation rejects pre-transaction, so an oversized field
+    // never exercises rollback. To actually exercise rollback,
+    // force InsertRunNotification to fail *after* FinalizeRun has
+    // already executed inside the transaction. Two viable
+    // approaches:
+    //   a) Inject a stub Queries (or a wrapping pgxpool.Pool) whose
+    //      InsertRunNotification returns an error on the second call.
+    //   b) Drop a temporary CHECK constraint on run_notification (or
+    //      a trigger) that rejects a specific marker value, send a
+    //      notification carrying that marker.
+    // After the failed POST, assert run row status is still
+    // 'running' (not finalized) AND zero rows in run_notification
+    // for that run id — that's the proof the whole tx rolled back.
+    //
+    // If neither hook is feasible in the harness (the project uses
+    // black-box httptest + a real pool), document the transactional
+    // safety as a code-review property and skip with a clear TODO.
 }
 ```
 
@@ -477,7 +491,7 @@ Right before `if err := client.PostFinalize(...)`:
 for _, pr := range result.PublishResults {
     n := finalizeNotification{
         Kind:   pr.Type,
-        Target: redact.Target(pr.Type, destinationDisplay(pr)), // see helper below
+        Target: redact.Target(pr.Type, pr.Target),
     }
     switch {
     case pr.OK && !pr.Skipped:
@@ -496,7 +510,19 @@ for _, pr := range result.PublishResults {
 }
 ```
 
-`destinationDisplay(pr publish.Result) string` returns the raw target the publisher knows about (channel name, webhook URL, repo path). `publish.Result` does not currently expose this — extend `publish.Result` with a `Target string` field set by each publisher (`internal/publish/slack.go`, `discord.go`, `teams.go`, `github_issue.go`) and read `pr.Target` here. That's a small one-line-per-publisher change; do it as part of this step.
+`pr.Target` carries the raw destination identifier (channel name,
+webhook URL, repo path) the publisher worked with. `publish.Result`
+does not currently expose this — extend `publish.Result` with a
+`Target string` field, set by every publisher
+(`internal/publish/slack.go`, `discord.go`, `teams.go`,
+`github_issue.go`, `http.go`, `httpjson.go`, `email.go`) on every
+`Result{...}` literal where a destination is known. Read `pr.Target`
+here. The runner's `redact.Target(pr.Type, pr.Target)` produces the
+human-readable, secret-free identifier persisted on the wire.
+
+In addition, clip `Kind`/`Target`/`Reason` to the API limits
+(200/200/2000 chars) before sending — a pathological `pr.Err.Error()`
+should never produce a 400 back from finalize.
 
 - [ ] **Step 3: Tests**
 
