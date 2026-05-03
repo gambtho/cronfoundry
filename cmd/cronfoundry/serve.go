@@ -258,6 +258,8 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 	if err != nil {
 		return fmt.Errorf("build job dispatcher: %w", err)
 	}
+	clock := &scheduler.TickClock{}
+	_ = clock // wired into webapi.Deps in a later task
 	schedDeps := scheduler.Deps{
 		Pool:          pool,
 		Signer:        signer,
@@ -266,6 +268,7 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 		APIBaseURL:    "http://" + addr,
 		RunnerAPIURL:  runnerAPIURL,
 		RunnerBinary:  self,
+		Clock:         clock,
 	}
 
 	// --- Signal-aware context ---
