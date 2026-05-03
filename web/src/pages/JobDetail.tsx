@@ -289,13 +289,8 @@ export default function JobDetail() {
                     ? 'no runs yet'
                     : `last ${runs.length} runs`}
                 </Card.HeaderMeta>
-                {/* TODO(filter): once /runs reads ?schedule_id from
-                    the query string, we can deep-link straight into a
-                    filtered feed. Today the legacy Runs page ignores
-                    that param, so we'd be lying to the user — drop
-                    the param and rely on the broader log instead. */}
                 <Link
-                  to="/runs"
+                  to={`/runs?schedule_id=${schedule.id}`}
                   className="font-mono text-[11px] tracking-[0.04em] text-ink-2 hover:text-accent-green"
                 >
                   All runs →

@@ -1,0 +1,106 @@
+import { useEffect, useRef } from 'react'
+import { cn } from '../../lib/cn'
+
+/**
+ * Modal — overlay primitive. Used wherever we need a focused
+ * decision (delete confirmations, secret create/rotate).
+ *
+ *   <Modal title="Delete secret?" onClose={cancel}>
+ *     <Modal.Body>...</Modal.Body>
+ *     <Modal.Actions>
+ *       <Button variant="ghost" onClick={cancel}>Cancel</Button>
+ *       <Button onClick={confirm}>Delete</Button>
+ *     </Modal.Actions>
+ *   </Modal>
+ *
+ * Behavior:
+ *   - Backdrop click + Escape close the modal (keyboard parity).
+ *   - Initial focus moves to the dialog so screen readers announce it
+ *     and Tab cycles inside; we don't ship a full focus trap because
+ *     Radix's <Dialog> already exists in the deps if we ever need it.
+ *   - role="dialog" + aria-modal so AT treats the rest of the page
+ *     as inert.
+ */
+interface ModalProps {
+  title?: React.ReactNode
+  onClose: () => void
+  children: React.ReactNode
+  /** Set false to disable backdrop-click close (e.g. mid-flow forms). */
+  dismissOnBackdropClick?: boolean
+  className?: string
+}
+
+export function Modal({
+  title,
+  onClose,
+  children,
+  dismissOnBackdropClick = true,
+  className,
+}: ModalProps) {
+  const dialogRef = useRef<HTMLDivElement>(null)
+
+  // Escape closes the modal — registered globally so it works no
+  // matter where focus is.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  // Move focus into the dialog on mount.
+  useEffect(() => {
+    dialogRef.current?.focus()
+  }, [])
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+      onClick={dismissOnBackdropClick ? onClose : undefined}
+      aria-hidden="false"
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={title ? 'modal-title' : undefined}
+        tabIndex={-1}
+        // Stop the backdrop's onClick from firing when clicks happen
+        // on the dialog itself.
+        onClick={(e) => e.stopPropagation()}
+        className={cn(
+          'w-full max-w-md rounded border border-rule bg-bg-2 shadow-2xl outline-none',
+          className,
+        )}
+      >
+        {title && (
+          <header className="border-b border-rule px-5 py-3.5">
+            <h2
+              id="modal-title"
+              className="m-0 text-[15px] font-semibold text-ink"
+            >
+              {title}
+            </h2>
+          </header>
+        )}
+        {children}
+      </div>
+    </div>
+  )
+}
+
+function ModalBody({ children }: { children: React.ReactNode }) {
+  return <div className="flex flex-col gap-3 px-5 py-4">{children}</div>
+}
+
+function ModalActions({ children }: { children: React.ReactNode }) {
+  return (
+    <footer className="flex justify-end gap-2 border-t border-rule px-5 py-3">
+      {children}
+    </footer>
+  )
+}
+
+Modal.Body = ModalBody
+Modal.Actions = ModalActions
