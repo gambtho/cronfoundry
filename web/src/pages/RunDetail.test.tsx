@@ -1,9 +1,9 @@
-import { describe, it, expect, afterEach, vi } from 'vitest'
+import { describe, it, expect, afterEach, beforeEach, vi } from 'vitest'
 import { render, cleanup } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import RunDetail from './RunDetail'
-import type { RunDetail as RunDetailType, Schedule } from '../lib/types'
+import type { RunDetail as RunDetailType, RunNotification, Schedule } from '../lib/types'
 
 vi.mock('../lib/api', () => ({
   api: {
@@ -15,6 +15,7 @@ vi.mock('../lib/api', () => ({
       list: vi.fn(),
       get: vi.fn(),
       events: vi.fn(),
+      notifications: vi.fn(),
       eventsStreamURL: vi.fn(),
     },
   },
@@ -88,6 +89,10 @@ function withProviders(ui: React.ReactNode, runId = 'r-1234567890abcdef') {
 }
 
 describe('RunDetail page', () => {
+  beforeEach(() => {
+    vi.mocked(api.runs.notifications).mockResolvedValue([])
+  })
+
   it('renders meta strip and links back to the parent job', async () => {
     vi.mocked(api.runs.get).mockResolvedValue(detail({ status: 'succeeded' }))
     vi.mocked(api.runs.list).mockResolvedValue([])
@@ -148,5 +153,88 @@ describe('RunDetail page', () => {
     const { findByText } = render(withProviders(<RunDetail />, 'missing'))
 
     expect(await findByText(/Run not found/i)).toBeInTheDocument()
+  })
+
+  it('shows the notifications card with rows for a terminal run', async () => {
+    const notifs: RunNotification[] = [
+      {
+        id: 1,
+        run_id: 'r-1234567890abcdef',
+        kind: 'slack',
+        target: '#alerts',
+        status: 'sent',
+        reason: null,
+        created_at: '2025-05-03T02:04:01Z',
+      },
+      {
+        id: 2,
+        run_id: 'r-1234567890abcdef',
+        kind: 'email',
+        target: 'oncall@example.com',
+        status: 'failed',
+        reason: 'smtp timeout',
+        created_at: '2025-05-03T02:04:02Z',
+      },
+    ]
+    vi.mocked(api.runs.get).mockResolvedValue(detail({ status: 'succeeded' }))
+    vi.mocked(api.runs.list).mockResolvedValue([])
+    vi.mocked(api.runs.events).mockResolvedValue([])
+    vi.mocked(api.runs.notifications).mockResolvedValue(notifs)
+    vi.mocked(api.schedules.list).mockResolvedValue([sched()])
+
+    const { findByText } = render(withProviders(<RunDetail />))
+
+    expect(await findByText('Notifications sent')).toBeInTheDocument()
+    expect(await findByText('slack')).toBeInTheDocument()
+    expect(await findByText('#alerts')).toBeInTheDocument()
+    expect(await findByText('email')).toBeInTheDocument()
+    expect(await findByText('oncall@example.com')).toBeInTheDocument()
+    expect(await findByText('smtp timeout')).toBeInTheDocument()
+  })
+
+  it('shows empty-state for terminal run with no notifications', async () => {
+    vi.mocked(api.runs.get).mockResolvedValue(detail({ status: 'succeeded' }))
+    vi.mocked(api.runs.list).mockResolvedValue([])
+    vi.mocked(api.runs.events).mockResolvedValue([])
+    vi.mocked(api.runs.notifications).mockResolvedValue([])
+    vi.mocked(api.schedules.list).mockResolvedValue([sched()])
+
+    const { findByText } = render(withProviders(<RunDetail />))
+
+    expect(await findByText('Notifications sent')).toBeInTheDocument()
+    expect(
+      await findByText(/No destinations configured for this run\./i),
+    ).toBeInTheDocument()
+  })
+
+  it('hides the notifications card while the run is non-terminal', async () => {
+    // jsdom has no EventSource; LogTail opens one for non-terminal runs.
+    const OriginalES = (globalThis as { EventSource?: unknown }).EventSource
+    ;(globalThis as { EventSource: unknown }).EventSource = class {
+      close() {}
+      addEventListener() {}
+      onopen: ((e: unknown) => void) | null = null
+      onmessage: ((e: unknown) => void) | null = null
+      onerror: ((e: unknown) => void) | null = null
+    }
+    try {
+      vi.mocked(api.runs.get).mockResolvedValue(detail({ status: 'running' }))
+      vi.mocked(api.runs.list).mockResolvedValue([])
+      vi.mocked(api.runs.events).mockResolvedValue([])
+      vi.mocked(api.runs.notifications).mockResolvedValue([])
+      vi.mocked(api.schedules.list).mockResolvedValue([sched()])
+
+      const { findByText, queryByText } = render(withProviders(<RunDetail />))
+
+      // Wait for the page to settle.
+      await findByText('Status')
+      expect(queryByText('Notifications sent')).toBeNull()
+    } finally {
+      if (OriginalES === undefined) {
+        delete (globalThis as { EventSource?: unknown }).EventSource
+      } else {
+        ;(globalThis as { EventSource: unknown }).EventSource = OriginalES
+      }
+    }
   })
 })

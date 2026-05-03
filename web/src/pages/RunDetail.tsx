@@ -67,6 +67,17 @@ export default function RunDetailPage() {
     enabled: !!runQ.data,
   })
 
+  const isTerminal =
+    runQ.data?.status === 'succeeded' ||
+    runQ.data?.status === 'failed' ||
+    runQ.data?.status === 'partial_failure'
+
+  const notifsQ = useQuery({
+    queryKey: ['run', id, 'notifications'],
+    queryFn: () => api.runs.notifications(id!),
+    enabled: !!id && isTerminal,
+  })
+
   // Schedules already cached by Layout — this is effectively free.
   const schedulesQ = useQuery({
     queryKey: ['schedules'],
@@ -358,6 +369,44 @@ export default function RunDetailPage() {
                 </KV>
               </Card.Body>
             </Card>
+
+            {isTerminal && (
+              <Card>
+                <Card.Header>Notifications sent</Card.Header>
+                <Card.Body>
+                  {(notifsQ.data ?? []).length === 0 ? (
+                    <p className="text-ink-3">No destinations configured for this run.</p>
+                  ) : (
+                    <ul className="m-0 flex list-none flex-col gap-2 p-0 text-[12px]">
+                      {notifsQ.data!.map((n) => (
+                        <li key={n.id} className="flex flex-col gap-0.5">
+                          <div className="flex items-center gap-2">
+                            <Pill
+                              variant={
+                                n.status === 'sent'
+                                  ? 'ok'
+                                  : n.status === 'skipped'
+                                    ? 'skip'
+                                    : 'fail'
+                              }
+                            >
+                              {n.status}
+                            </Pill>
+                            <span className="font-mono">{n.kind}</span>
+                            <span className="ml-auto font-mono text-ink-3">
+                              {n.target}
+                            </span>
+                          </div>
+                          {n.reason && (
+                            <span className="italic text-ink-3">{n.reason}</span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </Card.Body>
+              </Card>
+            )}
 
             {run.writeback_commit_sha && (
               <Card>

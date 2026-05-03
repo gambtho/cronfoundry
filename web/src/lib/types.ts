@@ -146,3 +146,13 @@ export type Alerts = {
   expiring_secrets:  never[]
   drift:             never[]
 }
+
+export type RunNotification = {
+  id:         number
+  run_id:     string
+  kind:       string
+  target:     string
+  status:     'sent' | 'skipped' | 'failed'
+  reason:     string | null
+  created_at: string
+}
