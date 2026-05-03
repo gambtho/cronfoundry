@@ -185,5 +185,29 @@ func (c *Client) PutFile(ctx context.Context, installID int64, owner, repo, bran
 // pull_requests:write. Returns ErrConflict if a PR is already open for
 // the same branch.
 func (c *Client) CreatePR(ctx context.Context, installID int64, req PRRequest) (*PRResult, error) {
-	return nil, errors.New("skillrepo: CreatePR not implemented")
+	cli, err := c.gitHubClient(ctx, installID)
+	if err != nil {
+		return nil, err
+	}
+	pr, resp, err := cli.PullRequests.Create(ctx, req.Owner, req.Repo, &gh.NewPullRequest{
+		Title: gh.Ptr(req.Title),
+		Body:  gh.Ptr(req.Body),
+		Head:  gh.Ptr(req.Branch),
+		Base:  gh.Ptr(req.Base),
+	})
+	if err != nil {
+		if resp != nil {
+			if resp.StatusCode == http.StatusForbidden {
+				return nil, ErrPermissionRequired
+			}
+			if resp.StatusCode == http.StatusUnprocessableEntity {
+				return nil, ErrConflict
+			}
+		}
+		return nil, fmt.Errorf("skillrepo: CreatePR: %w", err)
+	}
+	return &PRResult{
+		HTMLURL: pr.GetHTMLURL(),
+		Number:  pr.GetNumber(),
+	}, nil
 }

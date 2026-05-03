@@ -142,3 +142,52 @@ func TestClient_PutFile_StaleSHA(t *testing.T) {
 		t.Fatalf("want ErrConflict, got %v", err)
 	}
 }
+
+func TestClient_CreatePR_Happy(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/pulls") || r.Method != "POST" {
+			http.Error(w, "unexpected: "+r.URL.Path, 500)
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"html_url": "https://github.com/o/r/pull/42",
+			"number":   42,
+		})
+	}))
+	defer srv.Close()
+	c := New(stubToken, srv.URL)
+	pr, err := c.CreatePR(context.Background(), 1, PRRequest{
+		Owner: "o", Repo: "r", Branch: "feat-x", Base: "main", Title: "t", Body: "b",
+	})
+	if err != nil {
+		t.Fatalf("CreatePR: %v", err)
+	}
+	if pr.HTMLURL != "https://github.com/o/r/pull/42" || pr.Number != 42 {
+		t.Errorf("got %+v", pr)
+	}
+}
+
+func TestClient_CreatePR_PermissionRequired(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, `{"message":"Resource not accessible by integration"}`, http.StatusForbidden)
+	}))
+	defer srv.Close()
+	c := New(stubToken, srv.URL)
+	_, err := c.CreatePR(context.Background(), 1, PRRequest{Owner: "o", Repo: "r", Branch: "x", Base: "main", Title: "t", Body: "b"})
+	if !errors.Is(err, ErrPermissionRequired) {
+		t.Fatalf("want ErrPermissionRequired, got %v", err)
+	}
+}
+
+func TestClient_CreatePR_AlreadyExists(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, `{"message":"A pull request already exists"}`, http.StatusUnprocessableEntity)
+	}))
+	defer srv.Close()
+	c := New(stubToken, srv.URL)
+	_, err := c.CreatePR(context.Background(), 1, PRRequest{Owner: "o", Repo: "r", Branch: "x", Base: "main", Title: "t", Body: "b"})
+	if !errors.Is(err, ErrConflict) {
+		t.Fatalf("want ErrConflict, got %v", err)
+	}
+}
