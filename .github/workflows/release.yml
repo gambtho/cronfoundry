@@ -1,22 +1,28 @@
 name: Release
 
-# Tag-driven release. Two parallel jobs:
+# Tag-driven release. Three stages:
 #
-#   release-amd64 — builds + publishes serve & runner images for linux/amd64
-#                   plus the GitHub Release with deploy artifacts. Fast
-#                   path (~10 min). amd64 is what every production env we
-#                   deploy to runs in practice (ACA consumption, fly.io,
-#                   the default AKS sample). Tag the image as :VERSION so
-#                   operators see it published quickly.
+#   release-amd64 (~10 min, runs first)
+#       Native amd64 build of serve + runner. Publishes :VERSION,
+#       :VERSION-MAJOR.MINOR, :latest as single-arch (amd64) manifests
+#       so amd64-only consumers (ACA consumption, fly.io, the AKS chart's
+#       default node pool) can pull immediately. Also creates the GitHub
+#       Release with deploy artifacts.
 #
-#   release-arm64 — builds + publishes the SAME tag's arm64 manifest. Runs
-#                   under QEMU emulation (~30+ min); kept separate so it
-#                   can't block the amd64 path. Pushed under
-#                   :VERSION-arm64 to avoid racing the amd64 manifest.
+#   release-arm64 (~30 min, runs in parallel with amd64)
+#       QEMU-emulated arm64 build. Publishes :VERSION-arm64,
+#       :VERSION-MAJOR.MINOR-arm64, :latest-arm64 — never races the
+#       amd64 manifest for the same version. Cache scope is separate
+#       (scope=arm64) so the two jobs' BuildKit caches don't fight.
 #
-# Both jobs run on every v* tag. If you only need amd64 (the common case)
-# the release is published as soon as release-amd64 completes; arm64
-# trickles in later without blocking deploys.
+#   release-merge (~30s, depends on both)
+#       Combines the platform-specific manifests into a multi-arch
+#       manifest under the unsuffixed tags. After this runs, :VERSION
+#       satisfies pulls from both amd64 and arm64 nodes — restoring the
+#       behavior consumers (e.g. the AKS chart) had before the split.
+#       Until release-arm64 finishes, :VERSION is amd64-only; that
+#       window is acceptable because every actively-deployed env we
+#       support is amd64.
 
 on:
   push:
@@ -196,3 +202,58 @@ jobs:
           labels: ${{ steps.runner-meta-arm64.outputs.labels }}
           cache-from: type=gha,scope=runner-arm64
           cache-to: type=gha,scope=runner-arm64,mode=max
+
+  release-merge:
+    runs-on: ubuntu-latest
+    needs: [release-amd64, release-arm64]
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Resolve the semver pieces from the v* tag (refs/tags/v0.7.13 →
+      # 0.7.13). docker/metadata-action handles this on the build jobs;
+      # the merge job derives the same values from the ref directly so we
+      # don't need to thread outputs between jobs.
+      - name: Compute tags
+        id: tags
+        run: |
+          ref="${GITHUB_REF#refs/tags/v}"   # 0.7.13
+          major_minor="${ref%.*}"           # 0.7
+          {
+            echo "version=$ref"
+            echo "major_minor=$major_minor"
+          } >> "$GITHUB_OUTPUT"
+
+      # Combine the platform-specific tags into a single multi-arch
+      # manifest at the unsuffixed tag. Run for serve and runner. Each
+      # invocation is ~30s — it's a manifest operation, not a rebuild.
+      - name: Merge serve manifest
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          V: ${{ steps.tags.outputs.version }}
+          MM: ${{ steps.tags.outputs.major_minor }}
+        run: |
+          for t in "$V" "$MM" "latest"; do
+            docker buildx imagetools create -t "${IMAGE}:${t}" \
+              "${IMAGE}:${t}" "${IMAGE}:${t}-arm64"
+          done
+
+      - name: Merge runner manifest
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-runner
+          V: ${{ steps.tags.outputs.version }}
+          MM: ${{ steps.tags.outputs.major_minor }}
+        run: |
+          for t in "$V" "$MM" "latest"; do
+            docker buildx imagetools create -t "${IMAGE}:${t}" \
+              "${IMAGE}:${t}" "${IMAGE}:${t}-arm64"
+          done
