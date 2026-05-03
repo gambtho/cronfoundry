@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"sort"
 
 	sigsyaml "sigs.k8s.io/yaml"
 	"gopkg.in/yaml.v3"
@@ -183,5 +184,92 @@ func scheduleToNode(s *config.Schedule) (*yaml.Node, error) {
 	if n.Kind != yaml.DocumentNode || len(n.Content) == 0 {
 		return nil, fmt.Errorf("yamledit: marshaled schedule has no content")
 	}
-	return n.Content[0], nil
+	mapping := n.Content[0]
+	reorderAndFilter(mapping)
+	return mapping, nil
+}
+
+// canonicalScheduleKeys returns the author-friendly key order for a schedule entry.
+func canonicalScheduleKeys() []string {
+	return []string{
+		"name", "cron", "timezone", "provider", "copilot_prefix", "model",
+		"max_turns", "overlap_policy", "timeout_sec", "destinations", "writeback",
+		"env", "mcp_env", "auto_pause",
+	}
+}
+
+// isEmptyScalar reports whether a yaml.Node represents a zero/empty value
+// that should be omitted from the output.
+func isEmptyScalar(n *yaml.Node) bool {
+	if n == nil {
+		return true
+	}
+	switch n.Kind {
+	case yaml.ScalarNode:
+		switch n.Tag {
+		case "!!null":
+			return true
+		case "!!str":
+			return n.Value == ""
+		case "!!int":
+			return n.Value == "0"
+		case "!!bool":
+			return n.Value == "false"
+		case "!!float":
+			return n.Value == "0" || n.Value == "0.0"
+		}
+		if n.Tag == "" && n.Value == "" {
+			return true
+		}
+	case yaml.MappingNode:
+		return len(n.Content) == 0
+	case yaml.SequenceNode:
+		return len(n.Content) == 0
+	}
+	return false
+}
+
+// reorderAndFilter reorders a schedule mapping node's keys into canonical order
+// and strips zero-valued optional fields.
+func reorderAndFilter(m *yaml.Node) {
+	if m.Kind != yaml.MappingNode {
+		return
+	}
+	canonical := canonicalScheduleKeys()
+	canonicalSet := make(map[string]struct{}, len(canonical))
+	for _, k := range canonical {
+		canonicalSet[k] = struct{}{}
+	}
+	// Index pairs by key.
+	pairs := map[string]*yaml.Node{}
+	var extras []string
+	for i := 0; i < len(m.Content)-1; i += 2 {
+		k := m.Content[i]
+		v := m.Content[i+1]
+		pairs[k.Value] = v
+		if _, ok := canonicalSet[k.Value]; !ok {
+			extras = append(extras, k.Value)
+		}
+	}
+	sort.Strings(extras)
+	// Rebuild Content in canonical order, skipping empty values.
+	var out []*yaml.Node
+	emit := func(name string, v *yaml.Node) {
+		if isEmptyScalar(v) {
+			return
+		}
+		out = append(out,
+			&yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: name},
+			v,
+		)
+	}
+	for _, k := range canonical {
+		if v, ok := pairs[k]; ok {
+			emit(k, v)
+		}
+	}
+	for _, k := range extras {
+		emit(k, pairs[k])
+	}
+	m.Content = out
 }

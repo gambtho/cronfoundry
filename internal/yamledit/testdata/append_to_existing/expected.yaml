@@ -18,15 +18,12 @@ skills:
           enabled: true
           path: memory.md
           mode: append
-      - cron: 0 * * * *
+      - name: hourly-pulse
+        cron: 0 * * * *
+        timezone: UTC
+        provider: copilot-enterprise
+        model: gpt-5-mini
         destinations:
           - github-issue:
               repo: gambtho/skills
               title: pulse
-        env: null
-        model: gpt-5-mini
-        name: hourly-pulse
-        overlap_policy: ""
-        provider: copilot-enterprise
-        timeout_sec: 0
-        timezone: UTC
