@@ -59,6 +59,9 @@ describe('Runs page', () => {
       run('nightly', 'succeeded'),
       run('weekly', 'failed'),
     ])
+    // Topbar.Search reads schedules; default to empty so the query
+    // doesn't return undefined.
+    vi.mocked(api.schedules.list).mockResolvedValue([])
 
     const { findByText } = render(withProviders(<Runs />))
 
@@ -68,6 +71,9 @@ describe('Runs page', () => {
 
   it('shows error UI when fetch fails', async () => {
     vi.mocked(api.runs.list).mockRejectedValue(new Error('boom'))
+    // Topbar.Search reads schedules — give it an empty list so the
+    // query doesn't return undefined and trigger a noisy warning.
+    vi.mocked(api.schedules.list).mockResolvedValue([])
 
     const { findByText } = render(withProviders(<Runs />))
 
