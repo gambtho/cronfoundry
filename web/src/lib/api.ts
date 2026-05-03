@@ -1,4 +1,5 @@
 // web/src/lib/api.ts
+import { ApiError } from './api-error'
 import type {
   RepoConnection, Skill, Schedule, RunSummary, RunDetail, RunEvent, RunNotification, SecretMeta, Me, AuditEntry, UserDTO,
   SystemHealth, Alerts
@@ -33,11 +34,53 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     }
   }
   if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: res.statusText }))
-    throw new Error((body as { error?: string }).error ?? res.statusText)
+    const raw: unknown = await res.json().catch(() => null)
+    const body: Record<string, unknown> =
+      raw !== null && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+    const message =
+      typeof body.error === 'string' && body.error ? body.error : res.statusText
+    const code = typeof body.code === 'string' && body.code ? body.code : 'unknown'
+    const extras: Record<string, unknown> = { ...body }
+    delete extras.error
+    delete extras.code
+    throw new ApiError(message, res.status, code, extras)
   }
   if (res.status === 204) return undefined as T
   return res.json()
+}
+
+/**
+ * ProposeJobScheduleInput is the JSON shape of `config.Schedule` from the
+ * Go backend (matched against its json tags). Only `name`, `cron`, `provider`,
+ * `model`, and `destinations` are practically required for a runnable
+ * schedule; the rest are optional and omitted when zero.
+ */
+export interface ProposeJobScheduleInput {
+  name: string
+  cron: string
+  timezone?: string
+  overlap_policy?: string
+  timeout_sec?: number
+  provider: string
+  model: string
+  max_turns?: number
+  copilot_prefix?: string
+  destinations?: unknown[] // shaped per config.Destination on the server; v1 sends []
+  writeback?: { enabled: boolean; path: string; mode: 'append' | 'replace' }
+  env?: Record<string, { value?: string; secret_ref?: string }>
+  mcp_env?: Record<string, Record<string, { value?: string; secret_ref?: string }>>
+  auto_pause?: unknown
+}
+
+export interface ProposeJobRequest {
+  skill_path: string
+  schedule: ProposeJobScheduleInput
+}
+
+export interface ProposeJobResponse {
+  pr_url: string
+  pr_number: number
+  branch: string
 }
 
 export const api = {
@@ -62,7 +105,7 @@ export const api = {
     list: () => apiFetch<Schedule[]>('/api/schedules'),
     pause: (id: string) => apiFetch<Schedule>(`/api/schedules/${id}/pause`, { method: 'POST' }),
     resume: (id: string) => apiFetch<Schedule>(`/api/schedules/${id}/resume`, { method: 'POST' }),
-    runNow: (id: string) => apiFetch<void>(`/api/schedules/${id}/run-now`, { method: 'POST' }),
+    runNow: (id: string) => apiFetch<{ run_id: string }>(`/api/schedules/${id}/run-now`, { method: 'POST' }),
     patchOverrides: (id: string, overrides: { cron?: string; timezone?: string; timeout_sec?: number; enabled?: boolean }) =>
       apiFetch<void>(`/api/schedules/${id}/overrides`, {
         method: 'PATCH',
@@ -119,6 +162,15 @@ export const api = {
 
   alerts: {
     list: () => apiFetch<Alerts>('/api/alerts'),
+  },
+
+  skillRepo: {
+    proposeJob: (req: ProposeJobRequest) =>
+      apiFetch<ProposeJobResponse>('/api/skill-repo/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(req),
+      }),
   },
 
   users: {

@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { render, cleanup, waitFor } from '@testing-library/react'
+import { render, cleanup, waitFor, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Jobs from './Jobs'
@@ -151,5 +151,78 @@ describe('Jobs page', () => {
 
     const { findByText } = render(withProviders(<Jobs />))
     expect(await findByText(/No jobs yet/i)).toBeInTheDocument()
+  })
+})
+
+describe('Jobs page nav buttons', () => {
+  it('+ Add job navigates to /jobs/new', async () => {
+    vi.mocked(api.schedules.list).mockResolvedValue([])
+    vi.mocked(api.runs.list).mockResolvedValue([])
+    render(
+      <MemoryRouter initialEntries={['/jobs']}>
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })}>
+          <Routes>
+            <Route path="/jobs" element={<Jobs />} />
+            <Route path="/jobs/new" element={<div data-testid="new-page" />} />
+          </Routes>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    )
+    fireEvent.click(await screen.findByText('+ Add job'))
+    expect(await screen.findByTestId('new-page')).toBeInTheDocument()
+  })
+
+  it('+ Import job navigates to /jobs/import', async () => {
+    vi.mocked(api.schedules.list).mockResolvedValue([])
+    vi.mocked(api.runs.list).mockResolvedValue([])
+    render(
+      <MemoryRouter initialEntries={['/jobs']}>
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })}>
+          <Routes>
+            <Route path="/jobs" element={<Jobs />} />
+            <Route path="/jobs/import" element={<div data-testid="import-page" />} />
+          </Routes>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    )
+    fireEvent.click(await screen.findByText('+ Import job'))
+    expect(await screen.findByTestId('import-page')).toBeInTheDocument()
+  })
+
+  it('pressing N navigates to /jobs/new', async () => {
+    vi.mocked(api.schedules.list).mockResolvedValue([])
+    vi.mocked(api.runs.list).mockResolvedValue([])
+    render(
+      <MemoryRouter initialEntries={['/jobs']}>
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })}>
+          <Routes>
+            <Route path="/jobs" element={<Jobs />} />
+            <Route path="/jobs/new" element={<div data-testid="new-page" />} />
+          </Routes>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    )
+    await screen.findByText('+ Add job')
+    fireEvent.keyDown(window, { key: 'n' })
+    expect(await screen.findByTestId('new-page')).toBeInTheDocument()
+  })
+
+  it('Run-now navigates to /runs/<id> on success', async () => {
+    vi.mocked(api.schedules.runNow as any).mockResolvedValue({ run_id: 'run-xyz' })
+    vi.mocked(api.schedules.list).mockResolvedValue([sched()])
+    vi.mocked(api.runs.list).mockResolvedValue([])
+    render(
+      <MemoryRouter initialEntries={['/jobs']}>
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })}>
+          <Routes>
+            <Route path="/jobs" element={<Jobs />} />
+            <Route path="/runs/:id" element={<div data-testid="run-page" />} />
+          </Routes>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    )
+    const btn = await screen.findByLabelText(/run nightly-backup now/i)
+    fireEvent.click(btn)
+    expect(await screen.findByTestId('run-page')).toBeInTheDocument()
   })
 })

@@ -252,8 +252,7 @@ func (h *schedulesHandler) runNow(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "invalid schedule id", "bad_request")
 		return
 	}
-	claims := mustClaims(r)
-	actor := claims.Login
+	actor := SessionClaimsFromContext(r.Context()).Login
 
 	apiBase := h.deps.APIBaseURL
 	if apiBase == "" {
@@ -283,8 +282,20 @@ func (h *schedulesHandler) runNow(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, resp.StatusCode, "trigger failed", "trigger_error")
 		return
 	}
+	// The internal endpoint returns {"run_id": "<uuid>"}. Forward it so the
+	// SPA can navigate to the new run page. A missing run_id means the
+	// upstream contract changed; surface as 502 instead of pretending success.
+	var trigger struct {
+		RunID string `json:"run_id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&trigger); err != nil || trigger.RunID == "" {
+		slog.Error("runNow: internal endpoint returned no run_id",
+			"actor", actor, "schedule_id", idStr, "decode_err", err)
+		writeErr(w, http.StatusBadGateway, "trigger returned no run_id", "gateway")
+		return
+	}
 	// Audit is emitted by the internal /run-now endpoint (a single source of
 	// truth for schedule.run_now across UI, CLI, and direct internal calls).
 	// See internal/api/trigger.go.
-	w.WriteHeader(http.StatusAccepted)
+	writeJSON(w, http.StatusOK, map[string]string{"run_id": trigger.RunID})
 }

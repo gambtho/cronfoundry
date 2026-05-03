@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest'
-import { render, cleanup } from '@testing-library/react'
+import { render, cleanup, screen, fireEvent } from '@testing-library/react'
 import { MemoryRouter, Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import JobDetail from './JobDetail'
@@ -153,5 +153,25 @@ describe('JobDetail page', () => {
     const { findByText } = render(withProviders(<JobDetail />))
 
     expect(await findByText(/Could not load job/i)).toBeInTheDocument()
+  })
+
+  it('Run-now navigates to /runs/<id> on success', async () => {
+    ;(api.schedules.runNow as any).mockResolvedValue({ run_id: 'run-xyz' })
+    vi.mocked(api.schedules.list).mockResolvedValue([sched({ id: 's1' })])
+    vi.mocked(api.runs.list).mockResolvedValue([])
+
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
+    render(
+      <QueryClientProvider client={qc}>
+        <MemoryRouter initialEntries={['/jobs/s1']}>
+          <Routes>
+            <Route path="/jobs/:id" element={<JobDetail />} />
+            <Route path="/runs/:id" element={<div data-testid="run-page" />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+    fireEvent.click(await screen.findByRole('button', { name: /run now/i }))
+    expect(await screen.findByTestId('run-page')).toBeInTheDocument()
   })
 })

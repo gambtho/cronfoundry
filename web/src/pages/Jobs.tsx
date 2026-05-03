@@ -1,8 +1,9 @@
 // web/src/pages/Jobs.tsx
 import { useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
+import { useShortcut } from '../lib/useShortcut'
 import {
   Button,
   Card,
@@ -39,6 +40,8 @@ type SortMode = 'alert' | 'name' | 'next'
 
 export default function Jobs() {
   const qc = useQueryClient()
+  const navigate = useNavigate()
+  useShortcut('n', () => navigate('/jobs/new'))
   const schedulesQ = useQuery({
     queryKey: ['schedules'],
     queryFn: api.schedules.list,
@@ -52,7 +55,10 @@ export default function Jobs() {
 
   const runNow = useMutation({
     mutationFn: api.schedules.runNow,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['runs'] }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['runs'] })
+      navigate(`/runs/${data.run_id}`)
+    },
   })
   const resume = useMutation({
     mutationFn: api.schedules.resume,
@@ -169,8 +175,8 @@ export default function Jobs() {
           subtitle="scheduled tasks across your repos and providers"
           actions={
             <>
-              <Button variant="primary" shortcut="N">+ New job</Button>
-              <Button>Import from yaml</Button>
+              <Button variant="primary" shortcut="N" onClick={() => navigate('/jobs/new')}>+ Add job</Button>
+              <Button onClick={() => navigate('/jobs/import')}>+ Import job</Button>
             </>
           }
         />

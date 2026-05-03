@@ -1,0 +1,14 @@
+version: 1
+skills:
+  - path: skills/empty
+    schedules:
+      - name: hello
+        cron: '*/5 * * * *'
+        timezone: UTC
+        provider: copilot-enterprise
+        copilot_prefix: copilot
+        model: gpt-5-mini
+        destinations:
+          - github-issue:
+              repo: gambtho/skills
+              title: hello
