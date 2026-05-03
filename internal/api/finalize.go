@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -30,14 +31,26 @@ var validFinalizeStatuses = map[string]bool{
 }
 
 type finalizeBody struct {
-	Status             string  `json:"status"`
-	DurationMs         *int32  `json:"duration_ms,omitempty"`
-	TokensIn           *int32  `json:"tokens_in,omitempty"`
-	TokensOut          *int32  `json:"tokens_out,omitempty"`
-	CostCents          *int32  `json:"cost_cents,omitempty"`
-	ErrorKind          *string `json:"error_kind,omitempty"`
-	ErrorMsg           *string `json:"error_msg,omitempty"`
-	WritebackCommitSha *string `json:"writeback_commit_sha,omitempty"`
+	Status             string                 `json:"status"`
+	DurationMs         *int32                 `json:"duration_ms,omitempty"`
+	TokensIn           *int32                 `json:"tokens_in,omitempty"`
+	TokensOut          *int32                 `json:"tokens_out,omitempty"`
+	CostCents          *int32                 `json:"cost_cents,omitempty"`
+	ErrorKind          *string                `json:"error_kind,omitempty"`
+	ErrorMsg           *string                `json:"error_msg,omitempty"`
+	WritebackCommitSha *string                `json:"writeback_commit_sha,omitempty"`
+	Notifications      []finalizeNotification `json:"notifications,omitempty"`
+}
+
+type finalizeNotification struct {
+	Kind   string  `json:"kind"`
+	Target string  `json:"target"`
+	Status string  `json:"status"` // sent | skipped | failed
+	Reason *string `json:"reason,omitempty"`
+}
+
+var validNotificationStatus = map[string]bool{
+	"sent": true, "skipped": true, "failed": true,
 }
 
 // ServeHTTP implements POST /internal/runs/{id}/finalize.
@@ -90,9 +103,34 @@ func (h finalizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "cost_cents must be non-negative", http.StatusBadRequest)
 		return
 	}
+	for i, n := range body.Notifications {
+		if n.Kind == "" || len(n.Kind) > 200 {
+			http.Error(w, fmt.Sprintf("notifications[%d].kind: required, max 200 chars", i), http.StatusBadRequest)
+			return
+		}
+		if n.Target == "" || len(n.Target) > 200 {
+			http.Error(w, fmt.Sprintf("notifications[%d].target: required, max 200 chars", i), http.StatusBadRequest)
+			return
+		}
+		if !validNotificationStatus[n.Status] {
+			http.Error(w, fmt.Sprintf("notifications[%d].status: invalid", i), http.StatusBadRequest)
+			return
+		}
+		if n.Reason != nil && len(*n.Reason) > 2000 {
+			http.Error(w, fmt.Sprintf("notifications[%d].reason: max 2000 chars", i), http.StatusBadRequest)
+			return
+		}
+	}
 
-	q := dbgen.New(h.deps.Pool)
-	row, err := q.FinalizeRun(r.Context(), dbgen.FinalizeRunParams{
+	tx, err := h.deps.Pool.Begin(r.Context())
+	if err != nil {
+		http.Error(w, "begin tx: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer func() { _ = tx.Rollback(r.Context()) }()
+	qx := dbgen.New(tx)
+
+	row, err := qx.FinalizeRun(r.Context(), dbgen.FinalizeRunParams{
 		ID:                 pgtype.UUID{Bytes: urlRunID, Valid: true},
 		Status:             body.Status,
 		DurationMs:         body.DurationMs,
@@ -115,6 +153,25 @@ func (h finalizeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		http.Error(w, "finalize: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	for _, n := range body.Notifications {
+		if err := qx.InsertRunNotification(r.Context(), dbgen.InsertRunNotificationParams{
+			RunID:  row.ID,
+			OrgID:  row.OrgID,
+			Kind:   n.Kind,
+			Target: n.Target,
+			Status: n.Status,
+			Reason: n.Reason,
+		}); err != nil {
+			http.Error(w, "insert notification: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+
+	if err := tx.Commit(r.Context()); err != nil {
+		http.Error(w, "commit: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 

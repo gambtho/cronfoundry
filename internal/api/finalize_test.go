@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +19,152 @@ import (
 	"github.com/gambtho/cronfoundry/internal/testdb"
 	"github.com/gambtho/cronfoundry/internal/token"
 )
+
+func TestFinalize_PersistsNotifications(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, cleanup := testdb.BootPG(t)
+	defer cleanup()
+
+	runID, orgID := seedRun(t, pool)
+	signer := token.New(randomMaster(t))
+	tok, hash, err := signer.Sign(token.RunClaims{
+		RunID: runID, OrgID: uuid.UUID(orgID.Bytes), ExpiresAt: time.Now().Add(time.Minute),
+	})
+	require.NoError(t, err)
+	bindRunHash(t, pool, runID, hash)
+
+	srv := NewServer("127.0.0.1:0", Deps{Pool: pool, Signer: signer})
+	ts := httptest.NewServer(srv.Handler)
+	defer ts.Close()
+
+	reason := "timeout"
+	body := map[string]any{
+		"status": "succeeded",
+		"notifications": []map[string]any{
+			{"kind": "slack", "target": "#alerts", "status": "sent"},
+			{"kind": "discord", "target": "hooks.discord.com", "status": "failed", "reason": reason},
+		},
+	}
+	buf, _ := json.Marshal(body)
+	req, _ := http.NewRequest("POST", ts.URL+"/internal/runs/"+runID.String()+"/finalize", bytes.NewReader(buf))
+	req.Header.Set("Authorization", "Bearer "+tok)
+	resp, err := ts.Client().Do(req)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
+
+	rows, err := pool.Query(context.Background(),
+		`SELECT kind, target, status, reason FROM run_notification WHERE run_id=$1 ORDER BY id`,
+		pgtype.UUID{Bytes: runID, Valid: true})
+	require.NoError(t, err)
+	defer rows.Close()
+	type rec struct {
+		kind, target, status string
+		reason               *string
+	}
+	var got []rec
+	for rows.Next() {
+		var r rec
+		require.NoError(t, rows.Scan(&r.kind, &r.target, &r.status, &r.reason))
+		got = append(got, r)
+	}
+	require.Len(t, got, 2)
+	assert.Equal(t, "slack", got[0].kind)
+	assert.Equal(t, "#alerts", got[0].target)
+	assert.Equal(t, "sent", got[0].status)
+	assert.Nil(t, got[0].reason)
+	assert.Equal(t, "discord", got[1].kind)
+	assert.Equal(t, "hooks.discord.com", got[1].target)
+	assert.Equal(t, "failed", got[1].status)
+	require.NotNil(t, got[1].reason)
+	assert.Equal(t, "timeout", *got[1].reason)
+}
+
+func TestFinalize_RejectsInvalidNotificationStatus(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, cleanup := testdb.BootPG(t)
+	defer cleanup()
+
+	runID, orgID := seedRun(t, pool)
+	signer := token.New(randomMaster(t))
+	tok, hash, err := signer.Sign(token.RunClaims{
+		RunID: runID, OrgID: uuid.UUID(orgID.Bytes), ExpiresAt: time.Now().Add(time.Minute),
+	})
+	require.NoError(t, err)
+	bindRunHash(t, pool, runID, hash)
+
+	srv := NewServer("127.0.0.1:0", Deps{Pool: pool, Signer: signer})
+	ts := httptest.NewServer(srv.Handler)
+	defer ts.Close()
+
+	body := map[string]any{
+		"status": "succeeded",
+		"notifications": []map[string]any{
+			{"kind": "slack", "target": "#x", "status": "bogus"},
+		},
+	}
+	buf, _ := json.Marshal(body)
+	req, _ := http.NewRequest("POST", ts.URL+"/internal/runs/"+runID.String()+"/finalize", bytes.NewReader(buf))
+	req.Header.Set("Authorization", "Bearer "+tok)
+	resp, err := ts.Client().Do(req)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	respBody, _ := io.ReadAll(resp.Body)
+	assert.Contains(t, string(respBody), "notifications[0].status")
+}
+
+func TestFinalize_RollsBackOnInvalidNotification(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, cleanup := testdb.BootPG(t)
+	defer cleanup()
+
+	runID, orgID := seedRun(t, pool)
+	signer := token.New(randomMaster(t))
+	tok, hash, err := signer.Sign(token.RunClaims{
+		RunID: runID, OrgID: uuid.UUID(orgID.Bytes), ExpiresAt: time.Now().Add(time.Minute),
+	})
+	require.NoError(t, err)
+	bindRunHash(t, pool, runID, hash)
+
+	srv := NewServer("127.0.0.1:0", Deps{Pool: pool, Signer: signer})
+	ts := httptest.NewServer(srv.Handler)
+	defer ts.Close()
+
+	longReason := strings.Repeat("x", 3000)
+	body := map[string]any{
+		"status": "succeeded",
+		"notifications": []map[string]any{
+			{"kind": "slack", "target": "#a", "status": "sent"},
+			{"kind": "slack", "target": "#b", "status": "sent", "reason": longReason},
+		},
+	}
+	buf, _ := json.Marshal(body)
+	req, _ := http.NewRequest("POST", ts.URL+"/internal/runs/"+runID.String()+"/finalize", bytes.NewReader(buf))
+	req.Header.Set("Authorization", "Bearer "+tok)
+	resp, err := ts.Client().Do(req)
+	require.NoError(t, err)
+	defer func() { _ = resp.Body.Close() }()
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+
+	// Run remains non-terminal; no notifications inserted.
+	var status string
+	require.NoError(t, pool.QueryRow(context.Background(),
+		`SELECT status FROM run WHERE id=$1`, pgtype.UUID{Bytes: runID, Valid: true}).Scan(&status))
+	assert.NotEqual(t, "succeeded", status)
+
+	var n int
+	require.NoError(t, pool.QueryRow(context.Background(),
+		`SELECT count(*) FROM run_notification WHERE run_id=$1`,
+		pgtype.UUID{Bytes: runID, Valid: true}).Scan(&n))
+	assert.Equal(t, 0, n)
+}
 
 func TestFinalize_PersistsSuccess(t *testing.T) {
 	if testing.Short() {
