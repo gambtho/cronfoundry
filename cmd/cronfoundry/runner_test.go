@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/gambtho/cronfoundry/internal/publish"
 )
 
 // TestRedactCloneURL_StripsUserInfo is the MAJ-4 guard: the token-bearing
@@ -408,4 +411,61 @@ func TestRunnerHTTP_CopilotTokenFetched(t *testing.T) {
 	_ = runRunnerHTTP(context.Background(), "")
 
 	assert.True(t, copilotTokenCalled, "expected /copilot-token to be called for copilot-enterprise provider")
+}
+
+// TestBuildNotifications verifies the runner translates publish.Result entries
+// into finalize-wire delivery records, redacting secret-bearing webhook URLs
+// down to host and surfacing skip/failure reasons.
+func TestBuildNotifications(t *testing.T) {
+	results := []publish.Result{
+		{Type: "slack", OK: true, Target: "https://hooks.slack.com/services/T0/B0/SECRET"},
+		{Type: "github-issue", OK: false, Err: errors.New("create: 403 Forbidden"), Target: "owner/repo"},
+		{Type: "discord", OK: true, Skipped: true, SkipReason: "condition:on_failure not met", Target: "discord-channel"},
+		{Type: "email", OK: true, Target: "ops@example.com"},
+	}
+
+	got := buildNotifications(results)
+	require.Len(t, got, 4)
+
+	assert.Equal(t, "slack", got[0].Kind)
+	assert.Equal(t, "hooks.slack.com", got[0].Target)
+	assert.Equal(t, "sent", got[0].Status)
+	assert.Nil(t, got[0].Reason)
+
+	assert.Equal(t, "github-issue", got[1].Kind)
+	assert.Equal(t, "owner/repo", got[1].Target)
+	assert.Equal(t, "failed", got[1].Status)
+	require.NotNil(t, got[1].Reason)
+	assert.Equal(t, "create: 403 Forbidden", *got[1].Reason)
+
+	assert.Equal(t, "discord", got[2].Kind)
+	assert.Equal(t, "skipped", got[2].Status)
+	require.NotNil(t, got[2].Reason)
+	assert.Equal(t, "condition:on_failure not met", *got[2].Reason)
+
+	assert.Equal(t, "email", got[3].Kind)
+	assert.Equal(t, "ops@example.com", got[3].Target)
+	assert.Equal(t, "sent", got[3].Status)
+}
+
+// TestBuildNotifications_Empty ensures no allocation/no entries when there
+// were no publish results (e.g. early-failure runs that never reached publish).
+func TestBuildNotifications_Empty(t *testing.T) {
+	assert.Nil(t, buildNotifications(nil))
+	assert.Nil(t, buildNotifications([]publish.Result{}))
+}
+
+// TestBuildNotifications_TruncatesLongReason guards against finalize 400s by
+// asserting that an oversize error message is clipped to notificationReasonMax
+// bytes and ends with the visible truncation marker.
+func TestBuildNotifications_TruncatesLongReason(t *testing.T) {
+	long := strings.Repeat("x", 3000)
+	results := []publish.Result{
+		{Type: "http", OK: false, Err: errors.New(long), Target: "https://api.example.com/h"},
+	}
+	got := buildNotifications(results)
+	require.Len(t, got, 1)
+	require.NotNil(t, got[0].Reason)
+	assert.LessOrEqual(t, len(*got[0].Reason), notificationReasonMax)
+	assert.True(t, strings.HasSuffix(*got[0].Reason, "…"), "truncated reason must end with …")
 }

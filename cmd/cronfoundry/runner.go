@@ -25,6 +25,7 @@ import (
 	"github.com/gambtho/cronfoundry/internal/config"
 	"github.com/gambtho/cronfoundry/internal/github"
 	"github.com/gambtho/cronfoundry/internal/publish"
+	"github.com/gambtho/cronfoundry/internal/redact"
 	"github.com/gambtho/cronfoundry/internal/runner"
 	runnersecrets "github.com/gambtho/cronfoundry/internal/secrets/runner"
 )
@@ -315,6 +316,7 @@ func runRunnerHTTP(ctx context.Context, runIDFlag string) error {
 		sha := result.WritebackSHA
 		body.WritebackCommitSha = &sha
 	}
+	body.Notifications = buildNotifications(result.PublishResults)
 	if err := client.PostFinalize(finalizeCtx, runID, body); err != nil {
 		return fmt.Errorf("finalize: %w", err)
 	}
@@ -323,6 +325,74 @@ func runRunnerHTTP(ctx context.Context, runIDFlag string) error {
 		return fmt.Errorf("runner: %w", runErr)
 	}
 	return nil
+}
+
+// buildNotifications converts publish results into the wire-format delivery
+// records sent to /finalize. Targets are redacted via redact.Target so secret
+// material in webhook URLs never reaches the API.
+func buildNotifications(results []publish.Result) []finalizeNotification {
+	if len(results) == 0 {
+		return nil
+	}
+	out := make([]finalizeNotification, 0, len(results))
+	for _, pr := range results {
+		// Empty Type/Target would trip the API's required-field
+		// validation. A publisher that didn't supply a target is a
+		// real signal worth recording — surface it as a stable
+		// placeholder rather than dropping the row.
+		kind := clip(pr.Type, notificationKindMax)
+		if kind == "" {
+			kind = "<unknown>"
+		}
+		target := clip(redact.Target(pr.Type, pr.Target), notificationTargetMax)
+		if target == "" {
+			target = "<unknown>"
+		}
+		n := finalizeNotification{
+			Kind:   kind,
+			Target: target,
+		}
+		switch {
+		case pr.OK && !pr.Skipped:
+			n.Status = "sent"
+		case pr.OK && pr.Skipped:
+			n.Status = "skipped"
+			if pr.SkipReason != "" {
+				r := clip(pr.SkipReason, notificationReasonMax)
+				n.Reason = &r
+			}
+		default:
+			n.Status = "failed"
+			if pr.Err != nil {
+				r := clip(pr.Err.Error(), notificationReasonMax)
+				n.Reason = &r
+			}
+		}
+		out = append(out, n)
+	}
+	return out
+}
+
+// API limits enforced by the webapi finalize endpoint. Truncating client-side
+// keeps a deeply nested error message from tripping a 400.
+const (
+	notificationTargetMax = 200
+	notificationReasonMax = 2000
+	notificationKindMax   = 200
+)
+
+// clip truncates s to max bytes, appending an ellipsis to make truncation
+// visible. The ellipsis is a 3-byte UTF-8 rune ("…"); we reserve 3 bytes for
+// it so the returned string is at most max bytes when len(s) > max.
+func clip(s string, max int) string {
+	if len(s) <= max {
+		return s
+	}
+	const ell = "…"
+	if max <= len(ell) {
+		return s[:max]
+	}
+	return s[:max-len(ell)] + ell
 }
 
 // redactCloneURL strips the userinfo component (which holds the installation
@@ -449,17 +519,26 @@ func (c *apiClient) PostEvents(ctx context.Context, runID string, events []event
 	return c.do(ctx, http.MethodPost, "/internal/runs/"+url.PathEscape(runID)+"/events", body, nil)
 }
 
+// finalizeNotification is one delivery record submitted with the run finalize.
+type finalizeNotification struct {
+	Kind   string  `json:"kind"`
+	Target string  `json:"target"`
+	Status string  `json:"status"`
+	Reason *string `json:"reason,omitempty"`
+}
+
 // finalizeRequest mirrors api.finalizeBody (unexported there; we redeclare it
 // rather than importing, to keep this package decoupled from the server).
 type finalizeRequest struct {
-	Status             string  `json:"status"`
-	DurationMs         *int32  `json:"duration_ms,omitempty"`
-	TokensIn           *int32  `json:"tokens_in,omitempty"`
-	TokensOut          *int32  `json:"tokens_out,omitempty"`
-	CostCents          *int32  `json:"cost_cents"`
-	ErrorKind          *string `json:"error_kind,omitempty"`
-	ErrorMsg           *string `json:"error_msg,omitempty"`
-	WritebackCommitSha *string `json:"writeback_commit_sha,omitempty"`
+	Status             string                 `json:"status"`
+	DurationMs         *int32                 `json:"duration_ms,omitempty"`
+	TokensIn           *int32                 `json:"tokens_in,omitempty"`
+	TokensOut          *int32                 `json:"tokens_out,omitempty"`
+	CostCents          *int32                 `json:"cost_cents"`
+	ErrorKind          *string                `json:"error_kind,omitempty"`
+	ErrorMsg           *string                `json:"error_msg,omitempty"`
+	WritebackCommitSha *string                `json:"writeback_commit_sha,omitempty"`
+	Notifications      []finalizeNotification `json:"notifications,omitempty"`
 }
 
 func (c *apiClient) PostFinalize(ctx context.Context, runID string, body finalizeRequest) error {

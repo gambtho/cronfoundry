@@ -17,6 +17,11 @@ type Result struct {
 	SkipReason string // human-readable explanation when Skipped==true
 	Err        error  // non-nil when OK == false
 	Detail     string // optional context (issue URL, HTTP status, etc.)
+	// Target is the raw destination identifier the publisher was asked to
+	// deliver to (channel, webhook URL, repo path, email address). It may
+	// contain secret material — callers MUST redact via redact.Target
+	// before persisting or logging.
+	Target string
 }
 
 // Publisher publishes a rendered output to a single destination.

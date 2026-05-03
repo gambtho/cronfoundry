@@ -80,6 +80,17 @@ type RunEvent struct {
 	PayloadJson []byte
 }
 
+type RunNotification struct {
+	ID        int64
+	RunID     pgtype.UUID
+	OrgID     pgtype.UUID
+	Kind      string
+	Target    string
+	Status    string
+	Reason    *string
+	CreatedAt pgtype.Timestamptz
+}
+
 type Schedule struct {
 	ID                   pgtype.UUID
 	OrgID                pgtype.UUID

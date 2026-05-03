@@ -34,7 +34,7 @@ func ensureLen(s string, maxRunes int) string {
 func postJSON(ctx context.Context, c *http.Client, typ, url string, payload any) Result {
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return Result{Type: typ, OK: false, Err: fmt.Errorf("%s: marshal: %w", typ, err)}
+		return Result{Type: typ, OK: false, Err: fmt.Errorf("%s: marshal: %w", typ, err), Target: url}
 	}
 	var lastErr error
 	delays := []time.Duration{0, 1 * time.Second, 4 * time.Second}
@@ -48,7 +48,7 @@ func postJSON(ctx context.Context, c *http.Client, typ, url string, payload any)
 		if d > 0 {
 			select {
 			case <-ctx.Done():
-				return Result{Type: typ, OK: false, Err: ctx.Err()}
+				return Result{Type: typ, OK: false, Err: ctx.Err(), Target: url}
 			case <-time.After(d):
 			}
 		}
@@ -65,12 +65,12 @@ func postJSON(ctx context.Context, c *http.Client, typ, url string, payload any)
 		}
 		_ = resp.Body.Close()
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			return Result{Type: typ, OK: true, Detail: fmt.Sprintf("http %d", resp.StatusCode)}
+			return Result{Type: typ, OK: true, Detail: fmt.Sprintf("http %d", resp.StatusCode), Target: url}
 		}
 		if resp.StatusCode >= 400 && resp.StatusCode < 500 {
-			return Result{Type: typ, OK: false, Err: fmt.Errorf("%s: http %d (no retry)", typ, resp.StatusCode)}
+			return Result{Type: typ, OK: false, Err: fmt.Errorf("%s: http %d (no retry)", typ, resp.StatusCode), Target: url}
 		}
 		lastErr = fmt.Errorf("http %d", resp.StatusCode)
 	}
-	return Result{Type: typ, OK: false, Err: fmt.Errorf("%s: retries exhausted: %w", typ, lastErr)}
+	return Result{Type: typ, OK: false, Err: fmt.Errorf("%s: retries exhausted: %w", typ, lastErr), Target: url}
 }

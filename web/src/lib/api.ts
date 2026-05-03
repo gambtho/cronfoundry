@@ -1,6 +1,6 @@
 // web/src/lib/api.ts
 import type {
-  RepoConnection, Skill, Schedule, RunSummary, RunDetail, RunEvent, SecretMeta, Me, AuditEntry, UserDTO,
+  RepoConnection, Skill, Schedule, RunSummary, RunDetail, RunEvent, RunNotification, SecretMeta, Me, AuditEntry, UserDTO,
   SystemHealth, Alerts
 } from './types'
 
@@ -82,6 +82,7 @@ export const api = {
     },
     get: (id: string) => apiFetch<RunDetail>(`/api/runs/${id}`),
     events: (id: string) => apiFetch<RunEvent[]>(`/api/runs/${id}/events`),
+    notifications: (id: string) => apiFetch<RunNotification[]>(`/api/runs/${id}/notifications`),
     eventsStreamURL: (id: string) => `/api/runs/${id}/events/stream`,
   },
 

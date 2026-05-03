@@ -53,11 +53,15 @@ func (p *githubIssuePub) Type() string { return "github-issue" }
 func (p *githubIssuePub) Publish(ctx context.Context, dest config.Destination, output string, tctx template.Context, secrets SecretGetter) Result {
 	d := dest.GitHubIssue
 	if d == nil {
-		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("github-issue: config missing")}
+		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("github-issue: config missing"), Target: "<missing-config>"}
 	}
 	owner, repo, ok := splitRepo(d.Repo)
 	if !ok {
-		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("github-issue: repo must be owner/name (got %q)", d.Repo)}
+		target := d.Repo
+		if target == "" {
+			target = "<invalid-repo>"
+		}
+		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("github-issue: repo must be owner/name (got %q)", d.Repo), Target: target}
 	}
 
 	token, err := secrets.Get("github_token")
@@ -65,7 +69,7 @@ func (p *githubIssuePub) Publish(ctx context.Context, dest config.Destination, o
 		token = p.fallbackToken
 	}
 	if token == "" {
-		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("github-issue: no GitHub token available (set GITHUB_TOKEN)")}
+		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("github-issue: no GitHub token available (set GITHUB_TOKEN)"), Target: d.Repo}
 	}
 
 	httpClient := &http.Client{Transport: &tokenAuthTransport{token: token}}
@@ -77,7 +81,7 @@ func (p *githubIssuePub) Publish(ctx context.Context, dest config.Destination, o
 		}
 		parsed, err := url.Parse(base)
 		if err != nil {
-			return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("github-issue: parse base: %w", err)}
+			return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("github-issue: parse base: %w", err), Target: d.Repo}
 		}
 		client.BaseURL = parsed
 	}
@@ -107,9 +111,9 @@ func (p *githubIssuePub) Publish(ctx context.Context, dest config.Destination, o
 	}
 	issue, _, err := client.Issues.Create(ctx, owner, repo, req)
 	if err != nil {
-		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("github-issue: create: %w", err)}
+		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("github-issue: create: %w", err), Target: d.Repo}
 	}
-	return Result{Type: p.Type(), OK: true, Detail: issue.GetHTMLURL()}
+	return Result{Type: p.Type(), OK: true, Detail: issue.GetHTMLURL(), Target: d.Repo}
 }
 
 // splitRepo parses "owner/name" into its parts. Empty owner, empty name, or

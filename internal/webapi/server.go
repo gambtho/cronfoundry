@@ -126,6 +126,10 @@ func RegisterRoutes(mux *http.ServeMux, deps Deps) {
 	mux.Handle("GET /api/runs/{id}/events", session(http.HandlerFunc(evh.list)))
 	mux.Handle("GET /api/runs/{id}/events/stream", session(rl.SSE(http.HandlerFunc(evh.stream))))
 
+	// Run notifications
+	nh := &runNotificationsHandler{deps: deps}
+	mux.Handle("GET /api/runs/{id}/notifications", session(http.HandlerFunc(nh.list)))
+
 	// Secrets
 	sech := &secretsHandler{deps: deps}
 	mux.Handle("GET /api/secrets", session(http.HandlerFunc(sech.list)))

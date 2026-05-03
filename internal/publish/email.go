@@ -29,15 +29,16 @@ func (p *emailPub) Publish(ctx context.Context, dest config.Destination, output 
 	if d == nil {
 		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("email: destination config is nil")}
 	}
+	target := strings.Join(d.To, ", ")
 
 	username, err := secrets.Get(d.UsernameSecret)
 	if err != nil {
-		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("email: resolve username secret: %w", err)}
+		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("email: resolve username secret: %w", err), Target: target}
 	}
 
 	password, err := secrets.Get(d.PasswordSecret)
 	if err != nil {
-		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("email: resolve password secret: %w", err)}
+		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("email: resolve password secret: %w", err), Target: target}
 	}
 
 	subj := d.Subject
@@ -55,17 +56,17 @@ func (p *emailPub) Publish(ctx context.Context, dest config.Destination, output 
 
 	body, err := buildEmail(d.From, d.To, renderedSubj, output, format, tctx)
 	if err != nil {
-		return Result{Type: p.Type(), OK: false, Err: err}
+		return Result{Type: p.Type(), OK: false, Err: err, Target: target}
 	}
 	addr := net.JoinHostPort(d.SMTPHost, strconv.Itoa(port))
 	auth := smtp.PlainAuth("", username, password, d.SMTPHost)
 
 	// net/smtp does not support context cancellation; the run deadline covers this via the process.
 	if err := smtp.SendMail(addr, auth, d.From, d.To, body); err != nil {
-		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("email: send: %w", err)}
+		return Result{Type: p.Type(), OK: false, Err: fmt.Errorf("email: send: %w", err), Target: target}
 	}
 
-	return Result{Type: p.Type(), OK: true, Detail: detail}
+	return Result{Type: p.Type(), OK: true, Detail: detail, Target: target}
 }
 
 func buildEmail(from string, to []string, subject, output, format string, tctx template.Context) ([]byte, error) {
