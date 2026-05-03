@@ -9,8 +9,9 @@ name: Release
 #       default node pool) can pull immediately. Also creates the GitHub
 #       Release with deploy artifacts.
 #
-#   release-arm64 (~30 min, runs in parallel with amd64)
-#       QEMU-emulated arm64 build. Publishes :VERSION-arm64,
+#   release-arm64 (~10 min, runs in parallel with amd64)
+#       Native arm64 build on the GitHub-hosted ubuntu-24.04-arm runner
+#       (GA + free for public repos). Publishes :VERSION-arm64,
 #       :VERSION-MAJOR.MINOR-arm64, :latest-arm64 — never races the
 #       amd64 manifest for the same version. Cache scope is separate
 #       (scope=arm64) so the two jobs' BuildKit caches don't fight.
@@ -122,7 +123,7 @@ jobs:
             cronfoundry-azure-deploy-${{ github.ref_name }}.tar.gz
 
   release-arm64:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
       packages: write
@@ -140,8 +141,6 @@ jobs:
 
       - name: Build web bundle
         run: make web
-
-      - uses: docker/setup-qemu-action@v3
 
       - uses: docker/setup-buildx-action@v3
 
