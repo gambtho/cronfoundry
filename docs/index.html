@@ -117,7 +117,7 @@
         <span class="text-ink-3 select-none">$ </span>bash &lt;(curl -fsSL https://gambtho.github.io/cronfoundry/install.sh)
       </div>
       <p class="font-mono text-[11.5px] text-ink-3 mb-6">
-        No API key needed &mdash; uses GitHub Copilot Enterprise. &nbsp;
+        Use GitHub Copilot Enterprise (no extra key) or BYOK with OpenAI / Anthropic / Azure. &nbsp;
         <a href="https://github.com/gambtho/cronfoundry/blob/main/docs/guides/quickstart-copilot.md"
            class="text-accent-green hover:underline">Full guide &rarr;</a>
       </p>
@@ -335,7 +335,7 @@ status:  <span class="text-accent-green">succeeded</span></pre>
     <section id="quickstart" class="border-t border-rule bg-bg-2">
       <div class="mx-auto max-w-6xl px-6 py-20">
         <h2 class="text-center text-3xl font-bold text-ink mb-3">Up and running in one afternoon</h2>
-        <p class="text-center text-ink-2 mb-16 max-w-xl mx-auto">One script deploys to Azure. No external API key needed &mdash; uses your GitHub Copilot Enterprise seat.</p>
+        <p class="text-center text-ink-2 mb-16 max-w-xl mx-auto">One script deploys to Azure. Use your GitHub Copilot Enterprise seat for free, or bring your own OpenAI / Anthropic / Azure AI Foundry key.</p>
         <div class="grid sm:grid-cols-2 gap-12 items-center">
           <div>
             <ol class="space-y-5">
@@ -349,8 +349,8 @@ status:  <span class="text-accent-green">succeeded</span></pre>
               <li class="flex gap-4">
                 <span class="flex-shrink-0 inline-flex items-center justify-center w-7 h-7 rounded border border-accent-green-dim bg-accent-green-dim font-mono text-[11px] font-medium text-[#dffbe9]">2</span>
                 <div>
-                  <p class="text-ink font-medium">Set your API key</p>
-                  <p class="text-[13px] text-ink-2 mt-1">Works with OpenAI, Anthropic, or Azure AI Foundry.</p>
+                  <p class="text-ink font-medium">Pick a provider</p>
+                  <p class="text-[13px] text-ink-2 mt-1"><span class="text-ink">Using Copilot Enterprise?</span> No key needed &mdash; the runner uses your seat. <span class="text-ink">Bring your own key?</span> Export <code class="font-mono text-[12px]">OPENAI_API_KEY</code> (or the Anthropic / Azure AI Foundry equivalent).</p>
                 </div>
               </li>
               <li class="flex gap-4">
@@ -368,7 +368,7 @@ status:  <span class="text-accent-green">succeeded</span></pre>
           <div class="rounded border border-rule bg-bg-2 p-5 font-mono text-[13px] text-ink">
             <p class="text-ink-3 mb-1"># 1. Build</p>
             <p class="mb-4"><span class="text-ink-3">$ </span>go build -o cronfoundry-runner ./cmd/runner</p>
-            <p class="text-ink-3 mb-1"># 2. Set key</p>
+            <p class="text-ink-3 mb-1"># 2. Pick a provider (skip if using Copilot Enterprise)</p>
             <p class="mb-4"><span class="text-ink-3">$ </span>export OPENAI_API_KEY='sk-...'</p>
             <p class="text-ink-3 mb-1"># 3. Run smoke fixture</p>
             <p><span class="text-ink-3">$ </span>./cronfoundry-runner run \</p>
@@ -508,6 +508,24 @@ status:  <span class="text-accent-green">succeeded</span></pre>
     if (!out) return;
     const myGen = ++termGeneration;
     out.textContent = '';
+
+    // Honor prefers-reduced-motion: render the full transcript statically and
+    // skip the typewriter loop + 3s repeat.
+    const reduceMotion = window.matchMedia &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduceMotion) {
+      for (const line of TERM_LINES) {
+        if (line.text !== '') {
+          const span = document.createElement('span');
+          span.className = line.cls || 'text-ink';
+          span.textContent = line.text;
+          out.appendChild(span);
+        }
+        out.appendChild(document.createTextNode('\n'));
+      }
+      return;
+    }
+
     let lineIdx = 0, charIdx = 0, currentSpan = null;
 
     function tick() {
