@@ -46,6 +46,40 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json()
 }
 
+/**
+ * ProposeJobScheduleInput is the JSON shape of `config.Schedule` from the
+ * Go backend (matched against its json tags). Only `name`, `cron`, `provider`,
+ * `model`, and `destinations` are practically required for a runnable
+ * schedule; the rest are optional and omitted when zero.
+ */
+export interface ProposeJobScheduleInput {
+  name: string
+  cron: string
+  timezone?: string
+  overlap_policy?: string
+  timeout_sec?: number
+  provider: string
+  model: string
+  max_turns?: number
+  copilot_prefix?: string
+  destinations?: unknown[] // shaped per config.Destination on the server; v1 sends []
+  writeback?: { enabled: boolean; path: string; mode: 'append' | 'replace' }
+  env?: Record<string, { value?: string; secret_ref?: string }>
+  mcp_env?: Record<string, Record<string, { value?: string; secret_ref?: string }>>
+  auto_pause?: unknown
+}
+
+export interface ProposeJobRequest {
+  skill_path: string
+  schedule: ProposeJobScheduleInput
+}
+
+export interface ProposeJobResponse {
+  pr_url: string
+  pr_number: number
+  branch: string
+}
+
 export const api = {
   me: () => apiFetch<Me>('/api/me'),
 
@@ -125,6 +159,15 @@ export const api = {
 
   alerts: {
     list: () => apiFetch<Alerts>('/api/alerts'),
+  },
+
+  skillRepo: {
+    proposeJob: (req: ProposeJobRequest) =>
+      apiFetch<ProposeJobResponse>('/api/skill-repo/jobs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(req),
+      }),
   },
 
   users: {
