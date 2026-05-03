@@ -110,3 +110,35 @@ func TestClient_CreateBranch_AlreadyExists(t *testing.T) {
 		t.Fatalf("want ErrConflict, got %v", err)
 	}
 }
+
+func TestClient_PutFile_Happy(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.Contains(r.URL.Path, "/contents/") || r.Method != "PUT" {
+			http.Error(w, "unexpected: "+r.URL.Path, 500)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"content": map[string]any{"sha": "newsha"},
+			"commit":  map[string]any{"sha": "commitsha"},
+		})
+	}))
+	defer srv.Close()
+	c := New(stubToken, srv.URL)
+	err := c.PutFile(context.Background(), 1, "o", "r", "feat-x", "cronfoundry.yaml", "oldsha", "msg", []byte("body"))
+	if err != nil {
+		t.Fatalf("PutFile: %v", err)
+	}
+}
+
+func TestClient_PutFile_StaleSHA(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, `{"message":"is at <sha>"}`, http.StatusConflict)
+	}))
+	defer srv.Close()
+	c := New(stubToken, srv.URL)
+	err := c.PutFile(context.Background(), 1, "o", "r", "feat-x", "cronfoundry.yaml", "stalesha", "msg", []byte("body"))
+	if !errors.Is(err, ErrConflict) {
+		t.Fatalf("want ErrConflict, got %v", err)
+	}
+}

@@ -161,7 +161,24 @@ func (c *Client) CreateBranch(ctx context.Context, installID int64, owner, repo,
 // match the file's current sha on the branch (use FileContents.FileSHA
 // from GetFile). Returns ErrConflict on stale sha.
 func (c *Client) PutFile(ctx context.Context, installID int64, owner, repo, branch, path, fileSHA, message string, content []byte) error {
-	return errors.New("skillrepo: PutFile not implemented")
+	cli, err := c.gitHubClient(ctx, installID)
+	if err != nil {
+		return err
+	}
+	opts := &gh.RepositoryContentFileOptions{
+		Message: gh.Ptr(message),
+		Content: content,
+		SHA:     gh.Ptr(fileSHA),
+		Branch:  gh.Ptr(branch),
+	}
+	_, resp, err := cli.Repositories.UpdateFile(ctx, owner, repo, path, opts)
+	if err != nil {
+		if resp != nil && (resp.StatusCode == 409 || resp.StatusCode == 422) {
+			return ErrConflict
+		}
+		return fmt.Errorf("skillrepo: UpdateFile: %w", err)
+	}
+	return nil
 }
 
 // CreatePR opens a PR. Returns ErrPermissionRequired if the App lacks
