@@ -261,79 +261,49 @@ status:  <span class="text-accent-green">succeeded</span></pre>
               <th class="px-4 py-2.5 text-left text-ink font-medium">CronFoundry</th>
               <th class="px-4 py-2.5 text-left text-ink-2 font-medium">gh&#8209;aw</th>
               <th class="px-4 py-2.5 text-left text-ink-2 font-medium">Claude Routines</th>
-              <th class="px-4 py-2.5 text-left text-ink-2 font-medium">n8n / Zapier</th>
-              <th class="px-4 py-2.5 text-left text-ink-2 font-medium">cron + scripts</th>
+              <th class="px-4 py-2.5 text-left text-ink-2 font-medium">OpenClaw</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-rule bg-bg-2">
+            <tr>
+              <td class="px-4 py-3 text-ink-2 font-medium">Trigger model</td>
+              <td class="px-4 py-3 text-ink">Cron schedule</td>
+              <td class="px-4 py-3 text-ink-2">GitHub events</td>
+              <td class="px-4 py-3 text-ink-2">Cron schedule</td>
+              <td class="px-4 py-3 text-ink-2">Chat / on-demand</td>
+            </tr>
             <tr>
               <td class="px-4 py-3 text-ink-2 font-medium">Config lives in</td>
               <td class="px-4 py-3 text-ink">Git (YAML)</td>
               <td class="px-4 py-3 text-ink-2">Git (Markdown)</td>
               <td class="px-4 py-3 text-ink-2">Vendor UI</td>
-              <td class="px-4 py-3 text-ink-2">Vendor UI</td>
-              <td class="px-4 py-3 text-ink-2">Shell scripts</td>
+              <td class="px-4 py-3 text-ink-2">Local JSON</td>
             </tr>
             <tr>
               <td class="px-4 py-3 text-ink-2 font-medium">Runs on</td>
-              <td class="px-4 py-3 text-ink">Self-hosted Azure</td>
+              <td class="px-4 py-3 text-ink">Self-hosted (Azure today; AKS, Fly.io next)</td>
               <td class="px-4 py-3 text-ink-2">GitHub Actions</td>
-              <td class="px-4 py-3 text-ink-2">Vendor cloud</td>
-              <td class="px-4 py-3 text-ink-2">Vendor cloud</td>
-              <td class="px-4 py-3 text-ink-2">Your infra</td>
-            </tr>
-            <tr>
-              <td class="px-4 py-3 text-ink-2 font-medium">Output destinations</td>
-              <td class="px-4 py-3 text-ink">Slack, Discord, Teams, GitHub</td>
-              <td class="px-4 py-3 text-ink-2">GitHub only</td>
-              <td class="px-4 py-3 text-ink-2">Email, notifications</td>
-              <td class="px-4 py-3 text-ink-2">Many</td>
-              <td class="px-4 py-3 text-ink-2">Whatever you code</td>
+              <td class="px-4 py-3 text-ink-2">Anthropic cloud</td>
+              <td class="px-4 py-3 text-ink-2">Your laptop / SSH</td>
             </tr>
             <tr>
               <td class="px-4 py-3 text-ink-2 font-medium">LLM providers</td>
-              <td class="px-4 py-3 text-ink">OpenAI, Anthropic, Azure AI, Copilot Enterprise</td>
+              <td class="px-4 py-3 text-ink">OpenAI, Anthropic, Azure, Copilot Enterprise</td>
               <td class="px-4 py-3 text-ink-2">Copilot, Claude, Codex</td>
               <td class="px-4 py-3 text-ink-2">Anthropic only</td>
-              <td class="px-4 py-3 text-ink-2">Via plugins</td>
-              <td class="px-4 py-3 text-ink-2">Whatever you integrate</td>
-            </tr>
-            <tr>
-              <td class="px-4 py-3 text-ink-2 font-medium">Secrets</td>
-              <td class="px-4 py-3 text-ink">Azure Key Vault</td>
-              <td class="px-4 py-3 text-ink-2">GH Actions secrets</td>
-              <td class="px-4 py-3 text-ink-2">Vendor-managed</td>
-              <td class="px-4 py-3 text-ink-2">Vendor-managed</td>
-              <td class="px-4 py-3 text-ink-2">Your choice</td>
-            </tr>
-            <tr>
-              <td class="px-4 py-3 text-ink-2 font-medium">Self-hostable</td>
-              <td class="px-4 py-3 text-accent-green font-semibold">&#x2713;</td>
-              <td class="px-4 py-3 text-ink-3">&#x2717;</td>
-              <td class="px-4 py-3 text-ink-3">&#x2717;</td>
-              <td class="px-4 py-3 text-ink-2">&#x2713; (complex)</td>
-              <td class="px-4 py-3 text-accent-green font-semibold">&#x2713;</td>
-            </tr>
-            <tr>
-              <td class="px-4 py-3 text-ink-2 font-medium">Open source</td>
-              <td class="px-4 py-3 text-accent-green font-semibold">&#x2713;</td>
-              <td class="px-4 py-3 text-accent-green font-semibold">&#x2713;</td>
-              <td class="px-4 py-3 text-ink-3">&#x2717;</td>
-              <td class="px-4 py-3 text-ink-2">&#x2713; (community ed.)</td>
-              <td class="px-4 py-3 text-ink-2">N/A</td>
+              <td class="px-4 py-3 text-ink-2">BYOK (multi)</td>
             </tr>
             <tr>
               <td class="px-4 py-3 text-ink-2 font-medium">Best for</td>
-              <td class="px-4 py-3 text-ink">Team-visible scheduled outputs</td>
+              <td class="px-4 py-3 text-ink">Self-hosted scheduled AI for you or your team</td>
               <td class="px-4 py-3 text-ink-2">Repo automation</td>
-              <td class="px-4 py-3 text-ink-2">Personal schedules</td>
-              <td class="px-4 py-3 text-ink-2">General automation</td>
-              <td class="px-4 py-3 text-ink-2">Full DIY control</td>
+              <td class="px-4 py-3 text-ink-2">Personal Anthropic schedules</td>
+              <td class="px-4 py-3 text-ink-2">Personal chat-driven assistant</td>
             </tr>
           </tbody>
         </table>
       </div>
-      <p class="text-center text-xs text-ink-3 mt-4">gh-aw and CronFoundry are complementary &mdash; gh-aw improves your repo automatically; CronFoundry runs skills and tells your team.</p>
+      <p class="text-center text-xs text-ink-3 mt-4 max-w-3xl mx-auto">gh-aw is complementary &mdash; runs on repo events, not the clock. OpenClaw answers chat messages; CronFoundry runs on a schedule. Already happy with n8n, Zapier, or your own cron jobs? Stick with them &mdash; CronFoundry is for people who want LLM-aware scheduling without building the prompt/secret/output plumbing themselves.</p>
     </section>
 
     <!-- QUICK START -->
@@ -387,26 +357,10 @@ status:  <span class="text-accent-green">succeeded</span></pre>
     <section class="mx-auto max-w-6xl px-6 py-20">
       <h2 class="text-center text-3xl font-bold text-ink mb-3">Roadmap</h2>
       <p class="text-center text-ink-2 mb-16 max-w-xl mx-auto">MVP shipped. All four phases delivered and deployable to Azure today.</p>
-      <div class="grid sm:grid-cols-4 gap-3 mb-12">
-        <div class="rounded border border-accent-green-dim bg-accent-green/[0.05] p-5">
-          <div class="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-accent-green mb-2">P1 &middot; Done &#x2713;</div>
-          <h3 class="font-semibold text-ink mb-2">Core runner</h3>
-          <p class="text-xs text-ink-2">Single binary, all LLM providers, all destinations, writeback, full test suite.</p>
-        </div>
-        <div class="rounded border border-accent-green-dim bg-accent-green/[0.05] p-5">
-          <div class="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-accent-green mb-2">P2 &middot; Done &#x2713;</div>
-          <h3 class="font-semibold text-ink mb-2">Scheduler + API</h3>
-          <p class="text-xs text-ink-2">Postgres, cron scheduler, REST API, Azure Key Vault integration.</p>
-        </div>
-        <div class="rounded border border-accent-green-dim bg-accent-green/[0.05] p-5">
-          <div class="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-accent-green mb-2">P3 &middot; Done &#x2713;</div>
-          <h3 class="font-semibold text-ink mb-2">Web UI</h3>
-          <p class="text-xs text-ink-2">React dashboard, GitHub OAuth, secret CRUD, run history, live log tail.</p>
-        </div>
-        <div class="rounded border border-accent-green-dim bg-accent-green/[0.05] p-5">
-          <div class="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-accent-green mb-2">P4 &middot; Done &#x2713;</div>
-          <h3 class="font-semibold text-ink mb-2">Azure deploy</h3>
-          <p class="text-xs text-ink-2">Bicep template, GHCR images, one-command deploy from empty subscription.</p>
+      <div class="mb-12 flex justify-center">
+        <div class="rounded border border-accent-green-dim bg-accent-green/[0.05] px-5 py-4 text-center max-w-2xl">
+          <div class="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-accent-green mb-2">MVP shipped &middot; P1&ndash;P4 &#x2713;</div>
+          <p class="text-[13px] text-ink-2">Core runner &middot; Scheduler + API &middot; Web UI &middot; Azure deploy</p>
         </div>
       </div>
       <div class="text-center">
