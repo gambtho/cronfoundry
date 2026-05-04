@@ -19,9 +19,11 @@ Three deliverables, each with one clear job:
    deploy. Idempotent. Reads `.env`. Long-lived by default;
    `--fresh` destroys everything and re-provisions.
 2. **`scripts/fly-smoke-assert.sh`** — internal-leaning verification.
-   Triggers a Run-now via the API, polls the run to terminal state,
-   asserts tokens > 0, then asserts issue + writeback on the
-   configured skills repo via `gh`.
+   Polls `GET /api/runs?limit=1` until terminal state, asserts
+   tokens > 0, then asserts issue + writeback on the configured
+   skills repo via `gh`. Does **not** trigger a run — operator
+   merges the starter PR (or clicks Run-now in the dashboard for
+   upgrade rounds), same as the Azure flow.
 3. **`docs/superpowers/prompts/fly-dogfood-round.md`** — repeating
    prompt drop-in, same shape as `dogfood-round.md`. Drives the two
    scripts and lists fly-specific sharp edges.
@@ -82,7 +84,12 @@ Flags:
    `$IMAGE`.
 9. **Healthcheck.** Poll `https://$FLY_API_APP.fly.dev/healthz` until
    200 or 60s timeout.
-10. **Report.** Print URL, image tag, and a one-line `next:
+10. **Starter PR (first run only).** Mirror quickstart-copilot.sh
+    step 23: open a PR against `$CRONFOUNDRY_SKILLS_REPO` with a
+    starter `cronfoundry.yaml` + smoke skill, then prompt the
+    operator to merge. Skipped on re-runs (detected by an existing
+    `cronfoundry.yaml` on the default branch).
+11. **Report.** Print URL, image tag, and a one-line `next:
     scripts/fly-smoke-assert.sh` hint.
 
 ### Idempotency
@@ -95,18 +102,20 @@ upsert). Re-running is safe and rolls forward to the requested image.
 ### Inputs
 
 - Same `.env` as fly-quickstart.
-- Additional: `CRONFOUNDRY_SKILLS_REPO` (e.g. `gambtho/skills`),
-  `CRONFOUNDRY_SCHEDULE_ID` (the schedule to Run-now).
+- Additional: `CRONFOUNDRY_SKILLS_REPO` (e.g. `gambtho/skills`).
+- Optional: `SMOKE_TIMEOUT_SECONDS` (default 900, matches quickstart's
+  15m first-run window).
 
 ### Steps
 
-1. POST `/api/schedules/$ID/run-now` against the api hostname using
-   the admin OAuth path or a service token (whichever the dashboard
-   uses; resolved during plan).
-2. Poll the run via `/api/runs/$RUN_ID` until terminal state, 5m
-   timeout. Surface `flyctl logs --app $FLY_RUNNER_APP` if it goes
-   to `failed` or stays `running` past timeout.
-3. Assert `status == "success"`, `tokens.input > 0`, `tokens.output > 0`.
+1. Poll `GET https://$FLY_API_APP.fly.dev/api/runs?limit=1` (no auth
+   required — same as quickstart step 24) until `.[0].status` is
+   terminal or timeout.
+2. On `failed` / `partial_failure` / timeout: print run id, then dump
+   `flyctl logs --app $FLY_RUNNER_APP` and exit non-zero.
+3. On `succeeded`: assert `.[0].tokens_input > 0` and
+   `.[0].tokens_output > 0` (field names resolved during plan against
+   the runs API schema).
 4. `gh issue list -R $CRONFOUNDRY_SKILLS_REPO --search "run $RUN_ID"`
    — assert one match.
 5. `gh api repos/$CRONFOUNDRY_SKILLS_REPO/commits` — assert the most
