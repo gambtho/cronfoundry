@@ -5,13 +5,19 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/gambtho/cronfoundry/internal/config"
 	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
+	"github.com/gambtho/cronfoundry/internal/scheduler"
 )
+
+// nowUTC is overridable from tests so we can pin the initial next_fire_at
+// the upsert computes for newly synced schedules.
+var nowUTC = func() time.Time { return time.Now().UTC() }
 
 // UpsertSkillsAndSchedules reconciles the parsed manifest + skill frontmatters
 // against the DB:
@@ -190,6 +196,7 @@ func UpsertSkillsAndSchedules(
 				McpEnvJson:           mcpEnvBytes,
 				MaxTurns:             maxTurns,
 				CopilotTokenRefsJson: copilotRefsJSON,
+				NextFireAt:           initialNextFireAt(sch.Cron, timezone),
 			}); err != nil {
 				return fmt.Errorf("sync: upsert schedule %q/%q: %w", entry.Path, sch.Name, err)
 			}
@@ -208,4 +215,23 @@ func UpsertSkillsAndSchedules(
 		return fmt.Errorf("sync: upsert: commit: %w", err)
 	}
 	return nil
+}
+
+// initialNextFireAt computes the cron-derived next_fire_at the upsert hands
+// to the DB. It is consulted ONLY for inserts and for healing rows where
+// next_fire_at is NULL or the schedule was previously disabled (see the SQL
+// CASE in queries/schedule.sql); for already-armed schedules the dispatcher
+// remains the authoritative writer.
+//
+// On an unparseable cron or unknown timezone we fall back to NULL: the row
+// will land disabled-as-far-as-the-tick-loop-cares, matching the historical
+// behaviour rather than surfacing as a DB error and aborting the whole sync.
+// Validate() in internal/config rejects bad crons earlier, so this only
+// fires if a previously-valid expression becomes invalid (e.g. parser change).
+func initialNextFireAt(cronExpr, timezone string) pgtype.Timestamptz {
+	t, err := scheduler.NextFire(cronExpr, timezone, nowUTC())
+	if err != nil {
+		return pgtype.Timestamptz{}
+	}
+	return pgtype.Timestamptz{Time: t, Valid: true}
 }

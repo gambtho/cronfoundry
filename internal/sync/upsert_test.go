@@ -394,3 +394,89 @@ skills:
 	require.NoError(t, json.Unmarshal(rows[0].CopilotTokenRefsJson, &refs))
 	assert.Equal(t, "mycopilot", refs.Prefix)
 }
+
+// Regression: an UpsertSchedule that left next_fire_at NULL meant freshly
+// synced schedules were invisible to the dispatcher (which selects WHERE
+// next_fire_at IS NOT NULL AND next_fire_at <= now()), so brand-new installs
+// never fired any cron-driven runs until something else wrote the column.
+// This test pins the contract that:
+//   1. inserting a schedule populates next_fire_at to the cron's next time,
+//   2. a follow-up sync does NOT clobber an already-advanced next_fire_at
+//      (the tick loop is the authoritative writer for armed schedules), and
+//   3. a sync that re-enables a soft-disabled schedule re-arms it.
+func TestUpsertSkillsAndSchedules_PopulatesNextFireAt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, orgID, repoID, cleanup := startPG(t)
+	defer cleanup()
+
+	// Pin "now" so we can assert the cron-derived next_fire_at exactly.
+	pinned := time.Date(2026, 5, 4, 12, 30, 0, 0, time.UTC)
+	prev := nowUTC
+	nowUTC = func() time.Time { return pinned }
+	defer func() { nowUTC = prev }()
+
+	manifestYAML := `version: 1
+skills:
+  - path: skills/a
+    schedules:
+      - name: hourly
+        cron: "0 * * * *"
+        provider: openai
+        model: gpt-4o-mini
+        destinations:
+          - slack: { secret: slack_webhook }
+`
+	m, err := config.ParseManifest([]byte(manifestYAML))
+	require.NoError(t, err)
+	require.NoError(t, m.Validate())
+
+	skills := map[string]*config.Skill{
+		"skills/a": {Frontmatter: config.SkillFrontmatter{Name: "a"}},
+	}
+
+	ctx := context.Background()
+	require.NoError(t, UpsertSkillsAndSchedules(ctx, pool, orgID, repoID, m, skills, "sha1"))
+
+	var firstNF pgtype.Timestamptz
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT next_fire_at FROM schedule WHERE name = 'hourly'`).Scan(&firstNF))
+	require.True(t, firstNF.Valid, "next_fire_at must be populated on insert; otherwise the dispatcher never sees the schedule")
+	assert.Equal(t, time.Date(2026, 5, 4, 13, 0, 0, 0, time.UTC), firstNF.Time.UTC())
+
+	// Simulate the dispatcher having advanced next_fire_at past the next slot.
+	advanced := time.Date(2026, 5, 4, 14, 0, 0, 0, time.UTC)
+	_, err = pool.Exec(ctx,
+		`UPDATE schedule SET next_fire_at = $1 WHERE name = 'hourly'`, advanced)
+	require.NoError(t, err)
+
+	// Re-sync at a later "now". The advanced value must survive — sync is
+	// not allowed to rewind an armed schedule.
+	nowUTC = func() time.Time { return pinned.Add(time.Hour) }
+	require.NoError(t, UpsertSkillsAndSchedules(ctx, pool, orgID, repoID, m, skills, "sha2"))
+
+	var afterResync pgtype.Timestamptz
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT next_fire_at FROM schedule WHERE name = 'hourly'`).Scan(&afterResync))
+	assert.Equal(t, advanced.UTC(), afterResync.Time.UTC(),
+		"re-syncing must not clobber a dispatcher-advanced next_fire_at")
+
+	// Soft-disable, then re-sync. The schedule should be re-armed using the
+	// cron-derived value relative to the new "now" (pinned + 2h = 14:30Z,
+	// next "0 * * * *" is 15:00Z).
+	_, err = pool.Exec(ctx,
+		`UPDATE schedule SET enabled = false WHERE name = 'hourly'`)
+	require.NoError(t, err)
+	nowUTC = func() time.Time { return pinned.Add(2 * time.Hour) }
+	require.NoError(t, UpsertSkillsAndSchedules(ctx, pool, orgID, repoID, m, skills, "sha3"))
+
+	var reArmed pgtype.Timestamptz
+	var enabled bool
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT next_fire_at, enabled FROM schedule WHERE name = 'hourly'`).
+		Scan(&reArmed, &enabled))
+	assert.True(t, enabled, "re-syncing a manifest containing the schedule must re-enable it")
+	assert.Equal(t, time.Date(2026, 5, 4, 15, 0, 0, 0, time.UTC), reArmed.Time.UTC(),
+		"re-enable must re-arm next_fire_at from the new now()")
+}
