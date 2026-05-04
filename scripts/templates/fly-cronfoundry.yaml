@@ -1,0 +1,11 @@
+# Starter cronfoundry.yaml, seeded by scripts/fly-quickstart.sh.
+# Edit at will; CronFoundry re-syncs every ~60s.
+provider: copilot-enterprise
+copilot_prefix: copilot
+default_model: gpt-5-mini
+schedules:
+  - id: smoke
+    description: "Daily smoke run — verifies CronFoundry can dispatch end-to-end."
+    cron: "0 9 * * *"
+    skill: smoke
+    inputs: {}
