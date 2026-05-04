@@ -36,7 +36,12 @@ assert script and prompt carry the dogfood-only concerns.
 
 ### Inputs
 
-Reads `.env` at repo root. Required keys:
+Reads `.env` at repo root. For any required key that is missing, the
+script prompts interactively and appends the answer back to `.env`
+(so re-runs are non-interactive). `--non-interactive` makes missing
+keys a fatal error instead — used by the dogfood prompt and CI.
+
+Required keys (prompted if absent):
 
 - `FLY_API_APP` (default `cronfoundry-api`)
 - `FLY_RUNNER_APP` (default `cronfoundry-runner`)
@@ -58,7 +63,11 @@ Flags:
 
 - `--image <ref>` — override `IMAGE`.
 - `--fresh` — destroy api app, runner app, and Postgres cluster, then re-provision.
-- `--non-interactive` — fail rather than prompt for missing keys.
+- `--non-interactive` — fail (rather than prompt) on missing `.env` keys.
+
+Secret-ish prompts (`*_PEM_PATH`, `*_CLIENT_SECRET`, `*_WEBHOOK_SECRET`)
+read with `read -s` and only echo a confirmation. Path-style values
+are validated (file exists, readable) before persist.
 
 ### Steps
 
