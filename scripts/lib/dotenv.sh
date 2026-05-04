@@ -56,8 +56,10 @@ dotenv_set() {
   else
     : > "$tmp"
   fi
-  # Quote with %q for safe round-trip; dotenv_load strips the quotes.
-  printf '%s=%q\n' "$key" "$val" >> "$tmp"
+  # Single-quote the value so dotenv_load's quote-stripping round-trips
+  # cleanly. Embedded single quotes are escaped as '\''.
+  local escaped="${val//\'/\'\\\'\'}"
+  printf "%s='%s'\n" "$key" "$escaped" >> "$tmp"
   mv "$tmp" "$f"
   chmod 600 "$f"
   export "${key}=${val}"
