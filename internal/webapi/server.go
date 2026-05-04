@@ -37,6 +37,24 @@ type Deps struct {
 	// Syncer triggers a one-off repo sync. Injected from cmd/cronfoundry/serve.go
 	// as a thin wrapper around sync.Poller.SyncOne.
 	Syncer RepoSyncer
+	// SkillRepoClient handles GitHub round-trips for `POST /api/skill-repo/jobs`.
+	// Injected from cmd/cronfoundry/serve.go as a *skillrepo.Client.
+	// In tests we substitute a fake satisfying the SkillRepoClient interface
+	// declared in skill_repo_jobs.go.
+	SkillRepoClient SkillRepoClient
+	// YamlEditAppendSchedule is the YAML editor used by the proposeJob handler.
+	// Wired from internal/yamledit.AppendScheduleToSkill in production; tests
+	// inject a function-typed fake.
+	YamlEditAppendSchedule YamlAppendScheduleFunc
+	// GitHubAppSlug is the GitHub App slug (e.g. "cronfoundry-tng") used to
+	// construct the permissions-review URL surfaced in the 412 response from
+	// proposeJob when the App lacks pull_requests:write. Empty falls back to
+	// "cronfoundry".
+	GitHubAppSlug string
+
+	// testConnOverride is set ONLY by unit tests that want to bypass the
+	// repo_connection DB lookup in proposeJob. Production never sets this.
+	testConnOverride *resolvedConn
 	// RateLimit configures per-IP rate limiting on public routes.
 	RateLimit RateLimiterConfig
 	// PublicBaseURL is the externally-reachable base URL of the service
@@ -118,6 +136,10 @@ func RegisterRoutes(mux *http.ServeMux, deps Deps) {
 	mux.Handle("POST /api/schedules/{id}/run-now", adminOnly(http.HandlerFunc(sch.runNow)))
 	mux.Handle("PATCH /api/schedules/{id}/overrides", adminOnly(http.HandlerFunc(sch.patchOverrides)))
 	mux.Handle("DELETE /api/schedules/{id}/overrides", adminOnly(http.HandlerFunc(sch.deleteOverrides)))
+
+	// Skill-repo PR pipeline (POST /api/skill-repo/jobs)
+	srh := &skillRepoHandler{deps: deps}
+	mux.Handle("POST /api/skill-repo/jobs", adminOnly(http.HandlerFunc(srh.proposeJob)))
 
 	// Runs
 	rnh := &runsHandler{deps: deps}

@@ -35,9 +35,10 @@ func TestBuildManifest_RequiredFields(t *testing.T) {
 	}
 	perms, _ := got["default_permissions"].(map[string]any)
 	for k, want := range map[string]string{
-		"contents": "write",
-		"issues":   "write",
-		"metadata": "read",
+		"contents":      "write",
+		"issues":        "write",
+		"metadata":      "read",
+		"pull_requests": "write",
 	} {
 		if perms[k] != want {
 			t.Errorf("permissions[%s] = %v, want %s", k, perms[k], want)

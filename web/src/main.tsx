@@ -6,6 +6,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import Layout from './components/Layout'
 import Overview from './pages/Overview'
 import Jobs from './pages/Jobs'
+import JobNew from './pages/JobNew'
+import JobImport from './pages/JobImport'
 import JobDetail from './pages/JobDetail'
 import RunDetail from './pages/RunDetail'
 import Runs from './pages/Runs'
@@ -40,6 +42,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             {/* OPERATE */}
             <Route path="/overview" element={<Overview />} />
             <Route path="/jobs" element={<Jobs />} />
+            <Route path="/jobs/new" element={<JobNew />} />
+            <Route path="/jobs/import" element={<JobImport />} />
             <Route path="/jobs/:id" element={<JobDetail />} />
 
             {/* Runs is reached from Overview's activity card and from

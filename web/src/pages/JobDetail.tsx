@@ -1,6 +1,6 @@
 // web/src/pages/JobDetail.tsx
 import { useState } from 'react'
-import { Link, useParams, Navigate } from 'react-router-dom'
+import { Link, useParams, useNavigate, Navigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import {
@@ -34,6 +34,7 @@ import type { RunSummary, Schedule } from '../lib/types'
  */
 export default function JobDetail() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const qc = useQueryClient()
 
   const schedulesQ = useQuery({
@@ -51,7 +52,10 @@ export default function JobDetail() {
 
   const runNow = useMutation({
     mutationFn: api.schedules.runNow,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['runs'] }),
+    onSuccess: (data) => {
+      qc.invalidateQueries({ queryKey: ['runs'] })
+      navigate(`/runs/${data.run_id}`)
+    },
   })
   const pause = useMutation({
     mutationFn: api.schedules.pause,

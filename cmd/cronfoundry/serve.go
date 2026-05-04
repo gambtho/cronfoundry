@@ -30,9 +30,11 @@ import (
 	"github.com/gambtho/cronfoundry/internal/scheduler"
 	"github.com/gambtho/cronfoundry/internal/secrets/server"
 	"github.com/gambtho/cronfoundry/internal/secrets/server/azurekv"
+	"github.com/gambtho/cronfoundry/internal/skillrepo"
 	"github.com/gambtho/cronfoundry/internal/sync"
 	"github.com/gambtho/cronfoundry/internal/token"
 	"github.com/gambtho/cronfoundry/internal/webapi"
+	"github.com/gambtho/cronfoundry/internal/yamledit"
 )
 
 const (
@@ -271,12 +273,15 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 		Secrets:           store,
 		APIBaseURL:        "http://" + addr,
 		WebhookSecret:     []byte(os.Getenv(envWebhookSecret)),
-		PublicBaseURL:     os.Getenv(envPublicBaseURL),
-		Syncer:            poller,
-		RateLimit:         rateCfg,
-		Clock:             clock,
-		SweepInterval:     cadence,
-		Chat:              chatCfg,
+		PublicBaseURL:          os.Getenv(envPublicBaseURL),
+		Syncer:                 poller,
+		RateLimit:              rateCfg,
+		Clock:                  clock,
+		SweepInterval:          cadence,
+		Chat:                   chatCfg,
+		SkillRepoClient:        skillrepo.New(installs.Token, ghBaseURL),
+		YamlEditAppendSchedule: yamledit.AppendScheduleToSkill,
+		GitHubAppSlug:          os.Getenv("CRONFOUNDRY_GITHUB_APP_SLUG"),
 	})
 	srv := &http.Server{
 		Addr:              addr,
