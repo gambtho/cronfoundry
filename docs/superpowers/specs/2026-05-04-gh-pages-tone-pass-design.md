@@ -109,16 +109,16 @@ Slim from 5 columns × 8 rows to 4 columns × 5 rows. Drop the `n8n / Zapier` an
 
 | | **CronFoundry** | **gh-aw** | **Claude Routines** | **OpenClaw** |
 |---|---|---|---|---|
-| Trigger model      | Cron schedule                        | GitHub events  | Cron schedule              | Chat / on-demand                |
+| Trigger model      | Cron schedule                        | GitHub events  | Cron schedule              | Chat + cron + webhooks          |
 | Config lives in    | Git (YAML)                           | Git (Markdown) | Vendor UI                  | Local JSON                      |
 | Runs on            | Self-hosted (Azure today; AKS, Fly.io next) | GitHub Actions | Anthropic cloud            | Your laptop / SSH               |
 | LLM providers      | OpenAI, Anthropic, Azure, Copilot Enterprise | Copilot, Claude, Codex | Anthropic only             | BYOK (multi)                    |
-| Best for           | Self-hosted scheduled AI for you or your team | Repo automation | Personal Anthropic schedules | Personal chat-driven assistant  |
+| Best for           | Self-hosted scheduled AI for you or your team | Repo automation | Personal Anthropic schedules | Personal assistant across messaging channels |
 
 Section subhead (line 250) unchanged.
 
 Footnote (line 331) — replace with:
-> *"gh-aw is complementary — runs on repo events, not the clock. OpenClaw answers chat messages; CronFoundry runs on a schedule. Already happy with n8n, Zapier, or your own cron jobs? Stick with them — CronFoundry is for people who want LLM-aware scheduling without building the prompt/secret/output plumbing themselves."*
+> *"gh-aw is complementary — runs on repo events, not the clock. OpenClaw is a chat-first personal assistant (with cron and webhooks too); CronFoundry is cron-first and team-aware. Already happy with n8n, Zapier, or your own cron jobs? Stick with them — CronFoundry is for people who want LLM-aware scheduling without building the prompt/secret/output plumbing themselves."*
 
 OpenClaw facts confirmed from `openclaw.ai` and `github.com/openclaw/openclaw` (config at `~/.openclaw/openclaw.json`, local-first w/ optional SSH/Tailscale, BYOK multi-provider, MIT license, chat-driven).
 
