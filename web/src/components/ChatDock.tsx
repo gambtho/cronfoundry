@@ -44,6 +44,7 @@ export default function ChatDock() {
   const [turns, setTurns] = useState<ChatTurn[]>([])
   const [streaming, setStreaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [needsReconnect, setNeedsReconnect] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const location = useLocation()
@@ -76,6 +77,7 @@ export default function ChatDock() {
     abortRef.current?.abort()
     setTurns([])
     setError(null)
+    setNeedsReconnect(false)
     setStreaming(false)
   }
 
@@ -84,6 +86,7 @@ export default function ChatDock() {
     if (!text || streaming) return
     setInput('')
     setError(null)
+    setNeedsReconnect(false)
 
     const nextHistory: ChatTurn[] = [
       ...turns,
@@ -127,7 +130,18 @@ export default function ChatDock() {
       })
 
       if (!res.ok || !res.body) {
-        const body = await res.json().catch(() => ({ error: res.statusText }))
+        const body = (await res
+          .json()
+          .catch(() => ({ error: res.statusText }))) as {
+          error?: string
+          code?: string
+        }
+        // Provider auth expired (401 with a structured code, e.g.
+        // "provider_auth_expired") — surface a calmer reconnect hint
+        // instead of the red error chip so the operator knows where to go.
+        if (res.status === 401 && body.code) {
+          setNeedsReconnect(true)
+        }
         throw new Error(body.error ?? `HTTP ${res.status}`)
       }
 
@@ -273,6 +287,11 @@ export default function ChatDock() {
             {error && (
               <div className="mt-2 rounded border border-accent-red/40 bg-accent-red/10 px-2 py-1 text-[11px] text-accent-red">
                 {error}
+              </div>
+            )}
+            {needsReconnect && (
+              <div className="mt-2 rounded border border-rule bg-bg-3 px-2 py-1 text-[11px] text-ink-2">
+                Authentication expired. Reconnect this provider in Settings → Providers.
               </div>
             )}
           </div>

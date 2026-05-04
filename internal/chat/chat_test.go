@@ -75,19 +75,10 @@ func (s *recordingSink) ToolEnd(name string, errMsg string) {
 	}
 }
 
-// stubToolbox is a Toolbox-shaped test double. We hand-construct one to
-// avoid spinning up a Postgres testcontainer for unit tests of the loop
-// itself (which has no DB dependency).
-type stubToolbox struct {
-	defs    []llm.ToolDef
-	handler func(name string, in json.RawMessage) (json.RawMessage, error)
-}
-
-// To exercise Run with the stubToolbox we'd need to change Run's signature
-// to accept an interface. Easier: use the real Toolbox struct but with a
-// nil Queries and never trigger a tool call (or use a tool-free turn).
-// The tests below cover the no-tool happy path, an error path, and verify
-// the system prompt is constructed.
+// Note: Run takes a concrete Toolbox value, so unit tests of the loop drive
+// multi-turn behavior using the real Toolbox{} and tool names that fall
+// through Toolbox.Call's "unknown tool" default branch — no DB, no panic.
+// See TestRun_MaxTurnsCap.
 
 func TestRun_TerminatesOnTextOnlyTurn(t *testing.T) {
 	prov := &fakeProvider{
@@ -176,33 +167,62 @@ func TestRun_PageContextInSystemPrompt(t *testing.T) {
 }
 
 func TestRun_MaxTurnsCap(t *testing.T) {
-	// Every turn returns a tool_use, so the loop never naturally terminates.
-	// We expect the loop to exit after MaxTurns iterations with the
-	// "ran out of turns" fallback message.
+	// Every turn returns a tool_use targeting an unknown tool. Toolbox.Call's
+	// default branch returns ("unknown tool") as a non-fatal error, which the
+	// loop reports as a tool_result with is_error semantics — letting us drive
+	// many turns without a DB or a panic. We script far more turns than
+	// MaxTurns so the only way Run can exit cleanly is via the cap.
+	const maxTurns = 3
 	prov := &fakeProvider{}
-	for i := 0; i < 10; i++ {
+	for range maxTurns + 5 {
 		prov.turns = append(prov.turns, llm.TurnResult{
-			ToolUses: []llm.ToolUse{{ID: "t1", Name: "list_jobs", Input: json.RawMessage(`{}`)}},
+			ToolUses: []llm.ToolUse{{ID: "t1", Name: "definitely_not_a_real_tool", Input: json.RawMessage(`{}`)}},
 		})
 	}
 	cfg := Config{
 		Provider: prov,
 		Model:    "m",
-		MaxTurns: 3,
-		Tools:    Toolbox{}, // nil Queries — list_jobs will panic on call
+		MaxTurns: maxTurns,
+		Tools:    Toolbox{},
 	}
-	defer func() {
-		// The loop calls Toolbox.Call(list_jobs) which dereferences a nil
-		// Queries; we use recover to convert that panic into a test
-		// signal. In real usage Toolbox always has a non-nil Queries, so
-		// this is a test-only path. We're checking the MaxTurns guard
-		// — the test stops as soon as the first tool call panics, which
-		// itself proves the loop did try to dispatch the tool.
-		_ = recover()
-	}()
-	_, _, _ = Run(context.Background(), cfg, []Message{{Role: "user", Content: "hi"}}, &recordingSink{})
-	// If we reach here without panicking, the loop fell off the bottom of
-	// MaxTurns without terminating, which is also valid coverage.
+	sink := &recordingSink{}
+	final, _, err := Run(context.Background(), cfg, []Message{{Role: "user", Content: "hi"}}, sink)
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !strings.Contains(final, "ran out of turns") {
+		t.Errorf("expected 'ran out of turns' fallback, got: %q", final)
+	}
+	if got := len(prov.calls); got != maxTurns {
+		t.Errorf("ChatTurn called %d times, want exactly MaxTurns=%d", got, maxTurns)
+	}
+	// Every turn should have surfaced a tool error to the sink.
+	if len(sink.toolEnds) != maxTurns {
+		t.Errorf("toolEnds = %d, want %d", len(sink.toolEnds), maxTurns)
+	}
+	for _, te := range sink.toolEnds {
+		if !strings.HasSuffix(te, ":err") {
+			t.Errorf("expected every tool dispatch to surface an error, got: %v", sink.toolEnds)
+			break
+		}
+	}
+}
+
+func TestRun_NilSinkDoesNotPanic(t *testing.T) {
+	prov := &fakeProvider{
+		turns: []llm.TurnResult{{Text: "ok", Usage: llm.Usage{InputTokens: 1, OutputTokens: 1}}},
+	}
+	final, _, err := Run(context.Background(), Config{
+		Provider: prov,
+		Model:    "m",
+		Tools:    Toolbox{},
+	}, []Message{{Role: "user", Content: "hi"}}, nil)
+	if err != nil {
+		t.Fatalf("Run with nil sink: %v", err)
+	}
+	if final != "ok" {
+		t.Errorf("final = %q, want %q", final, "ok")
+	}
 }
 
 func TestBuildSystemPrompt_IncludesDocs(t *testing.T) {

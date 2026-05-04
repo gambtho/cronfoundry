@@ -34,5 +34,5 @@ Body templating:
 
 `<memory>...</memory>` blocks in the model output are extracted before
 publishing. If the schedule's `writeback` is enabled, the memory contents
-are appended (or replacing) the writeback path and committed back to the
-skill repo as `cronfoundry[bot]`.
+are written back to the configured path (append or replace mode) and
+committed back to the skill repo as `cronfoundry[bot]`.

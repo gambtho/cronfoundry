@@ -48,7 +48,7 @@ func mustLoadCorpus() string {
 
 	var sb strings.Builder
 	for _, f := range files {
-		sb.WriteString(fmt.Sprintf("### %s\n\n", f.name))
+		fmt.Fprintf(&sb, "### %s\n\n", f.name)
 		sb.Write(f.body)
 		sb.WriteString("\n\n")
 	}
@@ -89,10 +89,10 @@ GUIDELINES
 `)
 
 	if caller.Login != "" {
-		sb.WriteString(fmt.Sprintf("\nThe current operator is %q (role: %s).\n", caller.Login, caller.Role))
+		fmt.Fprintf(&sb, "\nThe current operator is %q (role: %s).\n", caller.Login, caller.Role)
 	}
 	if pageContext != "" {
-		sb.WriteString(fmt.Sprintf("\nThe operator is currently viewing: %s\n", pageContext))
+		fmt.Fprintf(&sb, "\nThe operator is currently viewing: %s\n", pageContext)
 	}
 
 	if docCorpus != "" {

@@ -72,6 +72,15 @@ type Sink interface {
 	ToolEnd(name string, errMsg string)
 }
 
+// noopSink is the fallback Sink used when callers pass nil. It silently drops
+// every event so Run can stream unconditionally without nil-checking each
+// callback site.
+type noopSink struct{}
+
+func (noopSink) Token(string)                      {}
+func (noopSink) ToolStart(string, json.RawMessage) {}
+func (noopSink) ToolEnd(string, string)            {}
+
 // Run executes one user message against the agent loop, streaming output
 // through sink. The history slice contains prior assistant/user turns; the
 // caller is responsible for appending the new user message before calling
@@ -79,6 +88,9 @@ type Sink interface {
 func Run(ctx context.Context, cfg Config, history []Message, sink Sink) (string, llm.Usage, error) {
 	if cfg.Provider == nil {
 		return "", llm.Usage{}, fmt.Errorf("chat: provider is nil")
+	}
+	if sink == nil {
+		sink = noopSink{}
 	}
 	maxTurns := cfg.MaxTurns
 	if maxTurns <= 0 {

@@ -67,8 +67,19 @@ func (h *chatHandler) stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Cap the body before decoding so a single authenticated request can't
+	// force unbounded allocations. 64 KiB comfortably fits the 40-message
+	// trim below at realistic chat sizes; the SPA can chunk longer payloads
+	// if real usage demands more.
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+
 	var req chatRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			writeErr(w, http.StatusRequestEntityTooLarge, "request body too large", "payload_too_large")
+			return
+		}
 		writeErr(w, http.StatusBadRequest, "invalid body", "bad_request")
 		return
 	}

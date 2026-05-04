@@ -178,16 +178,15 @@ func (tb Toolbox) getRecentRuns(ctx context.Context, raw json.RawMessage) (json.
 		Limit        int    `json:"limit"`
 		ScheduleName string `json:"schedule_name"`
 	}
-	_ = json.Unmarshal(raw, &args)
+	// Treat an empty raw payload as "no args"; only error on actually-malformed
+	// JSON. This keeps tool calls with no input from being rejected.
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &args); err != nil {
+			return nil, fmt.Errorf("get_recent_runs: bad arguments: %w", err)
+		}
+	}
 	if args.Limit <= 0 || args.Limit > 50 {
 		args.Limit = 10
-	}
-	rows, err := tb.Queries.ListRunsForOrg(ctx, dbgen.ListRunsForOrgParams{
-		OrgID: tb.OrgID,
-		Limit: int32(args.Limit),
-	})
-	if err != nil {
-		return nil, err
 	}
 	type out struct {
 		ID           string  `json:"id"`
@@ -202,11 +201,46 @@ func (tb Toolbox) getRecentRuns(ctx context.Context, raw json.RawMessage) (json.
 		FireReason   string  `json:"fire_reason"`
 		Actor        *string `json:"actor,omitempty"`
 	}
+	// When a schedule_name filter is supplied, push it into the query so we
+	// don't truncate to top-N globally and then filter (which can drop the
+	// requested schedule entirely if its runs aren't in the latest page).
+	if args.ScheduleName != "" {
+		rows, err := tb.Queries.ListRunsForSchedule(ctx, dbgen.ListRunsForScheduleParams{
+			OrgID: tb.OrgID,
+			Name:  args.ScheduleName,
+			Limit: int32(args.Limit),
+		})
+		if err != nil {
+			return nil, err
+		}
+		res := make([]out, 0, len(rows))
+		for _, r := range rows {
+			res = append(res, out{
+				ID:           uuidStr(r.ID),
+				Status:       r.Status,
+				ScheduleName: r.ScheduleName,
+				SkillPath:    r.SkillPath,
+				StartedAt:    tsPtr(r.StartedAt),
+				FinishedAt:   tsPtr(r.FinishedAt),
+				DurationMs:   r.DurationMs,
+				ErrorKind:    r.ErrorKind,
+				ErrorMsg:     r.ErrorMsg,
+				FireReason:   r.FireReason,
+				Actor:        r.Actor,
+			})
+		}
+		return json.Marshal(res)
+	}
+
+	rows, err := tb.Queries.ListRunsForOrg(ctx, dbgen.ListRunsForOrgParams{
+		OrgID: tb.OrgID,
+		Limit: int32(args.Limit),
+	})
+	if err != nil {
+		return nil, err
+	}
 	res := make([]out, 0, len(rows))
 	for _, r := range rows {
-		if args.ScheduleName != "" && r.ScheduleName != args.ScheduleName {
-			continue
-		}
 		res = append(res, out{
 			ID:           uuidStr(r.ID),
 			Status:       r.Status,
