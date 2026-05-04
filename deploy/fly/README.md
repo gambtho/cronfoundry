@@ -1,5 +1,26 @@
 # CronFoundry — Fly.io Deployment
 
+## Quick start
+
+The fastest path is `scripts/fly-quickstart.sh` from the repo root.
+It prompts for any missing values, generates encryption keys,
+provisions apps + Postgres, sets all secrets, deploys both apps,
+and opens a starter PR against your skills repo.
+
+```bash
+bash scripts/fly-quickstart.sh
+```
+
+Use `--non-interactive` to fail (rather than prompt) on missing
+config, `--image=REF` to deploy a specific image tag, and
+`--fresh` to destroy and re-provision everything (irreversible —
+including Postgres data).
+
+The manual steps below remain accurate if you'd rather provision by
+hand or need to understand what the script does.
+
+---
+
 ## Prerequisites
 
 - `flyctl` installed and authenticated (`flyctl auth login`)
