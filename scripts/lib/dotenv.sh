@@ -64,3 +64,52 @@ dotenv_set() {
   chmod 600 "$f"
   export "${key}=${val}"
 }
+
+# dotenv_require KEY PROMPT [DEFAULT] [--secret]
+#
+# Returns the value of KEY:
+#   1. If already in env (or .env), prints and returns 0.
+#   2. Else if DOTENV_NON_INTERACTIVE is set, prints diagnostic and returns 1.
+#   3. Else prompts the operator on stderr (silent if --secret), persists
+#      the answer to .env via dotenv_set, prints the value on stdout.
+#
+# Designed so callers can do: VAL=$(dotenv_require FOO "Enter foo")
+dotenv_require() {
+  local key="$1" prompt="$2" default="${3:-}" mode=""
+  if [[ "${4:-}" == "--secret" ]]; then mode="secret"; fi
+
+  if dotenv_has "$key"; then
+    dotenv_get "$key"
+    return 0
+  fi
+
+  if [[ "${DOTENV_NON_INTERACTIVE:-0}" == "1" ]]; then
+    echo "dotenv_require: ${key} is required but missing (--non-interactive)" >&2
+    return 1
+  fi
+
+  local label="$prompt"
+  [[ -n "$default" ]] && label="$prompt [${default}]"
+
+  local val
+  if [[ "$mode" == "secret" ]]; then
+    printf '%s: ' "$label" >&2
+    IFS= read -rs val
+    printf '\n' >&2
+  else
+    printf '%s: ' "$label" >&2
+    IFS= read -r val
+  fi
+
+  if [[ -z "$val" && -n "$default" ]]; then
+    val="$default"
+  fi
+
+  if [[ -z "$val" ]]; then
+    echo "dotenv_require: empty value for ${key}" >&2
+    return 1
+  fi
+
+  dotenv_set "$key" "$val"
+  printf '%s' "$val"
+}

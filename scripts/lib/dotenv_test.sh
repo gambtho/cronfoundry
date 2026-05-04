@@ -117,6 +117,32 @@ run_test "dotenv_set leaves file mode 600" test_set_mode_600
 run_test "dotenv_has returns 0 when key in file" test_has_true_when_in_file
 run_test "dotenv_has returns nonzero when key absent" test_has_false_when_absent
 
+test_require_returns_existing_silently() {
+  dotenv_set FOO preset
+  # Should not read from /dev/tty; piping nothing must still succeed.
+  local out; out=$(dotenv_require FOO "Enter foo" </dev/null)
+  [[ "$out" == "preset" ]]
+}
+
+test_require_non_interactive_fails_on_missing() {
+  DOTENV_NON_INTERACTIVE=1
+  ! dotenv_require FOO "Enter foo" </dev/null 2>/dev/null
+}
+
+test_require_with_default_uses_default_when_blank() {
+  unset FOO
+  # Empty stdin -> read returns empty -> default used.
+  local out; out=$(printf '\n' | dotenv_require FOO "Enter foo" "thedefault")
+  [[ "$out" == "thedefault" ]]
+  unset FOO
+  dotenv_load
+  [[ "$FOO" == "thedefault" ]]
+}
+
+run_test "dotenv_require returns existing value without prompting" test_require_returns_existing_silently
+run_test "dotenv_require fails when DOTENV_NON_INTERACTIVE and key missing" test_require_non_interactive_fails_on_missing
+run_test "dotenv_require uses default on blank input and persists it" test_require_with_default_uses_default_when_blank
+
 echo; echo "${PASS} passed, ${FAIL} failed"
 if (( FAIL > 0 )); then printf '  - %s\n' "${FAILED_TESTS[@]}"; exit 1; fi
 exit 0
