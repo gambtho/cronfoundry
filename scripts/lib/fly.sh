@@ -32,3 +32,103 @@ fly_warn_if_runner_image() {
   fi
   return 0
 }
+
+# ── flyctl wrappers ─────────────────────────────────────────────────────────
+# All of these are idempotent: re-running them is a no-op on second invocation.
+
+# fly_app_exists NAME → 0 if the current operator can see an app with NAME.
+fly_app_exists() {
+  flyctl apps list --json 2>/dev/null | jq -e --arg n "$1" '.[] | select(.Name == $n)' >/dev/null
+}
+
+# fly_app_create NAME [extra flyctl args...]
+fly_app_create() {
+  local name="$1"; shift
+  if fly_app_exists "$name"; then
+    echo -e "${GREEN}[ok]${RESET}    app ${name} already exists"
+    return 0
+  fi
+  echo -e "${CYAN}[info]${RESET}  creating app ${name}"
+  # shellcheck disable=SC2068
+  flyctl apps create "$name" $@
+}
+
+# fly_app_destroy NAME — best-effort; missing app is success.
+fly_app_destroy() {
+  local name="$1"
+  if ! fly_app_exists "$name"; then
+    echo -e "${GREEN}[ok]${RESET}    app ${name} already absent"
+    return 0
+  fi
+  echo -e "${YELLOW}[warn]${RESET}  destroying app ${name}"
+  flyctl apps destroy "$name" --yes
+}
+
+# fly_pg_exists NAME → 0 if a Postgres cluster app named NAME exists.
+fly_pg_exists() {
+  flyctl postgres list --json 2>/dev/null | jq -e --arg n "$1" '.[] | select(.Name == $n)' >/dev/null
+}
+
+fly_pg_create() {
+  local name="$1" region="$2"
+  if fly_pg_exists "$name"; then
+    echo -e "${GREEN}[ok]${RESET}    postgres ${name} already exists"
+    return 0
+  fi
+  echo -e "${CYAN}[info]${RESET}  creating postgres ${name} in ${region}"
+  flyctl postgres create --name "$name" --region "$region"
+}
+
+fly_pg_destroy() {
+  local name="$1"
+  if ! fly_pg_exists "$name"; then
+    echo -e "${GREEN}[ok]${RESET}    postgres ${name} already absent"
+    return 0
+  fi
+  echo -e "${YELLOW}[warn]${RESET}  destroying postgres ${name}"
+  flyctl apps destroy "$name" --yes
+}
+
+# fly_pg_attach PG_NAME APP_NAME — sets DATABASE_URL on APP_NAME if not already.
+fly_pg_attach() {
+  local pg="$1" app="$2"
+  if flyctl secrets list -a "$app" --json 2>/dev/null \
+      | jq -e '.[] | select(.Name == "DATABASE_URL")' >/dev/null; then
+    echo -e "${GREEN}[ok]${RESET}    DATABASE_URL already set on ${app}"
+    return 0
+  fi
+  echo -e "${CYAN}[info]${RESET}  attaching ${pg} to ${app}"
+  flyctl postgres attach --app "$app" "$pg"
+}
+
+# fly_secrets_set_batch APP KEY1=VAL1 KEY2=VAL2 ... — single rolling restart.
+fly_secrets_set_batch() {
+  local app="$1"; shift
+  if (( $# == 0 )); then return 0; fi
+  echo -e "${CYAN}[info]${RESET}  setting $# secret(s) on ${app}"
+  flyctl secrets set --app "$app" "$@"
+}
+
+# fly_deploy CONFIG APP IMAGE [extra args]
+fly_deploy() {
+  local config="$1" app="$2" image="$3"; shift 3
+  echo -e "${CYAN}[info]${RESET}  deploying ${app} with ${image}"
+  flyctl deploy --config "$config" --app "$app" --image "$image" "$@"
+}
+
+# fly_healthcheck HOST [TIMEOUT_SECONDS=120] — polls https://HOST/healthz.
+fly_healthcheck() {
+  local host="$1" timeout="${2:-120}"
+  local deadline=$(( $(date +%s) + timeout ))
+  while [[ $(date +%s) -lt $deadline ]]; do
+    local code
+    code=$(curl -fsS -o /dev/null -w "%{http_code}" "https://${host}/healthz" 2>/dev/null || echo "000")
+    if [[ "$code" == "200" ]]; then
+      echo -e "${GREEN}[ok]${RESET}    https://${host}/healthz is 200"
+      return 0
+    fi
+    sleep 5
+  done
+  echo -e "${RED}[error]${RESET} https://${host}/healthz did not return 200 within ${timeout}s" >&2
+  return 1
+}
