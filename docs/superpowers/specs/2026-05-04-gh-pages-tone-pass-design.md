@@ -65,7 +65,7 @@ Subhead (line 223):
 
 Add a fourth card to the grid (change `grid-cols-3` → `grid-cols-2 lg:grid-cols-4` on line 224 so it lays out as 2×2 on tablet, 1×4 on desktop), framed as a solo use case so the page no longer reads as team-only:
 
-```
+```text
 Icon: 🌅
 Eyebrow: Daily brief
 Title:   Personal morning brief
@@ -87,12 +87,15 @@ Subhead (line 338) unchanged.
 
 **Code block** (lines 368–379) — replace the three-step `go build / export / runner --dry-run` example with the dogfood-equivalent commands, which are both shorter and what we actually run ourselves:
 
-```
+```bash
 # 1. Clone
 $ git clone https://github.com/gambtho/cronfoundry.git
 $ cd cronfoundry
 
-# 2. Run the Copilot Enterprise quick-start
+# 2. Pick a provider (skip if using Copilot Enterprise)
+$ export OPENAI_API_KEY='sk-...'
+
+# 3. Run the Copilot Enterprise quick-start
 $ bash scripts/quickstart-copilot.sh
 ```
 
@@ -125,7 +128,7 @@ OpenClaw facts confirmed from `openclaw.ai` and `github.com/openclaw/openclaw` (
 
 The four "P1–P4 Done" cards are visually identical and take 4 columns of vertical space to say one thing. Collapse them to a single hero badge above the existing "What's next" chips:
 
-```
+```text
 [ MVP shipped · P1–P4 ✓ ]
 Core runner · Scheduler + API · Web UI · Azure deploy
 ```
