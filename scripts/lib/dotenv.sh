@@ -37,7 +37,13 @@ dotenv_get() {
   if [[ -n "${!key+x}" ]]; then printf '%s' "${!key}"; return 0; fi
   local f; f=$(dotenv_path)
   [[ -f "$f" ]] || return 1
-  awk -v k="$key" 'BEGIN{p=k"="} index($0, p)==1 { sub(p, ""); print; exit }' "$f"
+  local raw
+  raw=$(awk -v k="$key" 'BEGIN{p=k"="} index($0, p)==1 { sub(p, ""); print; exit }' "$f")
+  # Strip matching surrounding quotes so file lookup matches what dotenv_load
+  # would have exported.
+  if [[ "$raw" =~ ^\"(.*)\"$ ]]; then printf '%s' "${BASH_REMATCH[1]}";
+  elif [[ "$raw" =~ ^\'(.*)\'$ ]]; then printf '%s' "${BASH_REMATCH[1]}";
+  else printf '%s' "$raw"; fi
 }
 
 dotenv_has() {

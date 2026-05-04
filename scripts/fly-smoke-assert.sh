@@ -66,13 +66,19 @@ RUN_ID=$(echo "$RUN_JSON" | jq -r '.id')
 ok "run ${RUN_ID} succeeded"
 
 # ── tokens ──────────────────────────────────────────────────────────────────
-# Field names per CronFoundry's runs API: tokens_input / tokens_output.
-TOKENS_IN=$(echo  "$RUN_JSON" | jq -r '.tokens_input  // 0')
-TOKENS_OUT=$(echo "$RUN_JSON" | jq -r '.tokens_output // 0')
-DURATION_MS=$(echo "$RUN_JSON" | jq -r '.duration_ms  // 0')
+# Token + duration fields live on runDetailDTO (GET /api/runs/{id}), not on
+# the runSummaryDTO returned by the list endpoint. Fetch the detail.
+RUN_DETAIL_URL="https://${FLY_API_APP}.fly.dev/api/runs/${RUN_ID}"
+RUN_DETAIL=$(curl -fsS "$RUN_DETAIL_URL" 2>/dev/null) \
+  || die "failed to fetch run detail at ${RUN_DETAIL_URL}"
 
-(( TOKENS_IN  > 0 )) || die "run ${RUN_ID} reports tokens_input=${TOKENS_IN} (expected > 0)"
-(( TOKENS_OUT > 0 )) || die "run ${RUN_ID} reports tokens_output=${TOKENS_OUT} (expected > 0)"
+# Field names per internal/webapi/runs.go::runDetailDTO: tokens_in / tokens_out.
+TOKENS_IN=$(echo  "$RUN_DETAIL" | jq -r '.tokens_in  // 0')
+TOKENS_OUT=$(echo "$RUN_DETAIL" | jq -r '.tokens_out // 0')
+DURATION_MS=$(echo "$RUN_DETAIL" | jq -r '.duration_ms // 0')
+
+(( TOKENS_IN  > 0 )) || die "run ${RUN_ID} reports tokens_in=${TOKENS_IN} (expected > 0)"
+(( TOKENS_OUT > 0 )) || die "run ${RUN_ID} reports tokens_out=${TOKENS_OUT} (expected > 0)"
 ok "tokens: in=${TOKENS_IN} out=${TOKENS_OUT} duration=${DURATION_MS}ms"
 
 # ── issue filed ─────────────────────────────────────────────────────────────

@@ -143,6 +143,25 @@ run_test "dotenv_require returns existing value without prompting" test_require_
 run_test "dotenv_require fails when DOTENV_NON_INTERACTIVE and key missing" test_require_non_interactive_fails_on_missing
 run_test "dotenv_require uses default on blank input and persists it" test_require_with_default_uses_default_when_blank
 
+test_get_strips_quotes_from_file_lookup() {
+  # Write a quoted value directly so we exercise the file-lookup branch
+  # (dotenv_set goes through env, which would mask the bug).
+  printf "FOO='hello world'\n" > "$ENV_FILE"
+  unset FOO
+  local v; v=$(dotenv_get FOO)
+  [[ "$v" == "hello world" ]]
+}
+
+test_get_strips_double_quotes_from_file_lookup() {
+  printf 'FOO="hi there"\n' > "$ENV_FILE"
+  unset FOO
+  local v; v=$(dotenv_get FOO)
+  [[ "$v" == "hi there" ]]
+}
+
+run_test "dotenv_get strips single quotes when reading from file" test_get_strips_quotes_from_file_lookup
+run_test "dotenv_get strips double quotes when reading from file" test_get_strips_double_quotes_from_file_lookup
+
 echo; echo "${PASS} passed, ${FAIL} failed"
 if (( FAIL > 0 )); then printf '  - %s\n' "${FAILED_TESTS[@]}"; exit 1; fi
 exit 0
