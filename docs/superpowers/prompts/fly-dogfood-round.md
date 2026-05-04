@@ -134,6 +134,18 @@ For each round:
   under `--non-interactive` it proceeds without prompt — be sure
   before automating it.
 
+- **Stale-run baseline.** `fly-smoke-assert.sh` snapshots the latest
+  run id at startup and waits for a strictly newer run. If you re-run
+  the assert without dispatching a new run, it will time out — that's
+  correct behaviour. Click Run-now or wait for the cron between
+  assert invocations.
+
+- **`/api/runs` and `/api/runs/{id}` are session-gated.**
+  `fly-smoke-assert.sh` currently calls them unauthenticated. If they
+  401 in your env, surface the curl error and ask the operator how
+  to authenticate (OAuth cookie or session token) — don't silently
+  treat 401 as "no runs yet."
+
 ## Auto mode
 
 This session is meant to run autonomously. Don't pause for
