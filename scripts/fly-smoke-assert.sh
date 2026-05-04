@@ -34,10 +34,26 @@ TIMEOUT="${SMOKE_TIMEOUT_SECONDS:-900}"
 RUNS_URL="https://${FLY_API_APP}.fly.dev/api/runs?limit=1"
 
 info "polling ${RUNS_URL} (timeout ${TIMEOUT}s)"
+
+# Snapshot the latest-run id at start. We only consider a run that arrived
+# after this point — otherwise a stale terminal run from a prior round would
+# pass/fail the assert without ever waiting for the new dispatch.
+BASELINE_JSON=$(curl -fsS "$RUNS_URL" 2>/dev/null || echo '[]')
+BASELINE_ID=$(echo "$BASELINE_JSON" | jq -r '.[0].id // empty')
+if [[ -n "$BASELINE_ID" ]]; then
+  info "baseline (must see a newer run id than this): ${BASELINE_ID}"
+else
+  info "no prior runs visible — any terminal run will count"
+fi
+
 DEADLINE=$(( $(date +%s) + TIMEOUT ))
 RUN_JSON=""
 while [[ $(date +%s) -lt $DEADLINE ]]; do
   RUNS=$(curl -fsS "$RUNS_URL" 2>/dev/null || echo '[]')
+  CUR_ID=$(echo "$RUNS" | jq -r '.[0].id // empty')
+  if [[ -z "$CUR_ID" || "$CUR_ID" == "$BASELINE_ID" ]]; then
+    sleep 10; continue
+  fi
   STATUS=$(echo "$RUNS" | jq -r '.[0].status // empty')
   case "$STATUS" in
     succeeded)
@@ -45,9 +61,8 @@ while [[ $(date +%s) -lt $DEADLINE ]]; do
       break
       ;;
     failed|partial_failure)
-      RUN_ID=$(echo "$RUNS" | jq -r '.[0].id')
       echo
-      warn "most recent run finished as ${STATUS} (id ${RUN_ID})"
+      warn "newest run finished as ${STATUS} (id ${CUR_ID})"
       warn "dumping last 100 lines of runner logs:"
       flyctl logs --app "$FLY_RUNNER_APP" 2>/dev/null | tail -100 || true
       die "smoke run did not succeed"
@@ -57,7 +72,7 @@ while [[ $(date +%s) -lt $DEADLINE ]]; do
 done
 
 if [[ -z "$RUN_JSON" ]]; then
-  warn "no terminal run within ${TIMEOUT}s; dumping last 100 lines of runner logs:"
+  warn "no new terminal run within ${TIMEOUT}s; dumping last 100 lines of runner logs:"
   flyctl logs --app "$FLY_RUNNER_APP" 2>/dev/null | tail -100 || true
   die "timed out waiting for a successful run"
 fi

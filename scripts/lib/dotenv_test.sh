@@ -13,6 +13,9 @@ run_test() {
   export ENV_FILE="${TMP}/.env"
   if (
     set -e
+    # Clear any leakage from the caller's environment so dotenv_load (which
+    # honours pre-set values) doesn't get spurious wins.
+    unset FOO BAR BAZ FOO_BAR
     # shellcheck disable=SC1091
     source "${SCRIPT_DIR}/dotenv.sh"
     "$@"
