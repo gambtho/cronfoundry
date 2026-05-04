@@ -61,6 +61,62 @@ run_test "dotenv_load ignores blanks and comments" test_load_ignores_blank_and_c
 run_test "dotenv_load preserves single- and double-quoted values" test_load_preserves_quoted_values
 run_test "dotenv_load does not override existing exported values" test_load_does_not_override_existing
 
+test_set_round_trips() {
+  dotenv_set FOO bar
+  unset FOO
+  dotenv_load
+  [[ "$FOO" == "bar" ]]
+}
+
+test_set_replaces_existing() {
+  dotenv_set FOO first
+  dotenv_set FOO second
+  unset FOO
+  dotenv_load
+  [[ "$FOO" == "second" ]]
+}
+
+test_set_special_chars() {
+  dotenv_set FOO 'has space and $dollar'
+  unset FOO
+  dotenv_load
+  [[ "$FOO" == 'has space and $dollar' ]]
+}
+
+test_set_prefix_collision() {
+  dotenv_set FOO one
+  dotenv_set FOO_BAR two
+  dotenv_set FOO three
+  unset FOO FOO_BAR
+  dotenv_load
+  [[ "$FOO" == "three" ]] && [[ "$FOO_BAR" == "two" ]]
+}
+
+test_set_mode_600() {
+  dotenv_set FOO bar
+  local perms
+  perms=$(stat -c '%a' "$ENV_FILE" 2>/dev/null || stat -f '%Lp' "$ENV_FILE")
+  [[ "$perms" == "600" ]]
+}
+
+test_has_true_when_in_file() {
+  dotenv_set FOO bar
+  unset FOO
+  dotenv_has FOO
+}
+
+test_has_false_when_absent() {
+  ! dotenv_has FOO
+}
+
+run_test "dotenv_set + dotenv_load round-trips" test_set_round_trips
+run_test "dotenv_set replaces an existing key" test_set_replaces_existing
+run_test "dotenv_set quotes special characters" test_set_special_chars
+run_test "dotenv_set with prefix-colliding keys updates only the exact key" test_set_prefix_collision
+run_test "dotenv_set leaves file mode 600" test_set_mode_600
+run_test "dotenv_has returns 0 when key in file" test_has_true_when_in_file
+run_test "dotenv_has returns nonzero when key absent" test_has_false_when_absent
+
 echo; echo "${PASS} passed, ${FAIL} failed"
 if (( FAIL > 0 )); then printf '  - %s\n' "${FAILED_TESTS[@]}"; exit 1; fi
 exit 0
