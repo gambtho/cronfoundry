@@ -3,16 +3,16 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>CronFoundry — Scheduled LLM skills for your team</title>
+  <title>CronFoundry — Self-hosted scheduled LLM skills</title>
   <meta name="description" content="Self-hosted, GitOps-native LLM skill scheduler. Runs on cron, publishes to Slack, GitHub, Discord, or Teams." />
-  <meta property="og:title" content="CronFoundry — Scheduled LLM skills for your team" />
+  <meta property="og:title" content="CronFoundry — Self-hosted scheduled LLM skills" />
   <meta property="og:description" content="Self-hosted, GitOps-native LLM skill scheduler. Runs on cron, publishes to Slack, GitHub, Discord, or Teams." />
   <meta property="og:type" content="website" />
   <meta property="og:url" content="https://gambtho.github.io/cronfoundry/" />
   <meta property="og:image" content="https://gambtho.github.io/cronfoundry/assets/og-image.png" />
   <link rel="canonical" href="https://gambtho.github.io/cronfoundry/" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:title" content="CronFoundry — Scheduled LLM skills for your team" />
+  <meta name="twitter:title" content="CronFoundry — Self-hosted scheduled LLM skills" />
   <meta name="twitter:description" content="Self-hosted, GitOps-native LLM skill scheduler. Runs on cron, publishes to Slack, GitHub, Discord, or Teams." />
   <meta name="twitter:image" content="https://gambtho.github.io/cronfoundry/assets/og-image.png" />
 
@@ -102,15 +102,14 @@
     <section class="mx-auto max-w-6xl px-6 pt-24 pb-20 text-center">
       <div class="inline-flex items-center gap-2 rounded border border-accent-green-dim bg-accent-green/[0.06] px-3 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-accent-green mb-8">
         <span class="h-1.5 w-1.5 rounded-full bg-accent-green glow-green-soft"></span>
-        v0.7.6 &middot; 4 LLM providers &middot; deployable to Azure today
+        v0.7.6 &middot; 4 LLM providers &middot; self-hosted &middot; open source
       </div>
       <h1 class="text-5xl sm:text-6xl font-bold tracking-tight text-ink leading-[1.05] mb-6">
         Scheduled LLM skills.<br />
-        In git. For your whole team.
+        In git. Yours to run.
       </h1>
       <p class="max-w-2xl mx-auto text-lg text-ink-2 mb-10">
-        CronFoundry runs AI skills on a cron, publishes results to Slack, GitHub, Discord, or Teams,
-        and commits learnings back to your repo.
+        Run AI on a cron. Publish results to Slack, GitHub, Discord, or Teams. Keep your prompts and keys in your repo &mdash; solo today, your whole team tomorrow.
         <span class="text-ink">Self-hosted. GitOps-native. BYOK.</span>
       </p>
       <div class="mx-auto max-w-xl rounded border border-rule bg-bg-2 p-3.5 font-mono text-[13px] text-ink text-left mb-4">
@@ -124,7 +123,7 @@
       <div class="flex flex-wrap items-center justify-center gap-3 mb-16">
         <a href="https://github.com/gambtho/cronfoundry/blob/main/docs/guides/quickstart-copilot.md"
            class="inline-flex items-center gap-2 rounded border border-accent-green-dim bg-accent-green-dim px-4 py-2 font-mono text-[11.5px] font-medium text-[#dffbe9] hover:bg-accent-green hover:text-[#04210f] hover:border-accent-green transition-colors">
-          Deploy in one afternoon &rarr;
+          Deploy in 15 minutes &rarr;
         </a>
         <a href="https://github.com/gambtho/cronfoundry"
            class="inline-flex items-center gap-2 rounded border border-rule-2 bg-bg-3 px-4 py-2 font-mono text-[11.5px] text-ink hover:border-ink-3 hover:bg-bg-4 transition-colors">
@@ -160,7 +159,7 @@
           <div class="rounded border border-rule bg-bg-2 p-6">
             <div class="text-2xl mb-4">&#x1F527;</div>
             <h3 class="font-semibold text-ink mb-2">Reinventing the wheel</h3>
-            <p class="text-[13px] text-ink-2">Generic cron + shell scripts work, but every team rebuilds prompt management, secret handling, output formatting, and observability from scratch.</p>
+            <p class="text-[13px] text-ink-2">Generic cron + shell scripts work, but you end up rebuilding prompt management, secret handling, output formatting, and observability from scratch.</p>
           </div>
           <div class="rounded border border-rule bg-bg-2 p-6">
             <div class="text-2xl mb-4">&#x1F310;</div>
@@ -174,7 +173,7 @@
     <!-- HOW IT WORKS -->
     <section class="mx-auto max-w-6xl px-6 py-20">
       <h2 class="text-center text-3xl font-bold text-ink mb-3">How it works</h2>
-      <p class="text-center text-ink-2 mb-16 max-w-xl mx-auto">Three steps from config to team-visible output.</p>
+      <p class="text-center text-ink-2 mb-16 max-w-xl mx-auto">Three steps from config to scheduled output.</p>
       <div class="grid sm:grid-cols-3 gap-6">
         <div class="text-center">
           <div class="inline-flex items-center justify-center w-10 h-10 rounded border border-accent-green-dim bg-accent-green-dim font-mono text-[13px] font-medium text-[#dffbe9] mb-4">1</div>
@@ -220,8 +219,8 @@ status:  <span class="text-accent-green">succeeded</span></pre>
     <section class="border-t border-rule bg-bg-2">
       <div class="mx-auto max-w-6xl px-6 py-20">
         <h2 class="text-center text-3xl font-bold text-ink mb-3">Use cases</h2>
-        <p class="text-center text-ink-2 mb-16 max-w-xl mx-auto">What teams are already building with CronFoundry.</p>
-        <div class="grid sm:grid-cols-3 gap-4">
+        <p class="text-center text-ink-2 mb-16 max-w-xl mx-auto">What people are already building with CronFoundry.</p>
+        <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div class="rounded border border-rule bg-bg-2 p-6">
             <div class="text-3xl mb-3">&#x1F4CB;</div>
             <div class="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-accent-green mb-2">Weekly digest</div>
@@ -240,6 +239,12 @@ status:  <span class="text-accent-green">succeeded</span></pre>
             <h3 class="font-semibold text-ink mb-2">Backlog grooming</h3>
             <p class="text-[13px] text-ink-2">Reviews the GitHub project board, identifies stale items, and files an issue with suggested actions &mdash; no manual triage required.</p>
           </div>
+          <div class="rounded border border-rule bg-bg-2 p-6">
+            <div class="text-3xl mb-3">&#x1F305;</div>
+            <div class="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-accent-green mb-2">Daily brief</div>
+            <h3 class="font-semibold text-ink mb-2">Personal morning brief</h3>
+            <p class="text-[13px] text-ink-2">Scans your calendar, PR queue, and unread issues, and DMs you a structured Slack summary at 7:55am every weekday &mdash; just for you.</p>
+          </div>
         </div>
       </div>
     </section>
@@ -256,85 +261,55 @@ status:  <span class="text-accent-green">succeeded</span></pre>
               <th class="px-4 py-2.5 text-left text-ink font-medium">CronFoundry</th>
               <th class="px-4 py-2.5 text-left text-ink-2 font-medium">gh&#8209;aw</th>
               <th class="px-4 py-2.5 text-left text-ink-2 font-medium">Claude Routines</th>
-              <th class="px-4 py-2.5 text-left text-ink-2 font-medium">n8n / Zapier</th>
-              <th class="px-4 py-2.5 text-left text-ink-2 font-medium">cron + scripts</th>
+              <th class="px-4 py-2.5 text-left text-ink-2 font-medium">OpenClaw</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-rule bg-bg-2">
+            <tr>
+              <td class="px-4 py-3 text-ink-2 font-medium">Trigger model</td>
+              <td class="px-4 py-3 text-ink">Cron schedule</td>
+              <td class="px-4 py-3 text-ink-2">GitHub events</td>
+              <td class="px-4 py-3 text-ink-2">Cron schedule</td>
+              <td class="px-4 py-3 text-ink-2">Chat + cron + webhooks</td>
+            </tr>
             <tr>
               <td class="px-4 py-3 text-ink-2 font-medium">Config lives in</td>
               <td class="px-4 py-3 text-ink">Git (YAML)</td>
               <td class="px-4 py-3 text-ink-2">Git (Markdown)</td>
               <td class="px-4 py-3 text-ink-2">Vendor UI</td>
-              <td class="px-4 py-3 text-ink-2">Vendor UI</td>
-              <td class="px-4 py-3 text-ink-2">Shell scripts</td>
+              <td class="px-4 py-3 text-ink-2">Local JSON</td>
             </tr>
             <tr>
               <td class="px-4 py-3 text-ink-2 font-medium">Runs on</td>
-              <td class="px-4 py-3 text-ink">Self-hosted Azure</td>
+              <td class="px-4 py-3 text-ink">Self-hosted (Azure today; AKS, Fly.io next)</td>
               <td class="px-4 py-3 text-ink-2">GitHub Actions</td>
-              <td class="px-4 py-3 text-ink-2">Vendor cloud</td>
-              <td class="px-4 py-3 text-ink-2">Vendor cloud</td>
-              <td class="px-4 py-3 text-ink-2">Your infra</td>
-            </tr>
-            <tr>
-              <td class="px-4 py-3 text-ink-2 font-medium">Output destinations</td>
-              <td class="px-4 py-3 text-ink">Slack, Discord, Teams, GitHub</td>
-              <td class="px-4 py-3 text-ink-2">GitHub only</td>
-              <td class="px-4 py-3 text-ink-2">Email, notifications</td>
-              <td class="px-4 py-3 text-ink-2">Many</td>
-              <td class="px-4 py-3 text-ink-2">Whatever you code</td>
+              <td class="px-4 py-3 text-ink-2">Anthropic cloud</td>
+              <td class="px-4 py-3 text-ink-2">Your laptop / SSH</td>
             </tr>
             <tr>
               <td class="px-4 py-3 text-ink-2 font-medium">LLM providers</td>
-              <td class="px-4 py-3 text-ink">OpenAI, Anthropic, Azure AI, Copilot Enterprise</td>
+              <td class="px-4 py-3 text-ink">OpenAI, Anthropic, Azure, Copilot Enterprise</td>
               <td class="px-4 py-3 text-ink-2">Copilot, Claude, Codex</td>
               <td class="px-4 py-3 text-ink-2">Anthropic only</td>
-              <td class="px-4 py-3 text-ink-2">Via plugins</td>
-              <td class="px-4 py-3 text-ink-2">Whatever you integrate</td>
-            </tr>
-            <tr>
-              <td class="px-4 py-3 text-ink-2 font-medium">Secrets</td>
-              <td class="px-4 py-3 text-ink">Azure Key Vault</td>
-              <td class="px-4 py-3 text-ink-2">GH Actions secrets</td>
-              <td class="px-4 py-3 text-ink-2">Vendor-managed</td>
-              <td class="px-4 py-3 text-ink-2">Vendor-managed</td>
-              <td class="px-4 py-3 text-ink-2">Your choice</td>
-            </tr>
-            <tr>
-              <td class="px-4 py-3 text-ink-2 font-medium">Self-hostable</td>
-              <td class="px-4 py-3 text-accent-green font-semibold">&#x2713;</td>
-              <td class="px-4 py-3 text-ink-3">&#x2717;</td>
-              <td class="px-4 py-3 text-ink-3">&#x2717;</td>
-              <td class="px-4 py-3 text-ink-2">&#x2713; (complex)</td>
-              <td class="px-4 py-3 text-accent-green font-semibold">&#x2713;</td>
-            </tr>
-            <tr>
-              <td class="px-4 py-3 text-ink-2 font-medium">Open source</td>
-              <td class="px-4 py-3 text-accent-green font-semibold">&#x2713;</td>
-              <td class="px-4 py-3 text-accent-green font-semibold">&#x2713;</td>
-              <td class="px-4 py-3 text-ink-3">&#x2717;</td>
-              <td class="px-4 py-3 text-ink-2">&#x2713; (community ed.)</td>
-              <td class="px-4 py-3 text-ink-2">N/A</td>
+              <td class="px-4 py-3 text-ink-2">BYOK (multi)</td>
             </tr>
             <tr>
               <td class="px-4 py-3 text-ink-2 font-medium">Best for</td>
-              <td class="px-4 py-3 text-ink">Team-visible scheduled outputs</td>
+              <td class="px-4 py-3 text-ink">Self-hosted scheduled AI for you or your team</td>
               <td class="px-4 py-3 text-ink-2">Repo automation</td>
-              <td class="px-4 py-3 text-ink-2">Personal schedules</td>
-              <td class="px-4 py-3 text-ink-2">General automation</td>
-              <td class="px-4 py-3 text-ink-2">Full DIY control</td>
+              <td class="px-4 py-3 text-ink-2">Personal Anthropic schedules</td>
+              <td class="px-4 py-3 text-ink-2">Personal assistant across messaging channels</td>
             </tr>
           </tbody>
         </table>
       </div>
-      <p class="text-center text-xs text-ink-3 mt-4">gh-aw and CronFoundry are complementary &mdash; gh-aw improves your repo automatically; CronFoundry runs skills and tells your team.</p>
+      <p class="text-center text-xs text-ink-3 mt-4 max-w-3xl mx-auto">gh-aw is complementary &mdash; runs on repo events, not the clock. OpenClaw is a chat-first personal assistant (with cron and webhooks too); CronFoundry is cron-first and team-aware. Already happy with n8n, Zapier, or your own cron jobs? Stick with them &mdash; CronFoundry is for people who want LLM-aware scheduling without building the prompt/secret/output plumbing themselves.</p>
     </section>
 
     <!-- QUICK START -->
     <section id="quickstart" class="border-t border-rule bg-bg-2">
       <div class="mx-auto max-w-6xl px-6 py-20">
-        <h2 class="text-center text-3xl font-bold text-ink mb-3">Up and running in one afternoon</h2>
+        <h2 class="text-center text-3xl font-bold text-ink mb-3">Up and running in ~15 minutes</h2>
         <p class="text-center text-ink-2 mb-16 max-w-xl mx-auto">One script deploys to Azure. Use your GitHub Copilot Enterprise seat for free, or bring your own OpenAI / Anthropic / Azure AI Foundry key.</p>
         <div class="grid sm:grid-cols-2 gap-12 items-center">
           <div>
@@ -342,22 +317,22 @@ status:  <span class="text-accent-green">succeeded</span></pre>
               <li class="flex gap-4">
                 <span class="flex-shrink-0 inline-flex items-center justify-center w-7 h-7 rounded border border-accent-green-dim bg-accent-green-dim font-mono text-[11px] font-medium text-[#dffbe9]">1</span>
                 <div>
-                  <p class="text-ink font-medium">Build the runner binary</p>
-                  <p class="text-[13px] text-ink-2 mt-1">A single ~25 MB static binary. No runtime dependencies.</p>
+                  <p class="text-ink font-medium">Clone the repo</p>
+                  <p class="text-[13px] text-ink-2 mt-1">One <code class="font-mono text-[12px]">git clone</code>. No runtime dependencies beyond Docker and the Azure CLI.</p>
                 </div>
               </li>
               <li class="flex gap-4">
                 <span class="flex-shrink-0 inline-flex items-center justify-center w-7 h-7 rounded border border-accent-green-dim bg-accent-green-dim font-mono text-[11px] font-medium text-[#dffbe9]">2</span>
                 <div>
                   <p class="text-ink font-medium">Pick a provider</p>
-                  <p class="text-[13px] text-ink-2 mt-1"><span class="text-ink">Using Copilot Enterprise?</span> No key needed &mdash; the runner uses your seat. <span class="text-ink">Bring your own key?</span> Export <code class="font-mono text-[12px]">OPENAI_API_KEY</code> (or the Anthropic / Azure AI Foundry equivalent).</p>
+                  <p class="text-[13px] text-ink-2 mt-1"><span class="text-ink">Using Copilot Enterprise?</span> No key needed &mdash; the script uses your seat. <span class="text-ink">Bring your own key?</span> Export <code class="font-mono text-[12px]">OPENAI_API_KEY</code> (or the Anthropic / Azure AI Foundry equivalent).</p>
                 </div>
               </li>
               <li class="flex gap-4">
                 <span class="flex-shrink-0 inline-flex items-center justify-center w-7 h-7 rounded border border-accent-green-dim bg-accent-green-dim font-mono text-[11px] font-medium text-[#dffbe9]">3</span>
                 <div>
-                  <p class="text-ink font-medium">Run against the bundled fixture</p>
-                  <p class="text-[13px] text-ink-2 mt-1">Streams a real completion. Publishes to your Slack. Commits learnings.</p>
+                  <p class="text-ink font-medium">Run <code class="font-mono text-[12px]">quickstart-copilot.sh</code></p>
+                  <p class="text-[13px] text-ink-2 mt-1">One script. Provisions Azure, builds the image, runs your first skill end-to-end.</p>
                 </div>
               </li>
             </ol>
@@ -366,16 +341,13 @@ status:  <span class="text-accent-green">succeeded</span></pre>
             </div>
           </div>
           <div class="rounded border border-rule bg-bg-2 p-5 font-mono text-[13px] text-ink">
-            <p class="text-ink-3 mb-1"># 1. Build</p>
-            <p class="mb-4"><span class="text-ink-3">$ </span>go build -o cronfoundry-runner ./cmd/runner</p>
+            <p class="text-ink-3 mb-1"># 1. Clone</p>
+            <p class="mb-1"><span class="text-ink-3">$ </span>git clone https://github.com/gambtho/cronfoundry.git</p>
+            <p class="mb-4"><span class="text-ink-3">$ </span>cd cronfoundry</p>
             <p class="text-ink-3 mb-1"># 2. Pick a provider (skip if using Copilot Enterprise)</p>
             <p class="mb-4"><span class="text-ink-3">$ </span>export OPENAI_API_KEY='sk-...'</p>
-            <p class="text-ink-3 mb-1"># 3. Run smoke fixture</p>
-            <p><span class="text-ink-3">$ </span>./cronfoundry-runner run \</p>
-            <p class="pl-4">--repo ./testdata \</p>
-            <p class="pl-4">--skill-path skills/weekly-digest \</p>
-            <p class="pl-4">--schedule-name monday-morning \</p>
-            <p class="pl-4">--dry-run</p>
+            <p class="text-ink-3 mb-1"># 3. Run the Copilot Enterprise quick-start</p>
+            <p><span class="text-ink-3">$ </span>bash scripts/quickstart-copilot.sh</p>
           </div>
         </div>
       </div>
@@ -385,26 +357,10 @@ status:  <span class="text-accent-green">succeeded</span></pre>
     <section class="mx-auto max-w-6xl px-6 py-20">
       <h2 class="text-center text-3xl font-bold text-ink mb-3">Roadmap</h2>
       <p class="text-center text-ink-2 mb-16 max-w-xl mx-auto">MVP shipped. All four phases delivered and deployable to Azure today.</p>
-      <div class="grid sm:grid-cols-4 gap-3 mb-12">
-        <div class="rounded border border-accent-green-dim bg-accent-green/[0.05] p-5">
-          <div class="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-accent-green mb-2">P1 &middot; Done &#x2713;</div>
-          <h3 class="font-semibold text-ink mb-2">Core runner</h3>
-          <p class="text-xs text-ink-2">Single binary, all LLM providers, all destinations, writeback, full test suite.</p>
-        </div>
-        <div class="rounded border border-accent-green-dim bg-accent-green/[0.05] p-5">
-          <div class="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-accent-green mb-2">P2 &middot; Done &#x2713;</div>
-          <h3 class="font-semibold text-ink mb-2">Scheduler + API</h3>
-          <p class="text-xs text-ink-2">Postgres, cron scheduler, REST API, Azure Key Vault integration.</p>
-        </div>
-        <div class="rounded border border-accent-green-dim bg-accent-green/[0.05] p-5">
-          <div class="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-accent-green mb-2">P3 &middot; Done &#x2713;</div>
-          <h3 class="font-semibold text-ink mb-2">Web UI</h3>
-          <p class="text-xs text-ink-2">React dashboard, GitHub OAuth, secret CRUD, run history, live log tail.</p>
-        </div>
-        <div class="rounded border border-accent-green-dim bg-accent-green/[0.05] p-5">
-          <div class="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-accent-green mb-2">P4 &middot; Done &#x2713;</div>
-          <h3 class="font-semibold text-ink mb-2">Azure deploy</h3>
-          <p class="text-xs text-ink-2">Bicep template, GHCR images, one-command deploy from empty subscription.</p>
+      <div class="mb-12 flex justify-center">
+        <div class="rounded border border-accent-green-dim bg-accent-green/[0.05] px-5 py-4 text-center max-w-2xl">
+          <div class="font-mono text-[10px] font-medium uppercase tracking-[0.16em] text-accent-green mb-2">MVP shipped &middot; P1&ndash;P4 &#x2713;</div>
+          <p class="text-[13px] text-ink-2">Core runner &middot; Scheduler + API &middot; Web UI &middot; Azure deploy</p>
         </div>
       </div>
       <div class="text-center">
