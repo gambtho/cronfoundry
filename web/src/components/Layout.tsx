@@ -4,6 +4,7 @@ import { Outlet, NavLink, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../lib/api'
 import { cn } from '../lib/cn'
+import ChatDock from './ChatDock'
 
 /**
  * Information architecture:
@@ -147,6 +148,11 @@ export default function Layout() {
       <main className="flex min-w-0 flex-col">
         <Outlet />
       </main>
+
+      {/* Floating in-app assistant. Renders nothing when chat is
+          disabled server-side (operator hasn't set the assistant env
+          vars). Position is fixed, so it sits on top of every page. */}
+      <ChatDock />
     </div>
   )
 }

@@ -164,6 +164,11 @@ export const api = {
     list: () => apiFetch<Alerts>('/api/alerts'),
   },
 
+  chat: {
+    info: () => apiFetch<{ enabled: boolean; model?: string }>('/api/chat/info'),
+    streamURL: () => '/api/chat/stream',
+  },
+
   skillRepo: {
     proposeJob: (req: ProposeJobRequest) =>
       apiFetch<ProposeJobResponse>('/api/skill-repo/jobs', {

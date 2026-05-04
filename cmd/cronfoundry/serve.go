@@ -22,10 +22,10 @@ import (
 	"github.com/gambtho/cronfoundry/internal/api"
 	"github.com/gambtho/cronfoundry/internal/cloud"
 	cloudazure "github.com/gambtho/cronfoundry/internal/cloud/azure"
-	"github.com/gambtho/cronfoundry/internal/jobdispatch/flymachines"
-	"github.com/gambtho/cronfoundry/internal/jobdispatch/k8sjobs"
 	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
 	"github.com/gambtho/cronfoundry/internal/github"
+	"github.com/gambtho/cronfoundry/internal/jobdispatch/flymachines"
+	"github.com/gambtho/cronfoundry/internal/jobdispatch/k8sjobs"
 	"github.com/gambtho/cronfoundry/internal/metrics"
 	"github.com/gambtho/cronfoundry/internal/scheduler"
 	"github.com/gambtho/cronfoundry/internal/secrets/server"
@@ -52,6 +52,12 @@ const (
 	envRateDisabled      = "CRONFOUNDRY_RATE_DISABLED"
 	envPublicBaseURL     = "CRONFOUNDRY_PUBLIC_BASE_URL"
 	envMetricsDisabled   = "CRONFOUNDRY_METRICS_DISABLED"
+	envChatProvider      = "CRONFOUNDRY_CHAT_PROVIDER"
+	envChatModel         = "CRONFOUNDRY_CHAT_MODEL"
+	envChatAPIKeySecret  = "CRONFOUNDRY_CHAT_API_KEY_SECRET"
+	envChatCopilotPrefix = "CRONFOUNDRY_CHAT_COPILOT_PREFIX"
+	envChatMaxTurns      = "CRONFOUNDRY_CHAT_MAX_TURNS"
+	envChatMaxTokens     = "CRONFOUNDRY_CHAT_MAX_TOKENS"
 )
 
 func newServeCmd() *cobra.Command {
@@ -230,6 +236,32 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 		slog.Warn("CRONFOUNDRY_PUBLIC_BASE_URL not set; CSRF Origin check disabled (dev mode)")
 	}
 	metrics.Disabled = envBool(envMetricsDisabled)
+
+	// Chat is opt-in. The operator enables it by setting provider+model
+	// plus the credential pointer appropriate to that provider:
+	// _API_KEY_SECRET for openai/anthropic/azure-foundry/openrouter, or
+	// _COPILOT_PREFIX for copilot-enterprise. When the required vars are
+	// missing we keep the feature disabled but the rest of the service
+	// still comes up — chat is a help surface, not a critical path.
+	chatCfg := webapi.ChatConfig{
+		Provider:      os.Getenv(envChatProvider),
+		Model:         os.Getenv(envChatModel),
+		APIKeySecret:  os.Getenv(envChatAPIKeySecret),
+		CopilotPrefix: os.Getenv(envChatCopilotPrefix),
+		MaxTurns:      envInt(envChatMaxTurns, 0),
+		MaxTokens:     envInt(envChatMaxTokens, 0),
+	}
+	credentialReady := chatCfg.APIKeySecret != ""
+	if chatCfg.Provider == "copilot-enterprise" {
+		credentialReady = chatCfg.CopilotPrefix != ""
+	}
+	if chatCfg.Provider != "" && chatCfg.Model != "" && credentialReady {
+		chatCfg.Enabled = true
+		slog.Info("serve: chat assistant enabled", "provider", chatCfg.Provider, "model", chatCfg.Model)
+	} else {
+		slog.Info("serve: chat assistant disabled (set CRONFOUNDRY_CHAT_PROVIDER/_MODEL plus _API_KEY_SECRET or _COPILOT_PREFIX to enable)")
+	}
+
 	clock := &scheduler.TickClock{}
 	webapi.RegisterRoutes(mux, webapi.Deps{
 		MasterKey:         master,
@@ -241,11 +273,12 @@ func runServe(ctx context.Context, addr string, cadence time.Duration) error {
 		Secrets:           store,
 		APIBaseURL:        "http://" + addr,
 		WebhookSecret:     []byte(os.Getenv(envWebhookSecret)),
-		PublicBaseURL:     os.Getenv(envPublicBaseURL),
+		PublicBaseURL:          os.Getenv(envPublicBaseURL),
 		Syncer:                 poller,
 		RateLimit:              rateCfg,
 		Clock:                  clock,
 		SweepInterval:          cadence,
+		Chat:                   chatCfg,
 		SkillRepoClient:        skillrepo.New(installs.Token, ghBaseURL),
 		YamlEditAppendSchedule: yamledit.AppendScheduleToSkill,
 		GitHubAppSlug:          os.Getenv("CRONFOUNDRY_GITHUB_APP_SLUG"),
