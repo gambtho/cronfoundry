@@ -19,29 +19,36 @@ deployed, and exit only when a smoke run completes end-to-end:
 
 1. **Repo:** `/home/tng/workspace/cronfoundry`. Always work in a
    worktree under `.claude/worktrees/<topic>`. Never push to `main`.
-2. **Live env:** `dog4` (Container Apps env in `swedencentral`).
-   - Resource group: `rg-cronfoundry-dog4`
-   - Serve app: `cf-serve-dog4`
-   - Runner job: `cf-runner-dog4`
-   - Key Vault: `cf-kv-dog4`
-   - URL: `https://cf-serve-dog4.yellowtree-eae6f0d3.swedencentral.azurecontainerapps.io/`
+2. **No live env right now.** The previous round deleted its resource
+   group; soft-deleted Key Vaults from past rounds (`cf-kv-dog*`) auto-
+   purge themselves within 7 days. Pick a fresh env suffix at step 7
+   of the quickstart (e.g. `dog7` or the next free name). Before
+   picking, confirm no `~/.cronfoundry-quickstart-state-<suffix>`
+   exists locally and no `rg-cronfoundry-<suffix>` exists in Azure
+   (`az group list --query "[?starts_with(name, 'rg-cronfoundry-')].name" -o tsv`).
 3. **Secrets:** in `.env` at repo root (GitHub App PEM path, OAuth
    creds). When you need a Copilot token directly, pull
-   `copilot-access-token` from `cf-kv-dog4` via `az keyvault secret
-   show`.
+   `copilot-access-token` from the round's Key Vault via
+   `az keyvault secret show`. Existing PEMs from prior rounds live in
+   `~/.cronfoundry/*.pem`; the manifest flow will create a new one.
 4. **Image layout (important — see drift bug below):** Every dispatcher
    invokes the runner via `cronfoundry runner …` on the main binary.
    Only one image (`ghcr.io/gambtho/cronfoundry`) is in active use.
 5. **Skills repo:** `gambtho/skills`. Live config is `cronfoundry.yaml`
    on the default branch; current default model is `gpt-5-mini` (do
    NOT downgrade to `gpt-4o` — Copilot Enterprise rejects it).
+6. **Latest published tag:** `v0.7.17`. Includes PR #93 (populate
+   `next_fire_at` on schedule upsert — fresh installs were
+   dead-on-arrival before this) and PR #95 (fail loud when
+   `initialNextFireAt` cannot compute — propagates errors so the sync
+   tx rolls back instead of inserting `next_fire_at = NULL`). When you
+   cut a new tag this round, increment from there.
 
 ## Process
 
 For each round:
 
-1. **Run the quickstart against an existing dog env.** From the repo
-   root:
+1. **Run the quickstart against a fresh env.** From the repo root:
    ```bash
    bash scripts/quickstart-copilot.sh
    ```
@@ -50,12 +57,16 @@ For each round:
    dashboard. Do that instead if Azure resources already exist.
 
 2. **Watch for failure.** If the smoke run errors:
-   - Pull the runner-side logs from Log Analytics:
+   - Pull the runner-side logs from Log Analytics (substitute the
+     round's RG and runner job name):
      ```bash
-     LAW=$(az monitor log-analytics workspace list -g rg-cronfoundry-dog4 \
+     ENV=<suffix>
+     RG=rg-cronfoundry-$ENV
+     RUNNER=cf-runner-$ENV
+     LAW=$(az monitor log-analytics workspace list -g "$RG" \
        --query "[0].customerId" -o tsv)
      az monitor log-analytics query -w "$LAW" --analytics-query \
-       "ContainerAppConsoleLogs_CL | where ContainerJobName_s == 'cf-runner-dog4' \
+       "ContainerAppConsoleLogs_CL | where ContainerJobName_s == '$RUNNER' \
         | where TimeGenerated > ago(30m) | order by TimeGenerated asc \
         | project TimeGenerated, Log_s | take 200" -o tsv
      ```
@@ -66,6 +77,10 @@ For each round:
 
 3. **Fix in a worktree on a new branch.** Open a PR. Wait for merge.
    Never push to `main`. Never push to a branch that's already merged.
+   If your PR was branched off un-squashed parent commits, after those
+   parents land via squash-merge your branch can show conflicts on
+   files you never edited; rebase to current `main` and cherry-pick
+   only your real commits, then `git push --force-with-lease`.
 
 4. **Cut a tag** on `main` once the fix lands:
    ```bash
@@ -74,33 +89,39 @@ For each round:
    git push origin vX.Y.Z
    ```
    Tagging triggers `.github/workflows/release.yml`. amd64 finishes in
-   ~4 min and pushes `:VERSION` (amd64-only) immediately, which is
-   enough to roll dog4. arm64 takes longer and merges later — don't
+   ~3–4 min and pushes `:VERSION` (amd64-only) immediately, which is
+   enough to roll the env. arm64 takes longer and merges later — don't
    wait.
 
-5. **Roll dog4 to the new tag.** All three values must move together
-   or you'll hit the drift bug (see below):
+5. **Roll the env to the new tag.** All three values must move together
+   or you'll hit the drift bug (see below). Substitute the round's
+   suffix:
    ```bash
+   ENV=<suffix>
    TAG=X.Y.Z
-   az containerapp update -n cf-serve-dog4 -g rg-cronfoundry-dog4 \
+   az containerapp update -n cf-serve-$ENV -g rg-cronfoundry-$ENV \
      --image "ghcr.io/gambtho/cronfoundry:$TAG" \
      --set-env-vars "AZURE_CAE_JOB_IMAGE=ghcr.io/gambtho/cronfoundry:$TAG" \
      -o none
-   az containerapp job update -n cf-runner-dog4 -g rg-cronfoundry-dog4 \
+   az containerapp job update -n cf-runner-$ENV -g rg-cronfoundry-$ENV \
      --image "ghcr.io/gambtho/cronfoundry:$TAG" -o none
    ```
    The `az containerapp update` long-poll often times out client-side
    while the actual operation succeeds. Always verify by reading state
    back, not by waiting on the command:
    ```bash
-   az containerapp show -n cf-serve-dog4 -g rg-cronfoundry-dog4 \
+   az containerapp show -n cf-serve-$ENV -g rg-cronfoundry-$ENV \
      --query "{img:properties.template.containers[0].image, \
               runner:properties.template.containers[0].env[?name=='AZURE_CAE_JOB_IMAGE'].value|[0], \
               prov:properties.provisioningState}" -o json
-   curl -s -o /dev/null -w "%{http_code}\n" "https://cf-serve-dog4.yellowtree-eae6f0d3.swedencentral.azurecontainerapps.io/healthz"
+   FQDN=$(az containerapp show -n cf-serve-$ENV -g rg-cronfoundry-$ENV \
+     --query "properties.configuration.ingress.fqdn" -o tsv)
+   curl -s -o /dev/null -w "%{http_code}\n" "https://$FQDN/healthz"
    ```
 
-6. **Re-run the smoke** from the dashboard's Run-now button. Iterate
+6. **Re-run the smoke** from the dashboard's Run-now button, or by
+   patching `gambtho/skills/cronfoundry.yaml` to a `*/2 * * * *` cron
+   to force one within ~2 min, then reverting to `0 9 * * *`. Iterate
    until success. Confirm the issue + writeback commit on
    `gambtho/skills` after success.
 
@@ -108,10 +129,10 @@ For each round:
 
 - **Image drift between serve and runner.** `AZURE_CAE_JOB_IMAGE` (env
   var on the serve container) is what the dispatcher uses when it
-  spawns runner executions. If you bump `cf-serve-dog4` but forget the
-  env var, new dispatches keep running OLD code. Always update all
-  three values (serve `--image`, serve `--set-env-vars
-  AZURE_CAE_JOB_IMAGE=…`, and `cf-runner-dog4` job `--image`) on every
+  spawns runner executions. If you bump the serve container but
+  forget the env var, new dispatches keep running OLD code. Always
+  update all three values (serve `--image`, serve `--set-env-vars
+  AZURE_CAE_JOB_IMAGE=…`, and the runner job's `--image`) on every
   rollout. (See PR #82.)
 
 - **`cronfoundry-runner` image is dead.** All dispatchers invoke the
