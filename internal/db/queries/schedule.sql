@@ -1,12 +1,21 @@
 -- name: UpsertSchedule :one
+-- $21 (initial_next_fire_at) is the cron-computed fire time used ONLY when
+-- the row is freshly inserted, when the DB-side next_fire_at is NULL (heals
+-- rows from before this column was populated on insert), when a previously
+-- soft-disabled schedule is being re-enabled (its old next_fire_at would be
+-- stale), or when the cron expression / timezone changed (the saved
+-- next_fire_at was computed against the prior cron/tz and would otherwise
+-- ignore the operator's edit until the dispatcher fired once). Otherwise
+-- the dispatcher is the authoritative writer and we leave the existing
+-- value alone.
 INSERT INTO schedule (
     org_id, skill_id, name, cron, timezone, overlap_policy, timeout_sec,
     enabled, provider, model, llm_secret_ref, llm_endpoint, llm_deployment,
     destinations_json, writeback_json, env_json, auto_pause_after, mcp_env_json,
-    max_turns, copilot_token_refs_json, updated_at
+    max_turns, copilot_token_refs_json, next_fire_at, updated_at
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-        $17, $18, $19, $20, now())
+        $17, $18, $19, $20, $21, now())
 ON CONFLICT (skill_id, name) DO UPDATE
   SET cron                    = EXCLUDED.cron,
       timezone                = EXCLUDED.timezone,
@@ -25,6 +34,14 @@ ON CONFLICT (skill_id, name) DO UPDATE
       mcp_env_json            = EXCLUDED.mcp_env_json,
       max_turns               = EXCLUDED.max_turns,
       copilot_token_refs_json = EXCLUDED.copilot_token_refs_json,
+      next_fire_at            = CASE
+                                  WHEN schedule.next_fire_at IS NULL
+                                    OR schedule.enabled = false
+                                    OR schedule.cron <> EXCLUDED.cron
+                                    OR schedule.timezone <> EXCLUDED.timezone
+                                  THEN EXCLUDED.next_fire_at
+                                  ELSE schedule.next_fire_at
+                                END,
       updated_at              = now()
 RETURNING *;
 

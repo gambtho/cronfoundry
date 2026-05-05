@@ -394,3 +394,159 @@ skills:
 	require.NoError(t, json.Unmarshal(rows[0].CopilotTokenRefsJson, &refs))
 	assert.Equal(t, "mycopilot", refs.Prefix)
 }
+
+// Regression: an UpsertSchedule that left next_fire_at NULL meant freshly
+// synced schedules were invisible to the dispatcher (which selects WHERE
+// next_fire_at IS NOT NULL AND next_fire_at <= now()), so brand-new installs
+// never fired any cron-driven runs until something else wrote the column.
+// This test pins the contract that:
+//   1. inserting a schedule populates next_fire_at to the cron's next time,
+//   2. a follow-up sync does NOT clobber an already-advanced next_fire_at
+//      (the tick loop is the authoritative writer for armed schedules), and
+//   3. a sync that re-enables a soft-disabled schedule re-arms it.
+func TestUpsertSkillsAndSchedules_PopulatesNextFireAt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, orgID, repoID, cleanup := startPG(t)
+	defer cleanup()
+
+	// Pin "now" so we can assert the cron-derived next_fire_at exactly.
+	pinned := time.Date(2026, 5, 4, 12, 30, 0, 0, time.UTC)
+	prev := nowUTC
+	nowUTC = func() time.Time { return pinned }
+	defer func() { nowUTC = prev }()
+
+	manifestYAML := `version: 1
+skills:
+  - path: skills/a
+    schedules:
+      - name: hourly
+        cron: "0 * * * *"
+        provider: openai
+        model: gpt-4o-mini
+        destinations:
+          - slack: { secret: slack_webhook }
+`
+	m, err := config.ParseManifest([]byte(manifestYAML))
+	require.NoError(t, err)
+	require.NoError(t, m.Validate())
+
+	skills := map[string]*config.Skill{
+		"skills/a": {Frontmatter: config.SkillFrontmatter{Name: "a"}},
+	}
+
+	ctx := context.Background()
+	require.NoError(t, UpsertSkillsAndSchedules(ctx, pool, orgID, repoID, m, skills, "sha1"))
+
+	var firstNF pgtype.Timestamptz
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT next_fire_at FROM schedule WHERE name = 'hourly'`).Scan(&firstNF))
+	require.True(t, firstNF.Valid, "next_fire_at must be populated on insert; otherwise the dispatcher never sees the schedule")
+	assert.Equal(t, time.Date(2026, 5, 4, 13, 0, 0, 0, time.UTC), firstNF.Time.UTC())
+
+	// Simulate the dispatcher having advanced next_fire_at past the next slot.
+	advanced := time.Date(2026, 5, 4, 14, 0, 0, 0, time.UTC)
+	_, err = pool.Exec(ctx,
+		`UPDATE schedule SET next_fire_at = $1 WHERE name = 'hourly'`, advanced)
+	require.NoError(t, err)
+
+	// Re-sync at a later "now". The advanced value must survive — sync is
+	// not allowed to rewind an armed schedule.
+	nowUTC = func() time.Time { return pinned.Add(time.Hour) }
+	require.NoError(t, UpsertSkillsAndSchedules(ctx, pool, orgID, repoID, m, skills, "sha2"))
+
+	var afterResync pgtype.Timestamptz
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT next_fire_at FROM schedule WHERE name = 'hourly'`).Scan(&afterResync))
+	assert.Equal(t, advanced.UTC(), afterResync.Time.UTC(),
+		"re-syncing must not clobber a dispatcher-advanced next_fire_at")
+
+	// Soft-disable, then re-sync. The schedule should be re-armed using the
+	// cron-derived value relative to the new "now" (pinned + 2h = 14:30Z,
+	// next "0 * * * *" is 15:00Z).
+	_, err = pool.Exec(ctx,
+		`UPDATE schedule SET enabled = false WHERE name = 'hourly'`)
+	require.NoError(t, err)
+	nowUTC = func() time.Time { return pinned.Add(2 * time.Hour) }
+	require.NoError(t, UpsertSkillsAndSchedules(ctx, pool, orgID, repoID, m, skills, "sha3"))
+
+	var reArmed pgtype.Timestamptz
+	var enabled bool
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT next_fire_at, enabled FROM schedule WHERE name = 'hourly'`).
+		Scan(&reArmed, &enabled))
+	assert.True(t, enabled, "re-syncing a manifest containing the schedule must re-enable it")
+	assert.Equal(t, time.Date(2026, 5, 4, 15, 0, 0, 0, time.UTC), reArmed.Time.UTC(),
+		"re-enable must re-arm next_fire_at from the new now()")
+
+	// Operator edits the cron in their skills repo. Re-syncing must re-arm
+	// next_fire_at against the NEW cron, not silently honor the old saved
+	// fire time (which would ignore the operator's edit until the dispatcher
+	// fired once against the old cron).
+	advancedAfterEdit := time.Date(2026, 5, 4, 16, 0, 0, 0, time.UTC)
+	_, err = pool.Exec(ctx,
+		`UPDATE schedule SET next_fire_at = $1 WHERE name = 'hourly'`, advancedAfterEdit)
+	require.NoError(t, err)
+
+	editedYAML := `version: 1
+skills:
+  - path: skills/a
+    schedules:
+      - name: hourly
+        cron: "*/5 * * * *"
+        provider: openai
+        model: gpt-4o-mini
+        destinations:
+          - slack: { secret: slack_webhook }
+`
+	editedManifest, err := config.ParseManifest([]byte(editedYAML))
+	require.NoError(t, err)
+	require.NoError(t, editedManifest.Validate())
+
+	// Pin "now" to 16:32Z so the next "*/5 * * * *" slot is 16:35Z, which
+	// is BEFORE the saved 17:00Z — proving the saved value was overwritten
+	// rather than just the cron-derived value happening to be later.
+	nowUTC = func() time.Time { return time.Date(2026, 5, 4, 16, 32, 0, 0, time.UTC) }
+	require.NoError(t, UpsertSkillsAndSchedules(ctx, pool, orgID, repoID, editedManifest, skills, "sha4"))
+
+	var afterEdit pgtype.Timestamptz
+	var savedCron string
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT next_fire_at, cron FROM schedule WHERE name = 'hourly'`).
+		Scan(&afterEdit, &savedCron))
+	assert.Equal(t, "*/5 * * * *", savedCron, "edited cron must be persisted")
+	assert.Equal(t, time.Date(2026, 5, 4, 16, 35, 0, 0, time.UTC), afterEdit.Time.UTC(),
+		"editing the cron must re-arm next_fire_at against the new expression")
+
+	// Same for a timezone change. Switch tz to America/New_York and put the
+	// schedule on a wall-clock cron ("0 9 * * *") that lands at a UTC time
+	// that differs from any prior value on the row.
+	tzYAML := `version: 1
+skills:
+  - path: skills/a
+    schedules:
+      - name: hourly
+        cron: "0 9 * * *"
+        timezone: America/New_York
+        provider: openai
+        model: gpt-4o-mini
+        destinations:
+          - slack: { secret: slack_webhook }
+`
+	tzManifest, err := config.ParseManifest([]byte(tzYAML))
+	require.NoError(t, err)
+	require.NoError(t, tzManifest.Validate())
+	// 2026-05-05 09:00 in America/New_York (EDT, UTC-4) = 2026-05-05 13:00 UTC.
+	nowUTC = func() time.Time { return time.Date(2026, 5, 5, 8, 0, 0, 0, time.UTC) }
+	require.NoError(t, UpsertSkillsAndSchedules(ctx, pool, orgID, repoID, tzManifest, skills, "sha5"))
+
+	var afterTZ pgtype.Timestamptz
+	var savedTZ string
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT next_fire_at, timezone FROM schedule WHERE name = 'hourly'`).
+		Scan(&afterTZ, &savedTZ))
+	assert.Equal(t, "America/New_York", savedTZ)
+	assert.Equal(t, time.Date(2026, 5, 5, 13, 0, 0, 0, time.UTC), afterTZ.Time.UTC(),
+		"editing the timezone must re-arm next_fire_at against the new tz")
+}
