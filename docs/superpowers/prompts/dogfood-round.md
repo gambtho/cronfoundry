@@ -161,10 +161,18 @@ For each round:
   `.sha` immediately before each PUT — don't cache it across steps.
 
 - **Reset-and-prove for next_fire_at fixes.** To verify a sync-side fix
-  end-to-end without re-bootstrapping the env, set
-  `UPDATE schedule SET next_fire_at = NULL` (or change cron/tz) and
-  watch the next 60s sync cycle re-arm it. Cheaper than a full teardown
-  and exercises the same code path the bug originally hit.
+  end-to-end without re-bootstrapping the env, null the `next_fire_at`
+  column on the `schedule` table for the **single** row you're
+  exercising (or change its cron/tz), then watch the next 60s sync
+  cycle re-arm it. Always scope the UPDATE — bare
+  `UPDATE schedule SET next_fire_at = NULL` clears every schedule in
+  the org and breaks unrelated dispatchable jobs. Use the row's id or
+  composite key, e.g.
+  `UPDATE schedule SET next_fire_at = NULL WHERE id = '<schedule-uuid>';`
+  or
+  `UPDATE schedule SET next_fire_at = NULL WHERE skill_id = '<skill-uuid>' AND name = '<schedule-name>';`.
+  Cheaper than a full teardown and exercises the same code path the
+  bug originally hit, while leaving every other schedule armed.
 
 - **Sandbox blocks `source <state-file>` for psql passwords.** Auto
   mode's safety check sometimes denies `source ~/.cronfoundry-quickstart-state-*`
