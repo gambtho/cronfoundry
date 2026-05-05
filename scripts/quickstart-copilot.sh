@@ -441,6 +441,19 @@ else
   # may still be Running. Detect, prompt, and either wait or cancel before retrying.
   EXISTING_STATE=$(az deployment sub show --name "$CF_DEPLOY_NAME" \
     --query "properties.provisioningState" -o tsv 2>/dev/null || echo "NotFound")
+
+  # Subscription-level deployment records persist after the RG is deleted.
+  # If a past round was torn down and we resumed with the same env suffix
+  # (or hit a deploy-name collision against a recycled name), we'd see a
+  # stale `Succeeded` deployment with no live RG behind it, skip the
+  # `az deployment sub create`, and fail at FQDN retrieval. Detect the
+  # missing RG and force a re-deploy.
+  if [[ "$EXISTING_STATE" == "Succeeded" ]] \
+    && ! az group show -n "rg-cronfoundry-${CF_ENV}" --query name -o tsv >/dev/null 2>&1; then
+    warn "Deployment '$CF_DEPLOY_NAME' is recorded as Succeeded but rg-cronfoundry-${CF_ENV} is gone (likely torn down). Re-deploying."
+    EXISTING_STATE="NotFound"
+  fi
+
   if [[ "$EXISTING_STATE" == "Running" || "$EXISTING_STATE" == "Accepted" ]]; then
     warn "Found in-flight deployment '$CF_DEPLOY_NAME' from a previous run."
     info "Waiting for it to complete (poll every 30s)..."
