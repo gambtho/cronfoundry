@@ -81,6 +81,17 @@ lives here.
   `failed: orphan sweep: run exceeded timeout`. Look at the
   runner-side logs for the real error rather than waiting it out.
 
+- **GitHub device-flow codes expire in ~15 min.** The Copilot
+  connect step (step 22 on Azure, equivalent on Fly) prints a
+  `Visit https://github.com/login/device and enter code XXXX-XXXX`
+  pair and waits up to ~15 min for you to enter it. If you miss
+  the window the script reports
+  `error: poll for token: token endpoint error: expired_token`
+  and aborts. Just re-run the platform's quickstart — it picks
+  up at this step and prints a fresh code. Try not to wander off
+  between the GitHub-App-installation step and the Copilot device
+  flow.
+
 - **Reset-and-prove for `next_fire_at` fixes.** To verify a sync-side
   fix end-to-end without re-bootstrapping the env, null
   `next_fire_at` on the **single** `schedule` row you're exercising
