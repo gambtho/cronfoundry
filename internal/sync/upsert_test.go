@@ -578,3 +578,56 @@ skills:
 	assert.Equal(t, time.Date(2026, 5, 5, 13, 0, 0, 0, time.UTC), afterTZ.Time.UTC(),
 		"editing the timezone must re-arm next_fire_at against the new tz")
 }
+
+// Regression: when initialNextFireAt fails (e.g. the cron parser can no
+// longer accept an expression that was previously valid), the sync must
+// roll back loud rather than silently insert an enabled schedule with
+// next_fire_at = NULL — that would re-create the dead-on-arrival bug
+// from PR #93. config.Validate() blocks bad crons up front for the
+// production manifest path, so we hand-construct the manifest here to
+// reach the defensive code.
+func TestUpsertSkillsAndSchedules_RollsBackOnInvalidCron(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, orgID, repoID, cleanup := startPG(t)
+	defer cleanup()
+
+	badManifest := &config.Manifest{
+		Version: 1,
+		Skills: []config.SkillEntry{{
+			Path: "skills/a",
+			Schedules: []config.Schedule{{
+				Name:     "hourly",
+				Cron:     "this is not a cron expression",
+				Provider: "openai",
+				Model:    "gpt-4o-mini",
+				Destinations: []config.Destination{{
+					Slack: &config.WebhookDest{Secret: "slack_webhook"},
+				}},
+			}},
+		}},
+	}
+	skills := map[string]*config.Skill{
+		"skills/a": {Frontmatter: config.SkillFrontmatter{Name: "a"}},
+	}
+
+	ctx := context.Background()
+	err := UpsertSkillsAndSchedules(ctx, pool, orgID, repoID, badManifest, skills, "sha-bad")
+	require.Error(t, err, "sync must fail when initialNextFireAt cannot compute")
+	assert.Contains(t, err.Error(), "next_fire_at",
+		"error must mention next_fire_at so the operator can locate the bad schedule")
+
+	// Transaction rollback assertion: nothing from this sync should be
+	// visible. Both the schedule and its parent skill row were touched
+	// inside the same tx.
+	var schedRows int
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT count(*) FROM schedule WHERE name = 'hourly'`).Scan(&schedRows))
+	assert.Equal(t, 0, schedRows, "failed sync must not leave schedule rows behind")
+
+	var skillRows int
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT count(*) FROM skill WHERE repo_id = $1`, repoID).Scan(&skillRows))
+	assert.Equal(t, 0, skillRows, "failed sync must not leave skill rows behind (tx rollback)")
+}
