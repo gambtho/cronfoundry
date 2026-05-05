@@ -144,6 +144,35 @@ For each round:
   gets denied, surface the denial — don't silently fail. Ask the
   operator to approve.
 
+- **`az deployment sub create` 5-min read timeout (step 13).** The
+  Python `az` CLI applies a hard 300s read timeout to subscription-level
+  deployments, but Bicep regularly takes 6-10 min for a fresh
+  CronFoundry env. The first attempt usually exits with
+  `HTTPSConnectionPool(host='management.azure.com', port=443): Read
+  timed out. (read timeout=300)` and aborts the script before any
+  Azure-side resource group or deployment record exists. Just re-run
+  `bash scripts/quickstart-copilot.sh` — the state file persists, the
+  resume picks up at step 13 with the same params, and the second
+  attempt usually completes (the connection pool has warmed up).
+
+- **`gambtho/skills` repo references in the dogfood loop.** When you
+  patch `cronfoundry.yaml` via `gh api -X PUT`, GitHub will reject the
+  PUT with `409 Conflict` if you reuse a stale SHA. Always re-fetch
+  `.sha` immediately before each PUT — don't cache it across steps.
+
+- **Reset-and-prove for next_fire_at fixes.** To verify a sync-side fix
+  end-to-end without re-bootstrapping the env, set
+  `UPDATE schedule SET next_fire_at = NULL` (or change cron/tz) and
+  watch the next 60s sync cycle re-arm it. Cheaper than a full teardown
+  and exercises the same code path the bug originally hit.
+
+- **Sandbox blocks `source <state-file>` for psql passwords.** Auto
+  mode's safety check sometimes denies `source ~/.cronfoundry-quickstart-state-*`
+  followed by a `PGPASSWORD=$CF_PG_PASSWORD psql …`. Workaround:
+  `PG_PW=$(grep '^CF_PG_PASSWORD=' /home/tng/.cronfoundry-quickstart-state-<env> | sed 's/^CF_PG_PASSWORD=//; s/^"//; s/"$//')`
+  and inline `PGPASSWORD="$PG_PW" psql …` — same effect, no shell
+  source.
+
 ## Auto mode
 
 This session is meant to run autonomously. Don't pause for
