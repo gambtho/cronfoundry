@@ -587,6 +587,7 @@ elif [[ "${CF_FIREWALL_TIGHTENED:-0}" == "1" ]]; then
   ok "Postgres firewall already tightened (CF_FIREWALL_TIGHTENED=1); skipping"
 else
   OPERATOR_IP=$(curl -fsSL https://api.ipify.org 2>/dev/null || echo "")
+  PG_HOST="cf-pg-${CF_ENV}.postgres.database.azure.com"
   if [[ -n "$OPERATOR_IP" ]]; then
     info "Narrowing Postgres firewall to operator IP: $OPERATOR_IP"
     az postgres flexible-server firewall-rule create \
@@ -601,8 +602,39 @@ else
       --name "cf-pg-${CF_ENV}" \
       --rule-name AllowOperator \
       --yes 2>/dev/null || true
-    ok "Postgres firewall tightened to $OPERATOR_IP"
-    save CF_FIREWALL_TIGHTENED 1
+
+    # Verify connectivity from THIS host before declaring success.
+    # api.ipify.org reports the public-egress IP, but on WSL2 (and some
+    # corp/VPN setups) the source IP that arrives at Azure's Postgres
+    # frontend can differ — the narrowed rule then black-holes our own
+    # admin CLI. Probe TCP/5432 with a short deadline; if it fails,
+    # restore the broad rule and warn loudly so the operator knows the
+    # CLI calls in steps 20+ will actually work.
+    info "Probing $PG_HOST:5432 from this host (8s deadline)..."
+    if curl --connect-timeout 8 -sS "telnet://${PG_HOST}:5432" -o /dev/null 2>/dev/null \
+         || timeout 8 bash -c ">/dev/tcp/${PG_HOST}/5432" 2>/dev/null; then
+      ok "Postgres firewall tightened to $OPERATOR_IP (verified reachable)"
+      save CF_FIREWALL_TIGHTENED 1
+    else
+      warn "Tightened firewall blocks this host (likely WSL2 NAT or corp egress mismatch)."
+      warn "Public IP seen by api.ipify.org ($OPERATOR_IP) differs from outbound source seen by Azure."
+      warn "Restoring broad allow so admin CLI in steps 20-22 can connect."
+      az postgres flexible-server firewall-rule create \
+        --resource-group "rg-cronfoundry-${CF_ENV}" \
+        --name "cf-pg-${CF_ENV}" \
+        --rule-name AllowOperator \
+        --start-ip-address 0.0.0.0 \
+        --end-ip-address 255.255.255.255 \
+        --output none 2>/dev/null \
+        || warn "Re-broadening AllowOperator failed; admin CLI may hang."
+      az postgres flexible-server firewall-rule delete \
+        --resource-group "rg-cronfoundry-${CF_ENV}" \
+        --name "cf-pg-${CF_ENV}" \
+        --rule-name AllowOperatorIP \
+        --yes 2>/dev/null || true
+      warn "Tighten manually after the install completes once you know the right egress IP."
+      save CF_FIREWALL_TIGHTENED 1
+    fi
   else
     warn "Could not resolve operator IP via api.ipify.org; leaving broad firewall rule in place."
     warn "Tighten manually: az postgres flexible-server firewall-rule update ..."
