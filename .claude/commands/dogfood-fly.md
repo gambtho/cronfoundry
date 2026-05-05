@@ -110,8 +110,12 @@ skills repo after success.
 
 - **`.env` rewrite.** `fly-quickstart.sh` appends generated
   `CRONFOUNDRY_MASTER_KEY` and `CRONFOUNDRY_RUNNER_API_KEY` to `.env`
-  on first run. If `.env` is shared across operators, generate keys
-  once and commit them out-of-band.
+  on first run. `.env` is a **local runtime file only** — it's
+  gitignored and must stay that way. **Never commit secrets to
+  version control.** If multiple operators need the same keys,
+  generate them once and distribute through a secret manager (Vault,
+  1Password, AWS/Azure/GCP Secrets Manager) or another secure
+  out-of-band channel (encrypted message, shared password manager).
 
 - **`--fresh` is irreversible.** Destroys api, runner, AND Postgres
   (data loss). Interactive runs require typing `destroy`; under
