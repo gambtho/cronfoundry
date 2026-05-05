@@ -32,6 +32,34 @@ Use the smallest free `dogN` (e.g. `dog7`, `dog8`) — one where neither
 `~/.cronfoundry-quickstart-state-dogN` exists locally. Both lists are
 above. Set `ENV` and use it everywhere below.
 
+**Before launching the script, delete any stale state files** for envs
+whose RG no longer exists. The quickstart's resume logic auto-picks
+the *only* existing state file without prompting (convenient for
+"resume my one in-flight env"); leave a stale `state-dog6` lying
+around and the script silently tries to redeploy `dog6` instead of
+the new env you intended:
+
+```bash
+# After confirming the matching RG is gone in Azure:
+rm ~/.cronfoundry-quickstart-state-<old-env>
+```
+
+## Rebuild ./cronfoundry before launching
+
+Step 14 builds `./cronfoundry` from your current checkout if the binary
+is missing, then uses it to apply database migrations. As of #100,
+resumes also re-run `admin init` so newer migrations from a rebuilt
+binary always land — but you'll save a round-trip if the local binary
+is fresh from the start:
+
+```bash
+make web-stub && go build -o cronfoundry ./cmd/cronfoundry
+```
+
+Use `make build` if you want the real React bundle; the stub is fine
+for the dogfood loop's purposes (we hit `/healthz` and the API, not
+the UI).
+
 ## Azure context
 
 - Repo: `/home/tng/workspace/cronfoundry`. Always work in a worktree
@@ -78,6 +106,13 @@ az monitor log-analytics query -w "$LAW" --analytics-query \
    | project TimeGenerated, Log_s | take 200" -o tsv
 ```
 
+Log Analytics is sometimes slow to respond (~5 min) right after a
+failed runner execution while it's ingesting; if you get a
+`Read timed out (read timeout=300)` from `az monitor log-analytics
+query`, retry once before assuming there's nothing to read.
+`ContainerJobName_s` is the right filter for runner jobs;
+`ContainerAppName_s` is for the serve container.
+
 ### Roll the env to a new tag
 
 All three values must move together — see "image drift" in the shared
@@ -115,6 +150,27 @@ From the dashboard's Run-now button, or by patching
 one within ~2 min, then reverting to `0 9 * * *`. Confirm the issue
 + writeback commit on `gambtho/skills` after success.
 
+### Inspect runner job executions directly
+
+When the runner crashes before posting a terminal event, the
+dashboard shows the run as Running until the orphan sweeper closes
+it (`failed: orphan sweep: run exceeded timeout`). To see what
+actually happened on the Azure side:
+
+```bash
+ENV=<suffix>
+RG=rg-cronfoundry-$ENV
+az containerapp job execution list -n cf-runner-$ENV -g $RG \
+  --query "[].{n:name, s:properties.status, st:properties.startTime, et:properties.endTime}" \
+  -o table
+
+# Then inspect a single execution's args + image (useful when
+# debugging stale-image / drift bugs):
+EXEC=<from-list>
+az containerapp job execution show -n cf-runner-$ENV -g $RG \
+  --job-execution-name $EXEC --query "properties" -o json
+```
+
 ## Azure-specific sharp edges
 
 - **Image-drift pointer is `AZURE_CAE_JOB_IMAGE`.** Env var on the
@@ -139,6 +195,29 @@ one within ~2 min, then reverting to `0 9 * * *`. Confirm the issue
   second attempt usually completes (the connection pool has warmed
   up).
 
+- **WSL2 / corp-VPN egress IP ≠ `api.ipify.org` IP.** Step 15
+  narrows the Postgres firewall from `0.0.0.0/0` to whatever
+  ipify reports. On WSL2 (and some corp/VPN setups) the IP that
+  arrives at Azure's Postgres frontend is *not* the same one
+  ipify reports — so the narrowed rule then black-holes the
+  operator's own admin CLI in steps 20–22, surfacing as
+  `error: load organization: context deadline exceeded`. As of
+  PR #99 the script auto-rolls back to a broad rule when the
+  post-narrow TCP probe fails, but on an older script the manual
+  rescue is:
+  ```bash
+  ENV=<suffix>
+  az postgres flexible-server firewall-rule create \
+    --resource-group rg-cronfoundry-$ENV \
+    --name cf-pg-$ENV \
+    --rule-name AllowOperatorBroad \
+    --start-ip-address 0.0.0.0 \
+    --end-ip-address 255.255.255.255
+  ```
+  Tighten manually after the install once you know the right
+  egress IP (`SELECT inet_client_addr();` while the broad rule is
+  in place).
+
 - **Sandbox blocks `source <state-file>` for psql passwords.** Auto
   mode's safety check sometimes denies
   `source ~/.cronfoundry-quickstart-state-*` followed by
@@ -146,6 +225,25 @@ one within ~2 min, then reverting to `0 9 * * *`. Confirm the issue
   ```bash
   PG_PW=$(grep '^CF_PG_PASSWORD=' ~/.cronfoundry-quickstart-state-<env> \
     | sed 's/^CF_PG_PASSWORD=//; s/^"//; s/"$//')
-  PGPASSWORD="$PG_PW" psql …
+  PGPASSWORD="$PG_PW" psql 'host=cf-pg-<env>.postgres.database.azure.com \
+    user=cfadmin dbname=cronfoundry sslmode=require port=5432' …
   ```
-  Same effect, no shell source.
+  Use the keyword form (`host=… user=…`) rather than a `postgres://…`
+  URI when the password contains shell-meta characters; URI-
+  encoding is fiddlier than just quoting `PGPASSWORD`.
+
+- **Inspect goose migration state directly when a finalize 500s.**
+  If a runner log shows
+  `insert notification: ERROR: relation "<table>" does not exist
+  (SQLSTATE 42P01)`, the deployed image's code is ahead of the
+  migrations actually applied to the DB. Quick check:
+  ```sql
+  SELECT version_id, is_applied
+    FROM goose_db_version
+    ORDER BY version_id DESC LIMIT 5;
+  ```
+  Compare against `internal/db/migrations/`. As of #100 the resume
+  path always re-runs `admin init`, so a rebuild + resume is the
+  supported fix. If you really need to backfill a single migration
+  manually, run the file's `-- +goose Up` body followed by
+  `INSERT INTO goose_db_version (version_id, is_applied, tstamp) VALUES (<id>, true, now());`.
