@@ -400,10 +400,13 @@ skills:
 // next_fire_at IS NOT NULL AND next_fire_at <= now()), so brand-new installs
 // never fired any cron-driven runs until something else wrote the column.
 // This test pins the contract that:
-//   1. inserting a schedule populates next_fire_at to the cron's next time,
-//   2. a follow-up sync does NOT clobber an already-advanced next_fire_at
-//      (the tick loop is the authoritative writer for armed schedules), and
-//   3. a sync that re-enables a soft-disabled schedule re-arms it.
+//  1. inserting a schedule populates next_fire_at to the cron's next time,
+//  2. re-syncing a row whose next_fire_at went NULL (legacy data, manual
+//     reset) heals it from the live cron,
+//  3. a follow-up sync does NOT clobber an already-advanced next_fire_at
+//     (the tick loop is the authoritative writer for armed schedules), and
+//  4. a sync that re-enables a soft-disabled schedule, or that sees an
+//     edited cron / timezone, re-arms next_fire_at against the new value.
 func TestUpsertSkillsAndSchedules_PopulatesNextFireAt(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in -short mode")
@@ -444,6 +447,31 @@ skills:
 		`SELECT next_fire_at FROM schedule WHERE name = 'hourly'`).Scan(&firstNF))
 	require.True(t, firstNF.Valid, "next_fire_at must be populated on insert; otherwise the dispatcher never sees the schedule")
 	assert.Equal(t, time.Date(2026, 5, 4, 13, 0, 0, 0, time.UTC), firstNF.Time.UTC())
+
+	// Heal path: simulate a row written before this fix landed (the column
+	// is NULL but the schedule is still enabled). A re-sync MUST repopulate
+	// next_fire_at from the cron rather than leave the row dispatcher-
+	// invisible. This exercises the `schedule.next_fire_at IS NULL` branch
+	// of the CASE in queries/schedule.sql in isolation, separate from the
+	// disabled→re-enable and cron-change branches covered below.
+	_, err = pool.Exec(ctx,
+		`UPDATE schedule SET next_fire_at = NULL WHERE name = 'hourly'`)
+	require.NoError(t, err)
+	nowUTC = func() time.Time { return pinned.Add(20 * time.Minute) } // 12:50Z, next "0 * * * *" is 13:00Z
+	require.NoError(t, UpsertSkillsAndSchedules(ctx, pool, orgID, repoID, m, skills, "sha-heal"))
+
+	var healed pgtype.Timestamptz
+	var healedEnabled bool
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT next_fire_at, enabled FROM schedule WHERE name = 'hourly'`).
+		Scan(&healed, &healedEnabled))
+	require.True(t, healed.Valid, "NULL next_fire_at on an enabled row must be healed by re-sync")
+	assert.True(t, healedEnabled)
+	assert.Equal(t, time.Date(2026, 5, 4, 13, 0, 0, 0, time.UTC), healed.Time.UTC(),
+		"heal must compute next_fire_at from the live cron, not leave the row NULL")
+
+	// Restore the pinned-now baseline for the dispatcher-advance step below.
+	nowUTC = func() time.Time { return pinned }
 
 	// Simulate the dispatcher having advanced next_fire_at past the next slot.
 	advanced := time.Date(2026, 5, 4, 14, 0, 0, 0, time.UTC)
@@ -549,4 +577,57 @@ skills:
 	assert.Equal(t, "America/New_York", savedTZ)
 	assert.Equal(t, time.Date(2026, 5, 5, 13, 0, 0, 0, time.UTC), afterTZ.Time.UTC(),
 		"editing the timezone must re-arm next_fire_at against the new tz")
+}
+
+// Regression: when initialNextFireAt fails (e.g. the cron parser can no
+// longer accept an expression that was previously valid), the sync must
+// roll back loud rather than silently insert an enabled schedule with
+// next_fire_at = NULL — that would re-create the dead-on-arrival bug
+// from PR #93. config.Validate() blocks bad crons up front for the
+// production manifest path, so we hand-construct the manifest here to
+// reach the defensive code.
+func TestUpsertSkillsAndSchedules_RollsBackOnInvalidCron(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in -short mode")
+	}
+	pool, orgID, repoID, cleanup := startPG(t)
+	defer cleanup()
+
+	badManifest := &config.Manifest{
+		Version: 1,
+		Skills: []config.SkillEntry{{
+			Path: "skills/a",
+			Schedules: []config.Schedule{{
+				Name:     "hourly",
+				Cron:     "this is not a cron expression",
+				Provider: "openai",
+				Model:    "gpt-4o-mini",
+				Destinations: []config.Destination{{
+					Slack: &config.WebhookDest{Secret: "slack_webhook"},
+				}},
+			}},
+		}},
+	}
+	skills := map[string]*config.Skill{
+		"skills/a": {Frontmatter: config.SkillFrontmatter{Name: "a"}},
+	}
+
+	ctx := context.Background()
+	err := UpsertSkillsAndSchedules(ctx, pool, orgID, repoID, badManifest, skills, "sha-bad")
+	require.Error(t, err, "sync must fail when initialNextFireAt cannot compute")
+	assert.Contains(t, err.Error(), "next_fire_at",
+		"error must mention next_fire_at so the operator can locate the bad schedule")
+
+	// Transaction rollback assertion: nothing from this sync should be
+	// visible. Both the schedule and its parent skill row were touched
+	// inside the same tx.
+	var schedRows int
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT count(*) FROM schedule WHERE name = 'hourly'`).Scan(&schedRows))
+	assert.Equal(t, 0, schedRows, "failed sync must not leave schedule rows behind")
+
+	var skillRows int
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT count(*) FROM skill WHERE repo_id = $1`, repoID).Scan(&skillRows))
+	assert.Equal(t, 0, skillRows, "failed sync must not leave skill rows behind (tx rollback)")
 }

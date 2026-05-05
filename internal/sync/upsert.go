@@ -173,6 +173,20 @@ func UpsertSkillsAndSchedules(
 				}
 			}
 
+			nextFire, err := initialNextFireAt(sch.Cron, timezone)
+			if err != nil {
+				// Don't silently insert an enabled schedule with
+				// next_fire_at=NULL — the dispatcher's index filters
+				// `WHERE next_fire_at IS NOT NULL`, so the row would
+				// land dead-on-arrival (the exact bug PR #93 fixed).
+				// config.Validate() rejects bad crons earlier, so this
+				// only triggers if the parser/tz database disagrees with
+				// what was previously accepted; fail the sync loud so the
+				// operator sees the manifest is now invalid against the
+				// running build.
+				return fmt.Errorf("sync: compute next_fire_at for %q/%q: %w", entry.Path, sch.Name, err)
+			}
+
 			if _, err := q.UpsertSchedule(ctx, dbgen.UpsertScheduleParams{
 				OrgID:         orgID,
 				SkillID:       skillID,
@@ -196,7 +210,7 @@ func UpsertSkillsAndSchedules(
 				McpEnvJson:           mcpEnvBytes,
 				MaxTurns:             maxTurns,
 				CopilotTokenRefsJson: copilotRefsJSON,
-				NextFireAt:           initialNextFireAt(sch.Cron, timezone),
+				NextFireAt:           nextFire,
 			}); err != nil {
 				return fmt.Errorf("sync: upsert schedule %q/%q: %w", entry.Path, sch.Name, err)
 			}
@@ -219,19 +233,24 @@ func UpsertSkillsAndSchedules(
 
 // initialNextFireAt computes the cron-derived next_fire_at the upsert hands
 // to the DB. It is consulted ONLY for inserts and for healing rows where
-// next_fire_at is NULL or the schedule was previously disabled (see the SQL
-// CASE in queries/schedule.sql); for already-armed schedules the dispatcher
-// remains the authoritative writer.
+// next_fire_at is NULL, the schedule was previously disabled, or the cron
+// expression / timezone changed (see the SQL CASE in queries/schedule.sql);
+// for already-armed schedules whose cron and timezone are unchanged the
+// dispatcher remains the authoritative writer.
 //
-// On an unparseable cron or unknown timezone we fall back to NULL: the row
-// will land disabled-as-far-as-the-tick-loop-cares, matching the historical
-// behaviour rather than surfacing as a DB error and aborting the whole sync.
-// Validate() in internal/config rejects bad crons earlier, so this only
-// fires if a previously-valid expression becomes invalid (e.g. parser change).
-func initialNextFireAt(cronExpr, timezone string) pgtype.Timestamptz {
+// On an unparseable cron or unknown timezone we return the error. The caller
+// must fail the sync rather than insert an enabled schedule with
+// next_fire_at=NULL — such a row would never be picked by the dispatcher
+// (its index filters `WHERE next_fire_at IS NOT NULL`), reproducing the
+// exact dead-on-arrival bug PR #93 fixed. config.Validate() rejects bad
+// crons earlier, so this only triggers if a previously-valid expression
+// becomes invalid (parser change, tz database missing an entry, etc.) —
+// in which case the operator needs to see the failure, not lose dispatch
+// silently.
+func initialNextFireAt(cronExpr, timezone string) (pgtype.Timestamptz, error) {
 	t, err := scheduler.NextFire(cronExpr, timezone, nowUTC())
 	if err != nil {
-		return pgtype.Timestamptz{}
+		return pgtype.Timestamptz{}, err
 	}
-	return pgtype.Timestamptz{Time: t, Valid: true}
+	return pgtype.Timestamptz{Time: t, Valid: true}, nil
 }
