@@ -39,7 +39,7 @@ func runAdminShowRun(ctx context.Context, runIDStr string, out io.Writer) error 
 		return fmt.Errorf("%s is required", envDatabaseURL)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
 	pool, err := pgxpool.New(ctx, dsn)

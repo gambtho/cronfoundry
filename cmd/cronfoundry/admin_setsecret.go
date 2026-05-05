@@ -58,7 +58,7 @@ func runAdminSetSecret(ctx context.Context, name string, in io.Reader, out io.Wr
 		return fmt.Errorf("empty value; type the secret on stdin and press Enter")
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
 	pool, err := pgxpool.New(ctx, dsn)

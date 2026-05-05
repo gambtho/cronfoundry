@@ -54,7 +54,7 @@ func runAdminListRuns(ctx context.Context, limit int, scheduleName string, out i
 	if limit > maxLimit {
 		limit = maxLimit
 	}
-	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
 	pool, err := pgxpool.New(ctx, dsn)

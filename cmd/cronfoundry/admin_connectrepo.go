@@ -57,7 +57,7 @@ func runAdminConnectRepo(ctx context.Context, repo string, installID int64, bran
 		return fmt.Errorf("%s is required", envDatabaseURL)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
 	pool, err := pgxpool.New(ctx, dsn)
