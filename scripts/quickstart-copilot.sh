@@ -481,7 +481,21 @@ CF_DB_URL="postgres://cfadmin:${CF_PG_PASSWORD}@cf-pg-${CF_ENV}.postgres.databas
 if [[ "$DRY_RUN" == "true" ]]; then
   :
 elif [[ "${CF_DB_INITIALIZED:-0}" == "1" && -x ./cronfoundry ]]; then
-  ok "Database already initialized (CF_DB_INITIALIZED=1) and ./cronfoundry binary present; skipping firewall reopen, build, init, and restart"
+  # Always rerun `admin init` on resume: it's idempotent (re-applies any
+  # pending goose migrations and skips org seeding when the row exists).
+  # Skipping it on resume hides a sharp edge: if the operator's local
+  # ./cronfoundry was built from an older commit on the FIRST run, that
+  # build's embedded migration set is what landed in the DB — even if the
+  # operator later rebuilds, no resume step ever applies the newer
+  # migrations, and the deployed serve/runner images then crash on
+  # missing tables (e.g. run_notification → "relation does not exist
+  # SQLSTATE 42P01" at /internal/runs/.../finalize).
+  info "Re-applying any pending migrations via 'cronfoundry admin init' (idempotent)..."
+  CRONFOUNDRY_DATABASE_URL="$CF_DB_URL" \
+  CRONFOUNDRY_MASTER_KEY="$CF_MASTER_KEY" \
+  ./cronfoundry admin init \
+    || die "admin init failed on resume — see error above. Re-run after fixing.\nSee §14 of $GUIDE_URL"
+  ok "Database initialized (resume path; admin init re-checked migrations)"
 else
   # Build the binary FIRST: a failed build dies before we open the firewall,
   # so a broken local toolchain doesn't leave Postgres exposed to 0.0.0.0/0.
