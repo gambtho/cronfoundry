@@ -8,8 +8,11 @@ coverage.out
 .env.local
 app.pem
 
-# Claude Code local state
-.claude/
+# Claude Code local state — ignore per-user/per-machine paths but keep
+# project-shared slash commands and skills versioned.
+.claude/*
+!.claude/commands/
+!.claude/skills/
 .worktrees/
 deploy/params.json
 deploy/params.*.json
