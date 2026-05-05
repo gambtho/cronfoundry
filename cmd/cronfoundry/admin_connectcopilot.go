@@ -236,7 +236,7 @@ func prodConnectCopilotDeps() connectCopilotDeps {
 func storeCopilotTokensProd(ctx context.Context, prefix, accessToken, refreshToken string, expiresIn int) error {
 	useKV := os.Getenv("AZURE_KEYVAULT_URL") != ""
 
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
 	var (
