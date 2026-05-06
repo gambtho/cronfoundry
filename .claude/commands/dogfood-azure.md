@@ -145,10 +145,18 @@ curl -s -o /dev/null -w "%{http_code}\n" "https://$FQDN/healthz"
 
 ### Trigger a smoke run
 
-From the dashboard's Run-now button, or by patching
-`gambtho/skills/cronfoundry.yaml` to a `*/2 * * * *` cron to force
-one within ~2 min, then reverting to `0 9 * * *`. Confirm the issue
-+ writeback commit on `gambtho/skills` after success.
+From the dashboard's Run-now button, or via the helper script that
+patches `gambtho/skills/cronfoundry.yaml` to a 2-min cron (and reverts
+when you're done):
+
+```bash
+scripts/dogfood/patch-cron.sh 2min     # next run within ~2 min
+# ...wait for issue + writeback on gambtho/skills...
+scripts/dogfood/patch-cron.sh daily    # revert
+```
+
+Confirm the issue + writeback commit on `gambtho/skills` after
+success.
 
 ### Inspect runner job executions directly
 
