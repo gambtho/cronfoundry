@@ -192,6 +192,21 @@ az containerapp job execution show -n cf-runner-$ENV -g $RG \
   sandbox. Re-check state with `containerapp show`, don't retry
   blindly.
 
+- **Step 14 wait-loop hangs on `az containerapp revision list`.**
+  The "Waiting for Container App to become healthy..." poll in
+  step 14 runs `az containerapp revision list` 12× with a 10s
+  sleep between iterations. From WSL2 / this sandbox the az call
+  can wedge indefinitely (observed: 40+ min stuck on a single
+  iteration) instead of returning, so the loop never advances and
+  the script appears frozen at step 14. Symptom: `ps -ef | grep
+  "az containerapp"` shows a long-lived child of the quickstart
+  bash, and the output file stays at `Waiting for Container App
+  to become healthy...` for many minutes. Rescue: `kill -9` the
+  hung az process — the loop's iteration then completes (with
+  `unknown` health), reaches its 12-iteration cap, prints the
+  expected "did not become Healthy after 120s" warn, and
+  continues. Worth wrapping that az call in `timeout 15` upstream.
+
 - **`az deployment sub create` 5-min read timeout (quickstart
   step 13).** The Python `az` CLI applies a hard 300s read timeout
   to subscription-level deployments, but Bicep regularly takes 6-10
