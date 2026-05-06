@@ -1,0 +1,21 @@
+# Dogfood smoke schedule — patched in by scripts/dogfood/patch-cron.sh.
+# Triggers a run every 2 minutes; revert to cron-daily.yaml after success.
+version: 1
+skills:
+  - path: skills/smoke
+    schedules:
+      - name: daily-smoke
+        cron: "*/2 * * * *"
+        timezone: UTC
+        provider: copilot-enterprise
+        copilot_prefix: copilot
+        model: gpt-5-mini
+        destinations:
+          - github-issue:
+              repo: gambtho/skills
+              title: "smoke — {{ run.date }}"
+              labels: [smoke]
+        writeback:
+          enabled: true
+          path: memory.md
+          mode: append

@@ -113,6 +113,38 @@ lives here.
   anything else gets denied by the sandbox, surface the denial —
   don't silently fail. Ask the operator to approve.
 
+- **Patch the live `cronfoundry.yaml` via `scripts/dogfood/patch-cron.sh`.**
+  The dogfood loop flips between a 2-min smoke trigger and the daily
+  resting cadence. Use the helper rather than ad-hoc heredoc + base64
+  + `gh api -X PUT`:
+  ```bash
+  scripts/dogfood/patch-cron.sh 2min     # trigger smoke
+  # ...wait for issue + writeback...
+  scripts/dogfood/patch-cron.sh daily    # revert to resting cadence
+  ```
+  Pre-baked YAMLs live in `scripts/dogfood/cron-{2min,daily}.yaml`.
+  A stable command line means a single permission allowlist entry
+  covers every round, instead of one approval per ad-hoc invocation.
+
+- **Run quickstart and shell commands with absolute paths.** Auto mode
+  evaluates `cd <path> && <command>` more conservatively than
+  one-shot absolute-path commands. When working from the main checkout
+  at `/home/tng/workspace/cronfoundry/`, prefer:
+  ```bash
+  bash /home/tng/workspace/cronfoundry/scripts/quickstart-copilot.sh
+  git -C /home/tng/workspace/cronfoundry log --oneline -5
+  ```
+  over `cd /home/tng/workspace/cronfoundry && git log …`. Only switch
+  the working directory into a worktree when actively editing code in
+  that worktree — switching the cwd mid-flight makes path-based
+  approvals miss.
+
+- **Operator-pause budget for steps 16→22.** Step 16 (GitHub App
+  manifest) needs the operator's browser. Step 22 (Copilot device
+  flow) prints a code that expires in ~15 min. Don't kick off step 16
+  unless you can stay at the keyboard through step 22 — wandering off
+  in between costs a full re-run plus another device-code round-trip.
+
 ## Auto mode
 
 This session is meant to run autonomously. Don't pause for
