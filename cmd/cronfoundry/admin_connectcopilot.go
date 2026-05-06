@@ -130,17 +130,41 @@ func requestDeviceCode(ctx context.Context, deps connectCopilotDeps) (*deviceCod
 		"client_id": {deps.ClientID},
 		"scope":     {deps.Scope},
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, deps.DeviceCodeURL,
-		strings.NewReader(body.Encode()))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	resp, err := deps.HTTPClient.Do(req)
-	if err != nil {
-		return nil, err
+	// Transient TLS handshake / connection-reset errors against
+	// github.com/login/device/code surface here; without a retry, the entire
+	// quickstart aborts at step 22 and the operator has to re-run the whole
+	// script. Retry up to 3 times with exponential backoff.
+	const maxAttempts = 3
+	var resp *http.Response
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, deps.DeviceCodeURL,
+			strings.NewReader(body.Encode()))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+		resp, lastErr = deps.HTTPClient.Do(req)
+		if lastErr == nil {
+			break
+		}
+		if ctx.Err() != nil {
+			return nil, lastErr
+		}
+		if attempt < maxAttempts {
+			delay := time.Duration(attempt) * 2 * time.Second
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(delay):
+			}
+		}
+	}
+	if lastErr != nil {
+		return nil, lastErr
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode/100 != 2 {
