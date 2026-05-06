@@ -39,8 +39,12 @@ USAGE
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --repo) REPO="$2"; shift 2 ;;
-    --path) PATH_IN_REPO="$2"; shift 2 ;;
+    --repo)
+      [[ $# -ge 2 ]] || { echo "--repo requires a value (owner/name)" >&2; exit 2; }
+      REPO="$2"; shift 2 ;;
+    --path)
+      [[ $# -ge 2 ]] || { echo "--path requires a value" >&2; exit 2; }
+      PATH_IN_REPO="$2"; shift 2 ;;
     -h|--help) usage ;;
     -*)
       echo "unknown option: $1" >&2
