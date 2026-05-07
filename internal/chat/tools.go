@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -20,6 +21,18 @@ import (
 type Toolbox struct {
 	Queries *dbgen.Queries
 	OrgID   pgtype.UUID
+	// Now is injectable so tests can pin time deterministically. Production
+	// callers should set Now: time.Now; if nil the toolbox falls back to
+	// time.Now at call time.
+	Now func() time.Time
+}
+
+// now returns tb.Now() if set, else time.Now(). Keeps call sites concise.
+func (tb Toolbox) now() time.Time {
+	if tb.Now != nil {
+		return tb.Now()
+	}
+	return time.Now()
 }
 
 // Defs returns the tool definitions in the format the LLM provider expects.
@@ -416,7 +429,10 @@ func (tb Toolbox) getAlerts(ctx context.Context) (json.RawMessage, error) {
 	if err != nil {
 		return nil, err
 	}
-	paused, err := tb.Queries.ListRecentAutoPaused(ctx, tb.OrgID)
+	paused, err := tb.Queries.ListRecentAutoPaused(ctx, dbgen.ListRecentAutoPausedParams{
+		OrgID:  tb.OrgID,
+		Cutoff: pgtype.Timestamptz{Time: tb.now().Add(-7 * 24 * time.Hour), Valid: true},
+	})
 	if err != nil {
 		return nil, err
 	}

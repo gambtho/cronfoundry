@@ -16,10 +16,15 @@ SELECT id, name, auto_paused_at, auto_pause_reason
   FROM schedule
  WHERE org_id = $1
    AND auto_paused_at IS NOT NULL
-   AND auto_paused_at > now() - interval '7 days'
+   AND auto_paused_at > $2::timestamptz
  ORDER BY auto_paused_at DESC
  LIMIT 20
 `
+
+type ListRecentAutoPausedParams struct {
+	OrgID  pgtype.UUID
+	Cutoff pgtype.Timestamptz
+}
 
 type ListRecentAutoPausedRow struct {
 	ID              pgtype.UUID
@@ -28,8 +33,10 @@ type ListRecentAutoPausedRow struct {
 	AutoPauseReason *string
 }
 
-func (q *Queries) ListRecentAutoPaused(ctx context.Context, orgID pgtype.UUID) ([]ListRecentAutoPausedRow, error) {
-	rows, err := q.db.Query(ctx, listRecentAutoPaused, orgID)
+// Cutoff is computed by the caller using its injected clock so tests can
+// pin time deterministically. Production callers pass time.Now().Add(-7d).
+func (q *Queries) ListRecentAutoPaused(ctx context.Context, arg ListRecentAutoPausedParams) ([]ListRecentAutoPausedRow, error) {
+	rows, err := q.db.Query(ctx, listRecentAutoPaused, arg.OrgID, arg.Cutoff)
 	if err != nil {
 		return nil, err
 	}
