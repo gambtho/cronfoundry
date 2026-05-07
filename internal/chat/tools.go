@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -416,7 +417,10 @@ func (tb Toolbox) getAlerts(ctx context.Context) (json.RawMessage, error) {
 	if err != nil {
 		return nil, err
 	}
-	paused, err := tb.Queries.ListRecentAutoPaused(ctx, tb.OrgID)
+	paused, err := tb.Queries.ListRecentAutoPaused(ctx, dbgen.ListRecentAutoPausedParams{
+		OrgID:  tb.OrgID,
+		Cutoff: pgtype.Timestamptz{Time: time.Now().Add(-7 * 24 * time.Hour), Valid: true},
+	})
 	if err != nil {
 		return nil, err
 	}

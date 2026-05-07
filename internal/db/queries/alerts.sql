@@ -9,10 +9,12 @@ SELECT s.id, s.name, s.cron, s.timezone,
  ORDER BY s.name ASC;
 
 -- name: ListRecentAutoPaused :many
+-- Cutoff is computed by the caller using its injected clock so tests can
+-- pin time deterministically. Production callers pass time.Now().Add(-7d).
 SELECT id, name, auto_paused_at, auto_pause_reason
   FROM schedule
  WHERE org_id = $1
    AND auto_paused_at IS NOT NULL
-   AND auto_paused_at > now() - interval '7 days'
+   AND auto_paused_at > sqlc.arg(cutoff)::timestamptz
  ORDER BY auto_paused_at DESC
  LIMIT 20;

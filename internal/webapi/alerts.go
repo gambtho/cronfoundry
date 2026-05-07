@@ -4,6 +4,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
+
+	dbgen "github.com/gambtho/cronfoundry/internal/db/gen"
 	"github.com/gambtho/cronfoundry/internal/scheduler"
 )
 
@@ -84,7 +87,10 @@ func (h *alertsHandler) list(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	paused, err := h.deps.Queries.ListRecentAutoPaused(r.Context(), org.ID)
+	paused, err := h.deps.Queries.ListRecentAutoPaused(r.Context(), dbgen.ListRecentAutoPausedParams{
+		OrgID:  org.ID,
+		Cutoff: pgtype.Timestamptz{Time: now.Add(-7 * 24 * time.Hour), Valid: true},
+	})
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "alerts: paused", "internal")
 		return
