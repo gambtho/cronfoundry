@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/gambtho/cronfoundry/internal/chat"
 	"github.com/gambtho/cronfoundry/internal/llm"
@@ -144,7 +145,7 @@ func (h *chatHandler) stream(w http.ResponseWriter, r *http.Request) {
 		APIKey:      apiKey,
 		MaxTurns:    h.deps.Chat.MaxTurns,
 		MaxTokens:   h.deps.Chat.MaxTokens,
-		Tools:       chat.Toolbox{Queries: h.deps.Queries, OrgID: org.ID},
+		Tools:       chat.Toolbox{Queries: h.deps.Queries, OrgID: org.ID, Now: time.Now},
 		Caller:      chat.Caller{Login: claims.Login, Role: claims.Role},
 		PageContext: sanitizePageContext(req.PageContext),
 	}
