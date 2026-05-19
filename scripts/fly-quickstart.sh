@@ -25,6 +25,8 @@ export ENV_FILE="${REPO_ROOT}/.env"
 source "${SCRIPT_DIR}/lib/dotenv.sh"
 # shellcheck source=lib/fly.sh
 source "${SCRIPT_DIR}/lib/fly.sh"
+# shellcheck source=lib/state.sh
+source "${SCRIPT_DIR}/lib/state.sh"
 
 # ── arg parsing ─────────────────────────────────────────────────────────────
 IMAGE_OVERRIDE=""
@@ -84,7 +86,69 @@ else
 fi
 fly_warn_if_runner_image "$IMAGE" || true
 
-# GitHub App / OAuth — required, no defaults.
+# Admin logins — required, no defaults. Asked before the App-registration
+# step because the manifest flow doesn't need it and we want to fail fast
+# under --non-interactive when it's missing.
+CRONFOUNDRY_ADMIN_LOGINS=$(dotenv_require                  CRONFOUNDRY_ADMIN_LOGINS                  "Comma-separated admin GitHub logins")
+
+# GitHub App / OAuth — register via manifest flow on first run (mirrors
+# Azure's quickstart-copilot.sh step 16). After the flow completes,
+# `cronfoundry setup github-app` writes its outputs into STATE_FILE
+# under CF_GITHUB_* names; we copy them into the CRONFOUNDRY_GITHUB_*
+# names that the deployed serve container actually reads.
+STATE_FILE="${HOME}/.cronfoundry-quickstart-state-fly-${FLY_API_APP}"
+export STATE_FILE
+state_init
+state_load
+
+if ! dotenv_has CRONFOUNDRY_GITHUB_APP_ID; then
+  header "[2.5/9] Register GitHub App (manifest flow)"
+  if [[ "${DOTENV_NON_INTERACTIVE:-0}" == "1" ]] && [[ -z "${CF_GITHUB_APP_ID:-}" ]]; then
+    die "CRONFOUNDRY_GITHUB_APP_ID missing under --non-interactive. Run \
+fly-quickstart.sh interactively once to register the GitHub App, or \
+populate CRONFOUNDRY_GITHUB_APP_ID / _OAUTH_CLIENT_ID / _OAUTH_CLIENT_SECRET / \
+_WEBHOOK_SECRET / _APP_PEM_PATH in .env from an out-of-band source."
+  fi
+
+  # Build the binary if needed — the manifest flow uses `cronfoundry setup github-app`.
+  if [[ ! -x "${REPO_ROOT}/cronfoundry" ]]; then
+    info "building cronfoundry binary for setup CLI"
+    ( cd "$REPO_ROOT" && { make build || go build -o cronfoundry ./cmd/cronfoundry; } ) \
+      || die "binary build failed; ensure go >= 1.21 is installed"
+  fi
+
+  if [[ -z "${CF_GITHUB_APP_ID:-}" ]]; then
+    FQDN="${FLY_API_APP}.fly.dev"
+    "${REPO_ROOT}/cronfoundry" setup github-app \
+      --state-file "$STATE_FILE" \
+      --pem-dir "${HOME}/.cronfoundry" \
+      --homepage-url "https://${FQDN}" \
+      --callback-url "https://${FQDN}/oauth/callback" \
+      --webhook-url "https://${FQDN}/webhook/github" \
+      || die "GitHub App manifest flow failed. Re-run scripts/fly-quickstart.sh to retry."
+    state_load
+    [[ -n "${CF_GITHUB_APP_ID:-}" ]] || die "manifest flow returned but CF_GITHUB_APP_ID missing in $STATE_FILE"
+  fi
+
+  # Guard against persisting partial/empty state: every CF_GITHUB_* the
+  # manifest flow promises must be present before we copy into .env.
+  missing=()
+  for v in CF_GITHUB_APP_ID CF_GITHUB_PEM_PATH CF_GITHUB_CLIENT_ID \
+           CF_GITHUB_CLIENT_SECRET CF_GITHUB_WEBHOOK_SECRET; do
+    [[ -z "${!v:-}" ]] && missing+=("$v")
+  done
+  if (( ${#missing[@]} > 0 )); then
+    die "manifest flow finished but state file is incomplete; missing: ${missing[*]} (state file: ${STATE_FILE}). Refusing to write partial credentials to .env."
+  fi
+
+  dotenv_set CRONFOUNDRY_GITHUB_APP_ID              "${CF_GITHUB_APP_ID}"
+  dotenv_set CRONFOUNDRY_GITHUB_APP_PEM_PATH        "${CF_GITHUB_PEM_PATH}"
+  dotenv_set CRONFOUNDRY_GITHUB_OAUTH_CLIENT_ID     "${CF_GITHUB_CLIENT_ID}"
+  dotenv_set CRONFOUNDRY_GITHUB_OAUTH_CLIENT_SECRET "${CF_GITHUB_CLIENT_SECRET}"
+  dotenv_set CRONFOUNDRY_GITHUB_WEBHOOK_SECRET      "${CF_GITHUB_WEBHOOK_SECRET}"
+  ok "GitHub App registered: App ID ${CF_GITHUB_APP_ID} (credentials persisted to .env)"
+fi
+
 CRONFOUNDRY_GITHUB_APP_ID=$(dotenv_require                 CRONFOUNDRY_GITHUB_APP_ID                 "GitHub App ID")
 CRONFOUNDRY_GITHUB_APP_PEM_PATH=$(dotenv_require           CRONFOUNDRY_GITHUB_APP_PEM_PATH           "Path to GitHub App PEM")
 [[ -r "$CRONFOUNDRY_GITHUB_APP_PEM_PATH" ]] \
@@ -92,7 +156,6 @@ CRONFOUNDRY_GITHUB_APP_PEM_PATH=$(dotenv_require           CRONFOUNDRY_GITHUB_AP
 CRONFOUNDRY_GITHUB_OAUTH_CLIENT_ID=$(dotenv_require        CRONFOUNDRY_GITHUB_OAUTH_CLIENT_ID        "GitHub OAuth client ID")
 CRONFOUNDRY_GITHUB_OAUTH_CLIENT_SECRET=$(dotenv_require    CRONFOUNDRY_GITHUB_OAUTH_CLIENT_SECRET    "GitHub OAuth client secret" "" --secret)
 CRONFOUNDRY_GITHUB_WEBHOOK_SECRET=$(dotenv_require         CRONFOUNDRY_GITHUB_WEBHOOK_SECRET         "GitHub webhook secret"      "" --secret)
-CRONFOUNDRY_ADMIN_LOGINS=$(dotenv_require                  CRONFOUNDRY_ADMIN_LOGINS                  "Comma-separated admin GitHub logins")
 
 # Generated keys — auto-generate if absent and persist back.
 if ! dotenv_has CRONFOUNDRY_MASTER_KEY; then
