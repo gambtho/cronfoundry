@@ -96,7 +96,7 @@ CRONFOUNDRY_ADMIN_LOGINS=$(dotenv_require                  CRONFOUNDRY_ADMIN_LOG
 # `cronfoundry setup github-app` writes its outputs into STATE_FILE
 # under CF_GITHUB_* names; we copy them into the CRONFOUNDRY_GITHUB_*
 # names that the deployed serve container actually reads.
-STATE_FILE="${HOME}/.cronfoundry-quickstart-state-fly"
+STATE_FILE="${HOME}/.cronfoundry-quickstart-state-fly-${FLY_API_APP}"
 export STATE_FILE
 state_init
 state_load
@@ -128,6 +128,17 @@ _WEBHOOK_SECRET / _APP_PEM_PATH in .env from an out-of-band source."
       || die "GitHub App manifest flow failed. Re-run scripts/fly-quickstart.sh to retry."
     state_load
     [[ -n "${CF_GITHUB_APP_ID:-}" ]] || die "manifest flow returned but CF_GITHUB_APP_ID missing in $STATE_FILE"
+  fi
+
+  # Guard against persisting partial/empty state: every CF_GITHUB_* the
+  # manifest flow promises must be present before we copy into .env.
+  missing=()
+  for v in CF_GITHUB_APP_ID CF_GITHUB_PEM_PATH CF_GITHUB_CLIENT_ID \
+           CF_GITHUB_CLIENT_SECRET CF_GITHUB_WEBHOOK_SECRET; do
+    [[ -z "${!v:-}" ]] && missing+=("$v")
+  done
+  if (( ${#missing[@]} > 0 )); then
+    die "manifest flow finished but state file is incomplete; missing: ${missing[*]} (state file: ${STATE_FILE}). Refusing to write partial credentials to .env."
   fi
 
   dotenv_set CRONFOUNDRY_GITHUB_APP_ID              "${CF_GITHUB_APP_ID}"
