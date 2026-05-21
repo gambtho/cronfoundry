@@ -92,8 +92,12 @@ fly_pg_destroy() {
 # fly_pg_attach PG_NAME APP_NAME — sets DATABASE_URL on APP_NAME if not already.
 fly_pg_attach() {
   local pg="$1" app="$2"
+  # `flyctl secrets list --json` emits lowercase keys (.name) in v0.4.x.
+  # Earlier versions emitted .Name. Match either so the idempotency guard
+  # actually fires — without it, the attach below trips "already contains
+  # a secret named DATABASE_URL" on every re-run of fly-quickstart.sh.
   if flyctl secrets list -a "$app" --json 2>/dev/null \
-      | jq -e '.[] | select(.Name == "DATABASE_URL")' >/dev/null; then
+      | jq -e '.[] | select((.name // .Name) == "DATABASE_URL")' >/dev/null; then
     echo -e "${GREEN}[ok]${RESET}    DATABASE_URL already set on ${app}"
     return 0
   fi
