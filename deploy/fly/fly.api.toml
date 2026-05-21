@@ -4,6 +4,12 @@ primary_region = "iad"
 [build]
   image = "ghcr.io/cronfoundry/cronfoundry:latest"
 
+# The image's ENTRYPOINT is /cronfoundry with no default CMD. Without
+# this, machines launch into the CLI's help output, exit 0, and never
+# serve traffic. Pass the subcommand explicitly.
+[experimental]
+  cmd = ["serve"]
+
 [http_service]
   internal_port = 8080
   force_https = true
