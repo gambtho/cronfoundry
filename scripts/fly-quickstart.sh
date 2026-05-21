@@ -86,11 +86,6 @@ else
 fi
 fly_warn_if_runner_image "$IMAGE" || true
 
-# Admin logins — required, no defaults. Asked before the App-registration
-# step because the manifest flow doesn't need it and we want to fail fast
-# under --non-interactive when it's missing.
-CRONFOUNDRY_ADMIN_LOGINS=$(dotenv_require                  CRONFOUNDRY_ADMIN_LOGINS                  "Comma-separated admin GitHub logins")
-
 # GitHub App / OAuth — register via manifest flow on first run (mirrors
 # Azure's quickstart-copilot.sh step 16). After the flow completes,
 # `cronfoundry setup github-app` writes its outputs into STATE_FILE
@@ -103,6 +98,26 @@ state_load
 
 if ! dotenv_has CRONFOUNDRY_GITHUB_APP_ID; then
   header "[2.5/9] Register GitHub App (manifest flow)"
+  cat <<'EOF' >&2
+
+  CronFoundry talks to GitHub through a GitHub App you own. The next
+  step opens a browser window that walks you through creating it:
+
+    1. GitHub will ask you to name the new App and pick an account or
+       org to own it. The default name "cronfoundry-<your-login>" is
+       fine — anything works.
+    2. After the App is created, GitHub redirects to a page to install
+       it on the account/org that hosts your skills repo (the repo
+       this deployment will read schedules from and write run results
+       back to). Click "Install" against that account.
+    3. The browser then returns control to this script. It captures
+       the App credentials and writes them into .env automatically —
+       you won't be asked to copy/paste anything.
+
+  This window expires in ~30 min — stay at the keyboard until you see
+  "GitHub App registered: App ID ...".
+
+EOF
   if [[ "${DOTENV_NON_INTERACTIVE:-0}" == "1" ]] && [[ -z "${CF_GITHUB_APP_ID:-}" ]]; then
     die "CRONFOUNDRY_GITHUB_APP_ID missing under --non-interactive. Run \
 fly-quickstart.sh interactively once to register the GitHub App, or \
@@ -147,6 +162,31 @@ _WEBHOOK_SECRET / _APP_PEM_PATH in .env from an out-of-band source."
   dotenv_set CRONFOUNDRY_GITHUB_OAUTH_CLIENT_SECRET "${CF_GITHUB_CLIENT_SECRET}"
   dotenv_set CRONFOUNDRY_GITHUB_WEBHOOK_SECRET      "${CF_GITHUB_WEBHOOK_SECRET}"
   ok "GitHub App registered: App ID ${CF_GITHUB_APP_ID} (credentials persisted to .env)"
+fi
+
+# Admin logins — must include at least your own GitHub login so that
+# you can sign into the deployed UI. Default to the currently
+# authenticated `gh` user; operator can override or add more (comma-
+# separated). Asked AFTER the manifest flow so the user has seen the
+# context of what's being deployed.
+if ! dotenv_has CRONFOUNDRY_ADMIN_LOGINS; then
+  cat <<'EOF' >&2
+
+  The next prompt asks which GitHub logins should have admin access to
+  the deployed CronFoundry UI (https://<your-api-app>.fly.dev/).
+  Admins can pause schedules, view run logs, and manage other users.
+  Comma-separated, no spaces — e.g. "alice,bob".
+
+EOF
+  ADMIN_DEFAULT=""
+  if command -v gh >/dev/null && gh auth status >/dev/null 2>&1; then
+    ADMIN_DEFAULT=$(gh api user --jq .login 2>/dev/null || true)
+  fi
+  CRONFOUNDRY_ADMIN_LOGINS=$(dotenv_require CRONFOUNDRY_ADMIN_LOGINS \
+    "Comma-separated admin GitHub logins" "${ADMIN_DEFAULT}")
+else
+  CRONFOUNDRY_ADMIN_LOGINS=$(dotenv_require CRONFOUNDRY_ADMIN_LOGINS \
+    "Comma-separated admin GitHub logins")
 fi
 
 CRONFOUNDRY_GITHUB_APP_ID=$(dotenv_require                 CRONFOUNDRY_GITHUB_APP_ID                 "GitHub App ID")
@@ -230,6 +270,21 @@ fly_healthcheck "${FLY_API_APP}.fly.dev" 120
 # ── starter PR ──────────────────────────────────────────────────────────────
 header "[9/9] Starter PR (first run only)"
 
+CRONFOUNDRY_SKILLS_REPO=$(dotenv_get CRONFOUNDRY_SKILLS_REPO 2>/dev/null || true)
+if [[ -z "$CRONFOUNDRY_SKILLS_REPO" ]]; then
+  cat <<'EOF' >&2
+
+  CronFoundry reads schedule definitions and skill prompts from a
+  GitHub repo you own (the "skills repo"). It also writes back run
+  results — issue comments, memory updates, etc. — to that same repo.
+
+  Provide the repo as "owner/name", e.g. "your-github-login/cronfoundry-skills".
+  If the repo doesn't exist yet, this script will open a starter PR
+  containing a smoke skill and example schedule. Make sure the GitHub
+  App you just installed has access to this repo.
+
+EOF
+fi
 CRONFOUNDRY_SKILLS_REPO=$(dotenv_require CRONFOUNDRY_SKILLS_REPO \
   "Skills repo (owner/name) where CronFoundry will read schedules and write back" "")
 
